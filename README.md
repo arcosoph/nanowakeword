@@ -122,13 +122,13 @@ The `training_config.yaml` file is the central control center. While `--auto-con
 
 ```yaml
 # Section 1: Essential Paths (User must fill this)
-model_name: "my_wakeword_v1"
-output_dir: "./trained_models"
-wakeword_data_path: "./training_data/positive"
+model_name: "my_wakeword_v1" #(REQUIRED)
+output_dir: "./trained_models" #(REQUIRED)
+wakeword_data_path: "./training_data/positive" #(REQUIRED)
 # ... and other paths ...
 
 # Section 2: Manual Training Configuration (Used when --auto-config is NOT present)
-model_type: "lstm"     # Or other architectures such as `DNN`
+model_type: "lstm"     # Or other architectures such as `DNN` #(REQUIRED)
 total_length: 32000
 layer_size: 128
 # ... and other manual settings ...
