@@ -5,25 +5,27 @@
 # Set each parameter carefully.
 # ==============================================================================
 
+# ⚠️ Important: Fields marked as REQUIRED below must be provided.
+# Missing or incorrect values ​​may cause training failure or unexpected results
 
 # ===========================================
 # Section 1: Paths & Names
 # ===========================================
 
-model_name: my_manual_model_v1 # Give a unique name for your model
-output_dir: ./trained_models    # All outputs (features, models) will be saved here
+model_name: my_manual_model_v1 # Give a unique name for your model (REQUIRED)
+output_dir: ./trained_models    # All outputs (features, models) will be saved here (REQUIRED)
 
-wakeword_data_path: ./training_data/positive
-background_data_path: ./training_data/negative
+wakeword_data_path: ./training_data/positive #(REQUIRED)
+background_data_path: ./training_data/negative #(REQUIRED)
 
 # Path to the .npy file used for False Positive measurement.
 # This is important — you must prepare this file beforehand.
 false_positive_validation_data_path: ./training_data/fp_validation_data.npy
 
 # Extra audio files for data augmentation
-background_paths:
+background_paths: #(REQUIRED)
   - ./training_data/noise
-rir_paths:
+rir_paths: #(REQUIRED)
   - ./training_data/rir
 background_paths_duplication_rate:
   - 1
@@ -33,7 +35,7 @@ background_paths_duplication_rate:
 # Section 2: Data Generation (only for --generate_clips)
 # =======================================================
 
-target_phrase:
+target_phrase: #(REQUIRED)
   - "your wake word like jarvis" # For generating synthetic data using TTS
 
 # Number of positive and negative samples to generate for training
@@ -64,8 +66,8 @@ augmentation_batch_size: 128
 # Section 4: Model Architecture
 # ===========================================
 
-# Model type: "dnn", "lstm", "gru", "cnn", "rnn"
-model_type: dnn # Very fast DNN and very best LSTM
+# Model type: "dnn", "lstm", "gru", "cnn", "rnn" #(REQUIRED)
+model_type: dnn # Very fast DNN and very best LSTM #(REQUIRED)
 
 # Size of each model layer (number of neurons).
 layer_size: 256
