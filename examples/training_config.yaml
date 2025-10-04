@@ -1,0 +1,121 @@
+# ==============================================================================
+# NanoWakeWord - Final and Complete Configuration File (v1.0.0)
+# ==============================================================================
+# This file is for users who want manual control over training instead of --auto-config.
+# Set each parameter carefully.
+# ==============================================================================
+
+
+# ===========================================
+# Section 1: Paths & Names
+# ===========================================
+
+model_name: my_manual_model_v1 # Give a unique name for your model
+output_dir: ./trained_models    # All outputs (features, models) will be saved here
+
+wakeword_data_path: ./training_data/positive
+background_data_path: ./training_data/negative
+
+# Path to the .npy file used for False Positive measurement.
+# This is important — you must prepare this file beforehand.
+false_positive_validation_data_path: ./training_data/fp_validation_data.npy
+
+# Extra audio files for data augmentation
+background_paths:
+  - ./training_data/noise
+rir_paths:
+  - ./training_data/rir
+background_paths_duplication_rate:
+  - 1
+
+
+# =======================================================
+# Section 2: Data Generation (only for --generate_clips)
+# =======================================================
+
+target_phrase:
+  - "your wake word like jarvis" # For generating synthetic data using TTS
+
+# Number of positive and negative samples to generate for training
+n_samples_train: 1000
+n_samples_negative_train: 1000
+
+# Number of positive and negative samples to generate for validation
+n_samples_val: 150
+n_samples_negative_val: 150
+
+# Batch size for text-to-speech (TTS)
+tts_batch_size: 128
+
+
+# =======================================================
+# Section 3: Data Augmentation (only for --augment_clips)
+# =======================================================
+
+# How many times each original audio clip will be used during augmentation.
+# More rounds = more variation, but also more time.
+augmentation_rounds: 10
+
+# Number of clips processed per batch during augmentation.
+augmentation_batch_size: 128
+
+
+# ===========================================
+# Section 4: Model Architecture
+# ===========================================
+
+# Model type: "dnn", "lstm", "gru", "cnn", "rnn"
+model_type: dnn # Very fast DNN and very best LSTM
+
+# Size of each model layer (number of neurons).
+layer_size: 256
+
+# Total number of layers/blocks in the model.
+n_blocks: 3
+
+
+# =================================================
+# Section 5: Training Hyperparameters
+# =================================================
+
+# Total number of training steps.
+steps: 20000
+
+# Dropout rate (to reduce overfitting). Range: 0.0 to 1.0
+dropout_prob: 0.5
+
+# Maximum learning rate for CyclicLR scheduler.
+learning_rate_max: 0.0001
+
+# Minimum learning rate for CyclicLR scheduler.
+learning_rate_base: 0.00001
+
+# Number of steps for the "up" phase of CyclicLR.
+# Learning rate increases from min → max within these steps.
+clr_step_size_up: 3600
+
+# (Optional) Number of steps for the "down" phase of CyclicLR.
+# Learning rate decreases from max → min within these steps.
+# If not set, it defaults to clr_step_size_up (auto-config calculates this).
+clr_step_size_down: 5500
+
+# Maximum loss weight for negative samples.
+max_negative_weight: 3.0
+
+# Your target maximum False Positives per Hour (FP/hour).
+target_false_positives_per_hour: 0.5
+
+
+# =================================================
+# Section 6: Batch Composition
+# =================================================
+
+batch_composition:
+  # Total number of samples per batch during training.
+  batch_size: 64
+
+  # Distribution of sample types in each batch (sum must be 100).
+  source_distribution:
+    positive: 35
+    negative_speech: 45
+    pure_noise: 20
