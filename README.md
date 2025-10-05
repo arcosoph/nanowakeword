@@ -58,11 +58,11 @@ pip install nanowakeword
     ```bash
     pip install -r requirements_lock_3_13.txt
     ```
-
+    
 4.   **FFmpeg:** You must have FFmpeg installed on your system and available in your system's PATH. This is required for automatic audio preprocessing.
-    *   **On Windows:** Download from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) and follow their instructions to add it to your PATH.
-    *   **On macOS (using Homebrew):** `brew install ffmpeg`
-    *   **On Debian/Ubuntu:** `sudo apt update && sudo apt install ffmpeg`
+*  **On Windows:** Download from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) and follow their instructions to add it to your PATH.
+*  **On macOS (using Homebrew):** `brew install ffmpeg`
+*  **On Debian/Ubuntu:** `sudo apt update && sudo apt install ffmpeg`
 
 ## ⚙️ Usage
 
