@@ -8,11 +8,11 @@ requests>=2.0,<3
 
 # Platform-specific dependencies
 # Linux x86_64
-speexdsp_ns @ https://github.com/dscripka/openWakeWord/releases/download/v0.1.1/speexdsp_ns-0.1.2-cp39-cp39-linux_x86_64.whl
+# speexdsp_ns @ https://github.com/dscripka/openWakeWord/releases/download/v0.1.1/speexdsp_ns-0.1.2-cp39-cp39-linux_x86_64.whl
 # Linux aarch64
 # speexdsp_ns @ https://github.com/dscripka/openWakeWord/releases/download/v0.1.1/speexdsp_ns-0.1.2-cp39-cp39-linux_aarch64.whl
 # Windows
-# PyAudioWPatch
+PyAudioWPatch
 
 # Testing dependencies
 pytest>=7.2.0,<8
