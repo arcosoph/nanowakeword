@@ -11,7 +11,6 @@ matplotlib==3.10.6
 mutagen==1.47.0
 numpy==2.3.3
 onnx==1.19.0
-onnx_tf==1.10.0
 onnxruntime==1.23.0
 pronouncing==0.2.0
 pyaudio==0.2.14
