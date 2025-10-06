@@ -1,3 +1,4 @@
+# For windows
 acoustics==0.2.6
 audiomentations==0.43.1
 Cython==3.1.4
@@ -26,9 +27,7 @@ setuptools==65.5.0
 sounddevice==0.5.2
 soundfile==0.13.1
 speechbrain==1.0.3
-speexdsp_ns==0.1.2
 tensorflow==2.20.0
-tflite_runtime==2.14.0
 torch==2.8.0
 torch_audiomentations==0.12.0
 torchaudio==2.8.0
