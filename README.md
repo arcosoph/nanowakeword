@@ -196,13 +196,21 @@ In a world of complex machine learning tools, Nanowakeword is built on a simple 
 
 ## FAQ
 
-**1. What kind of hardware do I need for training?**
+**1. Which Python version should I use?**
+
+> The recommended Python version depends on your preferred output format for the trained model:
+
+> * **For `.onnx` models:** You can use **Python 3.8 to 3.13**. This setup has been tested and is fully supported. A lock file for Python 3.13 (`requirements_lock_3_13.txt`) is provided for reference.
+
+> * **For `.tflite` models:** Due to TensorFlow's dependency limitations, it is highly recommended to use versions below **Python 3.11>**. TensorFlow does not yet officially support Python versions newer than 3.11, so conversion to `.tflite` will fail.
+
+**2. What kind of hardware do I need for training?**
 > Training is best done on a machine with a dedicated `GPU`, as it can be computationally intensive. However, training on a `CPU` is also possible, although it will be slower. Inference (running the model) is very lightweight and can be run on almost any device, including a Raspberry Pi 3 or 4.
 
-**2. How much data do I need to train a good model?**
+**3. How much data do I need to train a good model?**
 > For a good starting point, we recommend at least 400+ clean recordings of your wake words from a few different voices. You can also create synthetic words using NanoWakeWord. The more data you have, the better your model will be. Our intelligent engine is designed to work well even with small datasets.
 
-**3. Can I train a model for a language other than English?**
+**4. Can I train a model for a language other than English?**
 > Yes! NanoWakeWord is language-agnostic. As long as you can provide audio samples for your wake words, you can train a model for any language.
 
 ## Contributing
