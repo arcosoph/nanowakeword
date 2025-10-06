@@ -21,8 +21,9 @@ import sys
 from pathlib import Path
 import wave
 import traceback
-
-
+from tqdm import tqdm
+import os
+from nanowakeword.utils.audio_processing import download_file
 
 try:
     from nanowakeword import PROJECT_ROOT
@@ -71,18 +72,41 @@ def generate_samples(
     
 
 
-    if model_path is None:
+    # if model_path is None:
   
-        default_model_path = PROJECT_ROOT / "external" / "piper-master" / "etc" / "test_voice.onnx"
-        model_path = default_model_path.as_posix()
-        _LOGGER.info(f"Model path not provided, using default location: {model_path}")
+    #     default_model_path = PROJECT_ROOT / "resources" / "tts_models" / "en_US-ryan-high.onnx"
+    #     model_path = default_model_path.as_posix()
+    #     _LOGGER.info(f"Model path not provided, using default location: {model_path}")
 
+    import os
+    from pathlib import Path
+    from nanowakeword.utils.download_file import download_file
+
+    # default_model_path = PROJECT_ROOT / "resources" / "tts_models" / "en_US-ryan-high.onnx"
+    # Model path
+    model_path = PROJECT_ROOT / "resources" / "tts_models" / "en_US-ryan-high.onnx"
+
+    # Folder create korbo jodi na thake
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Hugging Face ONNX URL
+    onnx_url = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/en_US-ryan-high.onnx"
+    json_url = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/en_US-ryan-high.onnx.json"
+
+    # File check + download
+    if not model_path.exists():
+        print("Model not found. Downloading...")
+        download_file(onnx_url, target_directory=model_path.parent.as_posix())
+        download_file(json_url, target_directory=model_path.parent.as_posix())
+        print("Download complete.")
     
+
+
     if not model_path or not os.path.exists(model_path):
         _LOGGER.error(f"Piper voice model not found at the specified path: {model_path}")
         return
-
-    # _LOGGER.info(f"Loading Piper model from {model_path}")
+ 
+    _LOGGER.info(f"Loading Piper model from {model_path}")
     try:
         voice = PiperVoice.load(model_path)
     except Exception as e:

@@ -19,7 +19,7 @@ wakeword_data_path: ./training_data/positive #(REQUIRED)
 background_data_path: ./training_data/negative #(REQUIRED)
 
 # Path to the .npy file used for False Positive measurement.
-# Oftional
+# This is important — you must prepare this file beforehand.
 false_positive_validation_data_path: ./training_data/fp_validation_data.npy
 
 # Extra audio files for data augmentation
@@ -36,7 +36,7 @@ background_paths_duplication_rate:
 # =======================================================
 
 target_phrase: #(REQUIRED)
-  - "your wake word like jarvis" # For generating synthetic data using TTS
+  - "jarvis" # For generating synthetic data using TTS
 
 # Number of positive and negative samples to generate for training
 n_samples_train: 1000

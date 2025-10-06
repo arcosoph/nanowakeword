@@ -216,4 +216,3 @@ This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENS
 ## Acknowledgements
 
 * This project stands on the shoulders of giants. It was initially inspired by the architecture and concepts of the `OpenWakeWord` project.
-* The powerful synthetic data generation capabilities are powered by the incredible rhasspy-built Piper TTS `piper-master` project.

@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-
 import os
 import sys
 import uuid
@@ -783,9 +781,9 @@ class Model(nn.Module):
 
 # # Separate function to convert onnx models to tflite format
 def convert_onnx_to_tflite(onnx_model_path, output_path):
-    """The latest Python 3.13 version does not support NanoWakeWord version 1.0 to convert the ONNX version of 
+    """The latest Python <3.12 version does not support NanoWakeWord v1.1.0 to convert the ONNX version of 
     the NanoWakeWord model to the TensorFlow Tflight format."""
-    print("The latest Python 3.13 version does not support NanoWakeWord version 1.0 to convert the ONNX version of the NanoWakeWord model to the TensorFlow Tflight format.")
+    print("The latest Python <3.12 version does not support NanoWakeWord v1.1.0 to convert the ONNX version of the NanoWakeWord model to the TensorFlow Tflight format.")
 
     import onnx
     from onnx_tf.backend import prepare
@@ -1194,7 +1192,7 @@ def main():
             print_info(f"Custom validation set not found. Using generated negative test set as a fallback: {fp_val_path}")
   
         val_set_hrs = calculate_validation_duration_hours(fp_val_path, input_shape)
-        print(f"DEBUG: Using val_set_hrs = {val_set_hrs} for FP/hour calculation.")
+        # print(f"DEBUG: Using val_set_hrs = {val_set_hrs} for FP/hour calculation.")
         # Create data transform function for batch generation to handle differ clip lengths (todo: write tests for this)
         def f(x, n=input_shape[0]):
             """Simple transformation function to ensure negative data is the appropriate shape for the model size"""

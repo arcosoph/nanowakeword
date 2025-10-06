@@ -677,7 +677,7 @@ def augment_clips(
                 clip_data = clip_data[0:total_length]
 
             if clip_sr != sr:
-                raise ValueError("Error! Clip does not have the correct sample rate!")
+                raise ValueError("Error! Clip does not have the correct sample rate! Don't worry, run it again without the --generate_clips flag, your data will not be lost. We will fix it soon.")
 
             clip_data = create_fixed_size_clip(clip_data, total_length, clip_sr)
 

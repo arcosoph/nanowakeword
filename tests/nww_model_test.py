@@ -16,7 +16,7 @@ import sys
 import time
 
 # --- Configuration ---
-MODEL_PATH = os.path.join("trained_models","arcosoph_v1.onnx")
+MODEL_PATH = os.path.join("trained_models","my_manual_model_v1.onnx")
 
 DETECTION_THRESHOLD = 0.09  # ⚠️ IMPORTANT: The value of DETECTION_THRESHOLD is specific to your trained model.
                     # You must experiment to find the right sensitivity — try different values like 0.9, 0.5, or 0.05
