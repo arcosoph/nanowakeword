@@ -188,7 +188,7 @@ def main():
         ncpu=ncpu
     )
 
-    print(f"\n✅ Feature generation complete! File saved to: {output_path}")
+    print(f"Feature generation complete! File saved to: {output_path}")
 
 
 if __name__ == "__main__":
