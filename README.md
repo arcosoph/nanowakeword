@@ -30,35 +30,17 @@
 ### Prerequisites
 
 *   Python 3.8 or higher
-*   Git
 *   `ffmpeg` (for audio processing)
 
 ### Installation
 
-Nanowakeword will be available on PyPI soon!
+NanoWakeWord is now also available on PyPI!
 
 ```bash
 pip install nanowakeword
 ```
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/arcosoph/nanowakeword.git
-    cd nanowakeword
-    ```
-
-2.  **Create a virtual environment:**
-    ```bash
-    python -m venv .venv
-    source .venv/bin/activate  # On Windows, use `.venv\Scripts\activate`
-    ```
-
-3.  **Install dependencies:**
-    ```bash
-    pip install -r requirements_lock_3_13.txt
-    ```
-    
-4.   **FFmpeg:** You must have FFmpeg installed on your system and available in your system's PATH. This is required for automatic audio preprocessing.
+**FFmpeg:** You must have FFmpeg installed on your system and available in your system's PATH. This is required for automatic audio preprocessing.
 *  **On Windows:** Download from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) and follow their instructions to add it to your PATH.
 *  **On macOS (using Homebrew):** `brew install ffmpeg`
 *  **On Debian/Ubuntu:** `sudo apt update && sudo apt install ffmpeg`
@@ -91,7 +73,7 @@ training_data/
 2.  **Run the Trainer:** Execute the following command. The engine will handle everything else.
 
     ```bash
-    python -m nanowakeword.train --training_config ./training_config.yaml --auto-config --generate_clips --augment_clips --train_model --overwrite
+    nanowakeword-train --training_config ./path/to/config.yaml --auto-config --generate_clips --augment_clips --train_model --overwrite
     ```
 
 ### Detailed Workflow
