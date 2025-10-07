@@ -38,7 +38,6 @@
 Nanowakeword will be available on PyPI soon!
 
 ```bash
-# Coming soon to PyPI!
 pip install nanowakeword
 ```
 
