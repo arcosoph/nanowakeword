@@ -24,6 +24,8 @@ import traceback
 from tqdm import tqdm
 import os
 from nanowakeword.utils.audio_processing import download_file
+import numpy as np
+import scipy.signal as sps
 
 try:
     from nanowakeword import PROJECT_ROOT
@@ -64,34 +66,20 @@ def generate_samples(
     Uses a specific Piper TTS model to generate audio samples from text.
     This version includes robust debugging, introspection, and configuration handling.
     """
-    # if not model_path or not os.path.exists(model_path):
-    #     _LOGGER.error(f"Piper voice model not found at the specified path: {model_path}")
-    #     return
-
-    # _LOGGER.info(f"Loading Piper model from {model_path}")
-    
-
-
-    # if model_path is None:
-  
-    #     default_model_path = PROJECT_ROOT / "resources" / "tts_models" / "en_US-ryan-high.onnx"
-    #     model_path = default_model_path.as_posix()
-    #     _LOGGER.info(f"Model path not provided, using default location: {model_path}")
 
     import os
     from pathlib import Path
     from nanowakeword.utils.download_file import download_file
 
-    # default_model_path = PROJECT_ROOT / "resources" / "tts_models" / "en_US-ryan-high.onnx"
     # Model path
-    model_path = PROJECT_ROOT / "resources" / "tts_models" / "en_US-ryan-high.onnx"
+    model_path = PROJECT_ROOT / "resources" / "tts_models" / "en_US-ryan-low.onnx"
 
     # Folder create korbo jodi na thake
     model_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Hugging Face ONNX URL
-    onnx_url = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/en_US-ryan-high.onnx"
-    json_url = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/high/en_US-ryan-high.onnx.json"
+    onnx_url = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/low/en_US-ryan-low.onnx"
+    json_url = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/ryan/low/en_US-ryan-low.onnx.json"
 
     # File check + download
     if not model_path.exists():
@@ -132,13 +120,16 @@ def generate_samples(
     else:
         file_map = [ (prompt, f"sample_{i}_{hash(prompt) % 10000}.wav") for i, prompt in enumerate(text_prompts) ]
 
+    TARGET_SAMPLE_RATE = 16000
     _LOGGER.info(f"Generating {len(file_map)} samples...")
 
     for index, (text_prompt, out_file) in enumerate(file_map):
         try:
             out_path = os.path.join(output_dir, out_file)
             
+            # audio_generator = voice.synthesize(text_prompt, output_format="int16")
             audio_generator = voice.synthesize(text_prompt)
+
             
             all_audio_bytes = []
             for audio_chunk in audio_generator:
@@ -153,25 +144,33 @@ def generate_samples(
                 _LOGGER.warning(f"No audio data was generated for text: '{text_prompt}'. Skipping file creation.")
                 continue
 
-            with wave.open(out_path, "wb") as audio_file:
+            source_sample_rate = voice.config.sample_rate
+
+            audio_array = np.frombuffer(audio_bytes, dtype=np.int16)
+
+            if source_sample_rate != TARGET_SAMPLE_RATE:
+                _LOGGER.debug(f"Resampling from {source_sample_rate} Hz to {TARGET_SAMPLE_RATE} Hz...")
+                num_samples = int(len(audio_array) * TARGET_SAMPLE_RATE / source_sample_rate)
+                resampled_audio = sps.resample(audio_array, num_samples)
                 
-                channels = getattr(voice.config, 'num_channels', 1)  # Default: 1 (Mono)
-                width = getattr(voice.config, 'sample_width', 2) # Default: 2 (16-bit)
-                rate = getattr(voice.config, 'sample_rate', voice.config.sample_rate) 
+                
+                final_audio_array = resampled_audio.astype(np.int16)
+            else:
+                final_audio_array = audio_array
 
-                audio_file.setnchannels(channels)
-                audio_file.setsampwidth(width)
-                audio_file.setframerate(rate)
-                audio_file.writeframes(audio_bytes)
-
-            if (index + 1) % batch_size == 0 or (index + 1) == len(file_map):
-                 _LOGGER.info(f"Generated {index + 1}/{len(file_map)} samples...")
+    
+            with wave.open(out_path, "wb") as audio_file:
+                audio_file.setnchannels(1)  # Mono
+                audio_file.setsampwidth(2) # 16-bit
+                audio_file.setframerate(TARGET_SAMPLE_RATE) # 16000 Hz
+                audio_file.writeframes(final_audio_array.tobytes())
 
         except Exception as e:
             _LOGGER.error(f"An unexpected error occurred during generation for '{text_prompt}': {e}")
             _LOGGER.error(traceback.format_exc())
             continue
-    
+
+
     _LOGGER.info("Sample generation complete.")
 
 
