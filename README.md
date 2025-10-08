@@ -34,10 +34,14 @@
 
 ### Installation
 
-NanoWakeWord is now also available on PyPI!
-
+Install the lightweight core package for **inference**:
 ```bash
 pip install nanowakeword
+```
+
+To **train your own models**, install the full package with all training dependencies:
+```bash
+pip install "nanowakeword[train]"
 ```
 
 **FFmpeg:** You must have FFmpeg installed on your system and available in your system's PATH. This is required for automatic audio preprocessing.
