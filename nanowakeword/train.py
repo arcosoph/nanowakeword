@@ -781,9 +781,9 @@ class Model(nn.Module):
 
 # # Separate function to convert onnx models to tflite format
 def convert_onnx_to_tflite(onnx_model_path, output_path):
-    """The latest Python <3.12 version does not support NanoWakeWord v1.1.0 to convert the ONNX version of 
+    """The latest Python <3.12 version does not support current NanoWakeWord to convert the ONNX version of 
     the NanoWakeWord model to the TensorFlow Tflight format."""
-    print("The latest Python <3.12 version does not support NanoWakeWord v1.1.0 to convert the ONNX version of the NanoWakeWord model to the TensorFlow Tflight format.")
+    print("The latest Python <3.12 version does not support current NanoWakeWord to convert the ONNX version of the NanoWakeWord model to the TensorFlow Tflight format.")
 
     import onnx
     from onnx_tf.backend import prepare

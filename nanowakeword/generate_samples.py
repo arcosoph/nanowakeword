@@ -86,7 +86,7 @@ def generate_samples(
         print("Model not found. Downloading...")
         download_file(onnx_url, target_directory=model_path.parent.as_posix())
         download_file(json_url, target_directory=model_path.parent.as_posix())
-        print("Download complete.")
+        print("Download complete. You can manually download the model of your choice if you want.")
     
 
 
