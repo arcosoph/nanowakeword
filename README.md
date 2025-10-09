@@ -44,7 +44,7 @@ To **train your own models**, install the full package with all training depende
 pip install "nanowakeword[train]"
 ```
 
-**FFmpeg:** You must have FFmpeg installed on your system and available in your system's PATH. This is required for automatic audio preprocessing.
+**FFmpeg:** If you want to train your model you must have FFmpeg installed on your system and available in your system's PATH. This is required for automatic audio preprocessing.
 *  **On Windows:** Download from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) and follow their instructions to add it to your PATH.
 *  **On macOS (using Homebrew):** `brew install ffmpeg`
 *  **On Debian/Ubuntu:** `sudo apt update && sudo apt install ffmpeg`
