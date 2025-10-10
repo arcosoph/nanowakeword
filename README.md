@@ -101,7 +101,7 @@ The command above performs the following steps automatically:
 | `--train_model`     | Activates the final model training step.                                             |
 | `--overwrite`       | If present, overwrites existing feature files during the augmentation step.          |
 
-## Configuration (`training_config.yaml`)
+## Configuration (`config.yaml`)
 
 The `config.yaml` file is the central control center. While `--auto-config` handles most settings, you must specify the essential paths.
 
