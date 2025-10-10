@@ -1,0 +1,8 @@
+# MANIFEST.in
+
+# Include the entire 'resources' directory recursively
+recursive-include nanowakeword/resources *
+
+# Also include other important root-level files
+include README.md
+include LICENSE
