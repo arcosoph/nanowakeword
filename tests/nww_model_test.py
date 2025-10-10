@@ -74,11 +74,11 @@ except Exception as e:
     traceback.print_exc()
 finally:
     if stream and stream.is_active():
-        print("🎙️ Closing microphone stream...")
+        print("Closing microphone stream...")
         stream.stop_stream()
         stream.close()
     if pa:
-        print("🎧 Releasing PyAudio resources...")
+        print("Releasing PyAudio resources...")
         pa.terminate()
     print("Goodbye!")
 
