@@ -114,8 +114,8 @@ wakeword_data_path: "./training_data/positive" #(REQUIRED)
 
 # Model type: "dnn", "lstm", "gru", "cnn", "rnn" 
 model_type: dnn # Or other architectures such as `LSTM` #(REQUIRED)
-total_length: 32000
 layer_size: 128
+n_blocks: 3
 # ... and other manual settings ...
 ```
 *For a full explanation of all parameters, please see the `training_config.yaml` file in the `examples` folder.*
