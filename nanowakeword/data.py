@@ -12,6 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# ================================
+# Modified and maintained by: Abid
+# ================================
+
 # imports
 from multiprocessing.pool import ThreadPool
 import os
@@ -893,8 +897,8 @@ def trim_mmap(mmap_path):
 
 
 import torch
-from dp.preprocessing.text import Preprocessor, LanguageTokenizer
-from dp.preprocessing.text import SequenceTokenizer
+from phonemize.preprocessing.text import Preprocessor, LanguageTokenizer
+from phonemize.preprocessing.text import SequenceTokenizer
 
 # Add SequenceTokenizer to safe globals
 torch.serialization.add_safe_globals([Preprocessor, LanguageTokenizer, SequenceTokenizer])
@@ -947,7 +951,7 @@ def generate_adversarial_texts(input_text: str, N: int, include_partial_phrase: 
                         f.write(chunk)
 
         # Create phonemizer object
-        from dp.phonemizer import Phonemizer
+        from phonemize.phonemizer import Phonemizer
         phonemizer = Phonemizer.from_checkpoint(phonemizer_mdl_path)
 
     for phones, word in zip(input_text_phones, input_text.split()):
