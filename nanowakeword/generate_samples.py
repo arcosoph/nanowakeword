@@ -44,8 +44,8 @@ except ImportError:
 try:
     from piper.voice import PiperVoice
 except ImportError:
-    print("CRITICAL ERROR: 'piper-python' is not installed or not in the Python path.")
-    print("Please install it using: pip install piper-lang")
+    print("CRITICAL ERROR: 'piper-tts' is not installed or not in the Python path.")
+    print("Please install it using: pip install piper-tts")
     sys.exit(1)
 
 _LOGGER = logging.getLogger("generate_samples")
