@@ -9,7 +9,7 @@ __all__ = ['Model', 'VAD', 'train_custom_verifier']
 MODELS = {
     "nanowakeword-lstm-base": {
         "model_path": os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources/models/nanowakeword-lstm-base.onnx"),
-        "download_url": "https://huggingface.co/arcosoph/nanowakeword-lstm-base/blob/main/nanowakeword-lstm-base.onnx"
+        "download_url": "https://huggingface.co/arcosoph/nanowakeword-lstm-base/resolve/main/nanowakeword-lstm-base.onnx"
     }
 
 }
