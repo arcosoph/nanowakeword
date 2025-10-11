@@ -1,7 +1,7 @@
 acoustics
 audiomentations
 Cython
-dp
+phonemize
 Flask
 importlib_resources
 librosa
