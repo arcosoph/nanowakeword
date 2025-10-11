@@ -51,7 +51,7 @@ train  = [
     "acoustics",
     "audiomentations",
     "Cython",
-    "dp",
+    "phonemize",
     "Flask",
     "importlib_resources",
     "librosa",
@@ -92,4 +92,5 @@ where = ["."]
 include = ["nanowakeword*"] # nanowakeword 
 
 [project.scripts]
+
 nanowakeword-train = "nanowakeword.train:main"
