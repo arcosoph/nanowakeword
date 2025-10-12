@@ -14,7 +14,8 @@
 [![Python](https://img.shields.io/pypi/pyversions/nanowakeword.svg)](https://pypi.org/project/nanowakeword/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-orange.svg)](https://github.com/arcosoph/nanowakeword/blob/main/LICENSE)
 [![Downloads](https://img.shields.io/pypi/dm/nanowakeword?label=downloads&color=green)](https://pypi.org/project/nanowakeword/)
-[![GitHub stars](https://img.shields.io/github/stars/arcosoph/nanowakeword?style=social)](https://github.com/arcosoph/nanowakeword)
+[![Last Commit](https://img.shields.io/github/last-commit/arcosoph/nanowakeword)](https://github.com/arcosoph/nanowakeword/commits/main)
+<!-- [![GitHub stars](https://img.shields.io/github/stars/arcosoph/nanowakeword?style=social)](https://github.com/arcosoph/nanowakeword) -->
 </div>
 
 ---
