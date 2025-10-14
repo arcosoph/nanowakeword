@@ -27,7 +27,7 @@ background_paths: #(REQUIRED)
   - ./training_data/noise
 rir_paths: #(REQUIRED)
   - ./training_data/rir
-background_paths_duplication_rate:
+background_paths_duplication_rate: # (REQUIRED) ⚠️ But the next update will become optional.
   - 1
 
 
@@ -59,7 +59,7 @@ tts_batch_size: 128
 augmentation_rounds: 10
 
 # Number of clips processed per batch during augmentation.
-augmentation_batch_size: 128
+augmentation_batch_size: 128 # (REQUIRED) ⚠️ But the next update will become optional.
 
 
 # ===========================================
