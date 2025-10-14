@@ -19,6 +19,24 @@
 </div>
 
 ---
+### **Short Notice**
+
+**Subject: Upcoming API Change: `train.py` will become `trainer.py`**
+
+  **Heads-up: API Improvement Coming Soon!**
+
+To make our library more intuitive, we're renaming some key components in the next release.
+
+1.  The file `nanowakeword/train.py` will be renamed to `nanowakeword/trainer.py`.
+2.  The main function `main()` will be renamed to `train()`.
+
+**New Usage in Python:**
+```python
+from nanowakeword.trainer import train
+train(args)
+```
+The `nanowakeword-train` CLI command will **not** be affected. This change improves code clarity and follows standard ML conventions.
+
 
 ## Key Features
 
