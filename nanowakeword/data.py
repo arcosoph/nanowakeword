@@ -12,32 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# ================================
-# Modified and maintained by: Abid
-# ================================
-
 # imports
-from multiprocessing.pool import ThreadPool
 import os
 import re
-import logging
-from functools import partial
-from pathlib import Path
-import random
-from tqdm import tqdm
-from typing import List, Tuple
-import numpy as np
-import itertools
-import pronouncing
 import torch
-import audiomentations
-import torch_audiomentations
-from numpy.lib.format import open_memmap
-from speechbrain.dataio.dataio import read_audio
-from speechbrain.processing.signal_processing import reverberate
-import torchaudio
+import random
+import logging
 import mutagen
 import acoustics
+import itertools
+import torchaudio
+import numpy as np
+import pronouncing
+from tqdm import tqdm
+import audiomentations
+from pathlib import Path
+import torch_audiomentations
+from functools import partial
+from typing import List, Tuple
+from numpy.lib.format import open_memmap
+from multiprocessing.pool import ThreadPool
+from speechbrain.dataio.dataio import read_audio
+from speechbrain.processing.signal_processing import reverberate
 
 
 # Load audio clips and structure into clips of the same length
@@ -937,18 +933,23 @@ def generate_adversarial_texts(input_text: str, N: int, include_partial_phrase: 
 
     # Download phonemizer model for OOV words, if needed
     if [] in input_text_phones:
-        phonemizer_mdl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources", "en_us_cmudict_forward.pt")
-        if not os.path.exists(os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources")):
-            os.mkdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "resources"))
+        phonemizer_mdl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                        "resources", "phonemizer_model", "phonemize_m1.pt")
+
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(phonemizer_mdl_path), exist_ok=True)
+
+        # Download if the file does not exist
         if not os.path.exists(phonemizer_mdl_path):
-            logging.warning("Downloading phonemizer model from DeepPhonemizer library...")
             import requests
-            file_url = "https://public-asai-dl-models.s3.eu-central-1.amazonaws.com/DeepPhonemizer/en_us_cmudict_forward.pt"
+            file_url = "https://github.com/arcosoph/phonemize/releases/download/v0.2.0/phonemize_m1.pt"
+            logging.warning(f"Downloading phonemizer model from {file_url}...")
             r = requests.get(file_url, stream=True)
             with open(phonemizer_mdl_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=2048):
                     if chunk:
                         f.write(chunk)
+
 
         # Create phonemizer object
         from phonemize.phonemizer import Phonemizer
@@ -959,7 +960,7 @@ def generate_adversarial_texts(input_text: str, N: int, include_partial_phrase: 
             word_phones.extend(phones)
         elif phones == []:
             logging.warning(f"The word '{word}' was not found in the pronunciation dictionary! "
-                            "Using the DeepPhonemizer library to predict the phonemes.")
+                            "Using the Phonemize library to predict the phonemes.")
             phones = phonemizer(word, lang='en_us')
             logging.warning(f"Phones for '{word}': {phones}")
             word_phones.append(re.sub(r"[\]|\[]", "", re.sub(r"\]\[", " ", phones)))

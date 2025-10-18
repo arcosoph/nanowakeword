@@ -10,6 +10,7 @@
 
 **NanoWakeWord is a next-generation, fully automated framework for creating high-performance, custom wake word models. It's not just a tool; it's an intelligent engine that analyzes your data and crafts the perfect training strategy for you.**
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb)
 [![PyPI](https://badge.fury.io/py/nanowakeword.svg)](https://badge.fury.io/py/nanowakeword)
 [![Python](https://img.shields.io/pypi/pyversions/nanowakeword.svg)](https://pypi.org/project/nanowakeword/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-orange.svg)](https://github.com/arcosoph/nanowakeword/blob/main/LICENSE)
@@ -19,24 +20,6 @@
 </div>
 
 ---
-### **Short Notice**
-
-**Subject: Upcoming API Change: `train.py` will become `trainer.py`**
-
-  **Heads-up: API Improvement Coming Soon!**
-
-To make our library more intuitive, we're renaming some key components in the next release.
-
-1.  The file `nanowakeword/train.py` will be renamed to `nanowakeword/trainer.py`.
-2.  The main function `main()` will be renamed to `train()`.
-
-**New Usage in Python:**
-```python
-from nanowakeword.trainer import train
-train(args)
-```
-The `nanowakeword-train` CLI command will **not** be affected. This change improves code clarity and follows standard ML conventions.
-
 
 ## Key Features
 

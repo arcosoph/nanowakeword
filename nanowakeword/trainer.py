@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# (✿◕‿◕✿)
 
 import os
 import sys
@@ -805,7 +806,7 @@ def convert_onnx_to_tflite(onnx_model_path, output_path):
 
 
 
-def main():
+def train(cli_args=None):
     # Get training config file
     parser = argparse.ArgumentParser()
 
@@ -851,7 +852,7 @@ def main():
         default="False",
         required=False
     )
-    args = parser.parse_args()
+    args = parser.parse_args(cli_args)
 
 #=====
     print_banner()
@@ -887,12 +888,13 @@ def main():
         from nanowakeword.config_generator import ConfigGenerator
         
         try:
+
             analyzer = DatasetAnalyzer(
                 positive_path=config["wakeword_data_path"],
                 negative_path=config["background_data_path"],
-                noise_path=config["background_paths"][0],
+                noise_path=config.get("background_paths", []), 
                 rir_path=config["rir_paths"][0]
-            )
+            ) 
             dataset_stats = analyzer.analyze()
            
             print_table(dataset_stats, "Dataset Statistics")
@@ -921,13 +923,13 @@ def main():
     if not os.path.exists(os.path.join(config["output_dir"], config["model_name"])):
         os.mkdir(os.path.join(config["output_dir"], config["model_name"]))
 
-# Ensure directories exist (modified)
+    # Ensure directories exist 
     positive_train_output_dir = os.path.join(config["output_dir"], config["model_name"], "positive_train")
     positive_test_output_dir = os.path.join(config["output_dir"], config["model_name"], "positive_test")
     negative_train_output_dir = os.path.join(config["output_dir"], config["model_name"], "negative_train")
     negative_test_output_dir = os.path.join(config["output_dir"], config["model_name"], "negative_test")
     feature_save_dir = os.path.join(config["output_dir"], config["model_name"])
-    # Ensure directories exist (modified)
+    # Ensure directories exist 
     os.makedirs(os.path.join(feature_save_dir, "positive_train"), exist_ok=True)
     os.makedirs(os.path.join(feature_save_dir, "positive_test"), exist_ok=True)
     os.makedirs(os.path.join(feature_save_dir, "negative_train"), exist_ok=True)
@@ -941,92 +943,91 @@ def main():
     for background_path, duplication_rate in zip(config["background_paths"], config["background_paths_duplication_rate"]):
         background_paths.extend([i.path for i in os.scandir(background_path)]*duplication_rate)
 
-    
-    if args.generate_clips:
-       
-        print_step_header(2,"Activating Synthetic Data Generation")
-       
-        n_pos_train, n_neg_train, n_pos_test, n_neg_test = 0, 0, 0, 0
-        positive_output_dir_train = positive_train_output_dir
-        negative_output_dir_train = negative_train_output_dir
 
-        if 'data_generation_plan' in config and args.auto_config:
-            
-            print_info("Using intelligent data harmonization plan for TRAINING samples.")
+
+    if args.generate_clips:
+        print_step_header(2, "Activating Synthetic Data Generation Engine")
+
+        # --- Step 2.1: Acquire the Target Phrase ---
+        target_phrase = config.get("target_phrase")
+        if not target_phrase:
+            print("\n" + "=" * 80)
+            print("[CONFIGURATION NOTICE]: 'target_phrase' is not set in your config file.")
+            print("This is required to generate positive audio samples.")
+            print("=" * 80)
+            try:
+                user_input = input(">>> Please enter the target phrase to proceed: ").strip()
+                if not user_input:
+                    print("\n[ABORT] A target phrase is mandatory for generation. Exiting.")
+                    sys.exit(1)
+                target_phrase = [user_input]
+                print_info(f"Using runtime target phrase: '{user_input}'")
+            except (KeyboardInterrupt, EOFError):
+                print("\n\nOperation cancelled by user.")
+                sys.exit()
+
+        # --- Step 2.2: Define Data Generation Plan ---
+        use_auto_plan = 'data_generation_plan' in config and args.auto_config
+        
+        if use_auto_plan:
+            print_info("Using intelligent data plan for sample counts.")
             plan = config['data_generation_plan']
-            pos_hours = plan.get('generate_positive_hours', 0.0)
-            neg_hours = plan.get('generate_negative_hours', 0.0)
-            n_pos_train = int((pos_hours * 3600) / 2)
-            n_neg_train = int((neg_hours * 3600) / 2)
-            
-            
-            positive_output_dir_train = config["wakeword_data_path"]
-            negative_output_dir_train = config["background_data_path"]
+            n_pos_train = int(plan.get('generate_positive_hours', 0.0) * 1800)
+            n_neg_train = int(plan.get('generate_negative_hours', 0.0) * 1800)
         else:
-            
-            print_info("Using 'n_samples' from config file for TRAINING samples.")
+            print_info("Using 'n_samples' from config file for sample counts.")
             n_pos_train = config.get("n_samples", 100)
             n_neg_train = config.get("n_samples", 100)
 
-      
-        n_pos_test = config.get("n_samples_val", 20)
-        n_neg_test = config.get("n_samples_val", 20)
- 
-        
-        if n_pos_train > 0:
-            print_info(f"Generating {n_pos_train} positive clips for training to '{positive_output_dir_train}'...")
-            os.makedirs(positive_output_dir_train, exist_ok=True)
-            generate_samples(
-                text=config["target_phrase"], max_samples=n_pos_train,
-                output_dir=positive_output_dir_train, batch_size=config.get("tts_batch_size", 256)
-            )
-            torch.cuda.empty_cache() if torch.cuda.is_available() else None
+        # A unified structure for all generation tasks
+        generation_plan = {
+            "Positive_Train": {
+                "count": n_pos_train,
+                "texts": target_phrase,
+                "output_dir": config["wakeword_data_path"] if use_auto_plan else positive_train_output_dir,
+                "batch_size": config.get("tts_batch_size", 256)
+            },
+            "Positive_Test": {
+                "count": config.get("n_samples_val", 20),
+                "texts": target_phrase,
+                "output_dir": positive_test_output_dir,
+                "batch_size": config.get("tts_batch_size", 256)
+            },
+            "Adversarial_Train": {
+                "count": n_neg_train,
+                "texts": config.get("custom_negative_phrases", []) + generate_adversarial_texts(target_phrase[0], N=n_neg_train),
+                "output_dir": config["background_data_path"] if use_auto_plan else negative_train_output_dir,
+                "batch_size": config.get("tts_batch_size", 256) // 4
+            },
+            "Adversarial_Test": {
+                "count": config.get("n_samples_val", 20),
+                "texts": config.get("custom_negative_phrases", []) + generate_adversarial_texts(target_phrase[0], N=config.get("n_samples_val", 20)),
+                "output_dir": negative_test_output_dir,
+                "batch_size": config.get("tts_batch_size", 256) // 4
+            }
+        }
 
-       
-        if n_neg_train > 0:
-            print_info(f"Generating {n_neg_train} adversarial negative clips for training to '{negative_output_dir_train}'...")
-            os.makedirs(negative_output_dir_train, exist_ok=True)
-            adversarial_texts = config.get("custom_negative_phrases", [])
-            if config.get("target_phrase"):
-                adversarial_texts.extend(generate_adversarial_texts(
-                    input_text=config["target_phrase"][0], N=n_neg_train
-                ))
-            if adversarial_texts:
+        # --- Step 2.3: Execute the Generation Plan ---
+        print_info(f"Initiating data generation pipeline for phrase: '{target_phrase[0]}'")
+        for task_name, params in generation_plan.items():
+            if params["count"] > 0 and params["texts"]:
+                print_info(f"Executing task '{task_name}': {params['count']} clips -> '{params['output_dir']}'")
+                os.makedirs(params["output_dir"], exist_ok=True)
+                
                 generate_samples(
-                    text=adversarial_texts, max_samples=n_neg_train,
-                    output_dir=negative_output_dir_train, batch_size=config.get("tts_batch_size", 256) // 4
+                    text=params["texts"],
+                    max_samples=params["count"],
+                    output_dir=params["output_dir"],
+                    batch_size=params["batch_size"]
                 )
-                torch.cuda.empty_cache() if torch.cuda.is_available() else None
+                
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
-       
-        if n_pos_test > 0:
-            print_info(f"Generating {n_pos_test} positive clips for testing to '{positive_test_output_dir}'...")
-            os.makedirs(positive_test_output_dir, exist_ok=True)
-            generate_samples(
-                text=config["target_phrase"], max_samples=n_pos_test,
-                output_dir=positive_test_output_dir, batch_size=config.get("tts_batch_size", 256)
-            )
-            torch.cuda.empty_cache() if torch.cuda.is_available() else None
+        print_info("Synthetic data generation process finished successfully.\n")
 
-       
-        if n_neg_test > 0:
-            print_info(f"Generating {n_neg_test} adversarial negative clips for testing to '{negative_test_output_dir}'...")
-            os.makedirs(negative_test_output_dir, exist_ok=True)
-            adversarial_texts = config.get("custom_negative_phrases", [])
-            if config.get("target_phrase"):
-                adversarial_texts.extend(generate_adversarial_texts(
-                    input_text=config["target_phrase"][0], N=n_neg_test
-                ))
-            if adversarial_texts:
-                generate_samples(
-                    text=adversarial_texts, max_samples=n_neg_test,
-                    output_dir=negative_test_output_dir, batch_size=config.get("tts_batch_size", 256) // 4
-                )
-                torch.cuda.empty_cache() if torch.cuda.is_available() else None
-        
-        print_info("Synthetic data generation process finished.\n")
 
-# --->>>
+
 # Based on the median clip duration created, determine the total length of the training clips,
 #  rounded to the nearest 1000 samples, and if the median is close to +750 milliseconds, set it to 32000,
 #  as this is a good default value.
@@ -1099,6 +1100,8 @@ def main():
                                                           RIR_paths=rir_paths,
                                                           augmentation_probabilities=aug_probs)
 
+
+
             # Compute features and save to disk via memmapped arrays
             print_step_header(3, "Computing Nanowakeword features for generated samples")
             n_cpus = os.cpu_count()
@@ -1106,6 +1109,7 @@ def main():
                 n_cpus = 1
             else:
                 n_cpus = n_cpus//2
+                
             compute_features_from_generator(positive_clips_train_generator, n_total=len(os.listdir(config["wakeword_data_path"])),
                                             clip_duration=config["total_length"],
                                             output_file=os.path.join(feature_save_dir, "positive_features_train.npy"),
@@ -1134,39 +1138,53 @@ def main():
                                             ncpu=n_cpus if not torch.cuda.is_available() else 1)
         
             
-          
-            batch_comp_config = config.get('batch_composition', {})
-            source_dist = batch_comp_config.get('source_distribution', {})
-            
-            if source_dist.get('pure_noise', 0) > 0:
-                               
-                noise_source_paths = config.get("background_paths", [])
-                pure_noise_clips = [str(i) for j in noise_source_paths for i in Path(j).glob("*.wav")]
-                
-                if pure_noise_clips:
-                    
-                    noise_aug_rounds = max(1, config.get("augmentation_rounds", 5) // 2)
-                    
-                    pure_noise_generator = augment_clips(
-                        pure_noise_clips * noise_aug_rounds,
-                        total_length=config["total_length"],
-                        batch_size=config["augmentation_batch_size"],
-                        background_clip_paths=background_paths,
-                        RIR_paths=rir_paths,
-                        augmentation_probabilities=aug_probs
-                    )  
 
-                    compute_features_from_generator(pure_noise_generator, n_total=len(pure_noise_clips) * noise_aug_rounds,
-                        clip_duration=config["total_length"], 
-                        output_file=os.path.join(feature_save_dir, "pure_noise_features.npy"),
-                        device="gpu" if torch.cuda.is_available() else "cpu",
-                        ncpu=n_cpus if not torch.cuda.is_available() else 1
-                    )
-                else:
-                    print_info("WARNING: No audio files found in 'background_paths' to create pure_noise features.")
+            batch_comp_config = config.get('batch_composition')
+            
+            if not batch_comp_config:
+                print_info("[CONFIG NOTICE] 'batch_composition' not found. Applying a robust default strategy.")
+                batch_comp_config = {
+                    'batch_size': 128,
+                    'source_distribution': {'positive': 30, 'negative_speech': 50, 'pure_noise': 20}
+                }
+            
+            source_dist = batch_comp_config.get('source_distribution', {})
+
+            # Generate pure noise features if the strategy requires it and they don't already exist.
+            if source_dist.get('pure_noise', 0) > 0:
+                pure_noise_output_path = os.path.join(feature_save_dir, "pure_noise_features.npy")
+                
+                if not os.path.exists(pure_noise_output_path) or args.overwrite:
+                    noise_source_paths = config.get("background_paths", [])
+                    pure_noise_clips = [str(i) for j in noise_source_paths for i in Path(j).glob("*.wav")]
+                    
+                    if pure_noise_clips:
+                        noise_aug_rounds = max(1, config.get("augmentation_rounds", 5) // 2)
+                        
+                        pure_noise_generator = augment_clips(
+                            pure_noise_clips * noise_aug_rounds,
+                            total_length=config["total_length"],
+                            batch_size=config["augmentation_batch_size"],
+                            background_clip_paths=background_paths,
+                            RIR_paths=rir_paths,
+                            augmentation_probabilities=aug_probs
+                        )
+                        
+                        compute_features_from_generator(
+                            pure_noise_generator,
+                            n_total=len(pure_noise_clips) * noise_aug_rounds,
+                            clip_duration=config["total_length"],
+                            output_file=pure_noise_output_path,
+                            device="gpu" if torch.cuda.is_available() else "cpu",
+                            ncpu=n_cpus if not torch.cuda.is_available() else 1
+                        )
+                    else:
+                        print_info("[WARNING] 'pure_noise' is configured, but no audio files were found in 'background_paths'.")
+            
 
         else:
-            logging.warning("Nanowakeword features already exist, skipping data augmentation and feature generation")
+            logging.warning("Nanowakeword features already exist, skipping augmentation and feature generation. Verify existing files.")
+
 
 
 
@@ -1323,4 +1341,4 @@ def main():
                                os.path.join(config["output_dir"], config["model_name"] + ".tflite"))
         
 if __name__ == '__main__':
-    main()
+    train()

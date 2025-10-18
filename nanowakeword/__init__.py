@@ -1,9 +1,8 @@
 import os
 from nanowakeword.model import Model
 from nanowakeword.vad import VAD
-from nanowakeword.custom_verifier_model import train_custom_verifier
 
-__all__ = ['Model', 'VAD', 'train_custom_verifier']
+__all__ = ['Model', 'VAD']
 
 
 MODELS = {

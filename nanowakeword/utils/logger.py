@@ -33,9 +33,9 @@ def print_banner():
 
 """
 
-    version = "1.0.0" 
+ 
     
-    console.print(f"\n[bold cyan]{banner_art}[/bold cyan] [bold]NanoWakeWord[/bold] v{version}")
+    console.print(f"\n[bold cyan]{banner_art}[/bold cyan]")
     console.print("-" * 40)
 
 

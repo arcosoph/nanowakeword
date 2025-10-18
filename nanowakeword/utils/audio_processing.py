@@ -7,12 +7,9 @@ from multiprocessing.pool import ThreadPool
 from multiprocessing import Process, Queue
 import time
 import logging
-from tqdm import tqdm
 import nanowakeword
 from numpy.lib.format import open_memmap
 from typing import Union, List, Callable, Deque
-import requests
-
 
 # Base class for computing audio features using Google's speech_embedding
 # model (https://tfhub.dev/google/speech_embedding/1)
@@ -53,20 +50,13 @@ class AudioFeatures():
             except ImportError:
                 raise ValueError("Tried to import onnxruntime, but it was not found. Please install it using `pip install onnxruntime`")
 
-            # if melspec_model_path == "":
-            #     melspec_model_path = os.path.join(pathlib.Path(__file__).parent.resolve(), "resources", "models", "melspectrogram.onnx")
-            # if embedding_model_path == "":
-            #     embedding_model_path = os.path.join(pathlib.Path(__file__).parent.resolve(), "resources", "models", "embedding_model.onnx")
-
+        
             from nanowakeword import PROJECT_ROOT
             import os
 
             melspec_model_path = str(PROJECT_ROOT / "resources" / "models" / "melspectrogram.onnx")
             embedding_model_path = str(PROJECT_ROOT / "resources" / "models" / "embedding_model.onnx")
 
-            # ROOT_DIR = os.path.dirname(os.path.dirname(__file__))  # এক ধাপ উপরে গিয়ে nanowakeword/
-            # melspec_model_path = os.path.join(ROOT_DIR, "resources", "models", "melspectrogram.onnx")
-            # embedding_model_path = os.path.join(ROOT_DIR, "resources", "models", "embedding_model.onnx")
 
 
             if ".tflite" in melspec_model_path or ".tflite" in embedding_model_path:
@@ -558,6 +548,7 @@ def compute_features_from_generator(generator, n_total, clip_duration, output_fi
     """
     # Function specific imports
     from nanowakeword.data import trim_mmap
+    from tqdm import tqdm
 
     # Create audio features object
     F = AudioFeatures(device=device)
@@ -601,6 +592,10 @@ def compute_features_from_generator(generator, n_total, clip_duration, output_fi
 
 # Function to download files from a URL with a progress bar
 def download_file(url, target_directory, file_size=None):
+
+    import requests  
+    from tqdm import tqdm
+    
     """A simple function to download a file from a URL with a progress bar using only the requests library"""
     local_filename = url.split('/')[-1]
 

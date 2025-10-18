@@ -18,19 +18,18 @@
 
 
 # Imports
-import numpy as np
-import nanowakeword
-from nanowakeword.utils.audio_processing import AudioFeatures, re_arg
-
-import wave
 import os
+import time
+import wave
+import pickle
 import logging
 import functools
-import pickle
-from collections import deque, defaultdict
+import numpy as np
+import nanowakeword
 from functools import partial
-import time
+from collections import deque, defaultdict
 from typing import List, Union, DefaultDict, Dict
+from nanowakeword.utils.audio_processing import AudioFeatures, re_arg
 
 
 # Define main model class
@@ -124,8 +123,8 @@ class Model():
                     return tflite_interpreter.get_tensor(output_index)[None, ]
 
             except ImportError:
-                logging.warning("Tried to import the tflite runtime, but it was not found. "
-                                "Trying to switching to onnxruntime instead, if appropriate models are available.")
+                logging.warning("TFLite runtime not found. Falling back to ONNX Runtime if suitable models are available.")
+                                
                 if wakeword_models != [] and all(['.onnx' in i for i in wakeword_models]):
                     inference_framework = "onnx"
                 elif wakeword_models != [] and all([os.path.exists(i.replace('.tflite', '.onnx')) for i in wakeword_models]):

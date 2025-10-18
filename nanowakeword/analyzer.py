@@ -1,11 +1,11 @@
 # Copyright 2025 Arcosoph. All rights reserved.
-#
+
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-#
+
 #     http://www.apache.org/licenses/LICENSE-2.0
-#
+
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -37,7 +37,7 @@ class DatasetAnalyzer:
     Analyzes audio datasets to extract key statistical features for the
     Intelligent Configuration Engine.
     """
-    def __init__(self, positive_path, negative_path, noise_path, rir_path):
+    def __init__(self, positive_path, negative_path, noise_path: list, rir_path):
         """
         Initializes the analyzer with paths to the clean, processed datasets.
 
@@ -68,7 +68,7 @@ class DatasetAnalyzer:
 
 
 
-    def _analyze_duration_and_power(self, file_paths):
+    def _analyze_duration_and_power(self, file_paths, desc="files"):
         """
         Calculates total duration and average RMS power for a list of audio files.
         RMS power is used as a proxy for loudness.
@@ -125,14 +125,32 @@ class DatasetAnalyzer:
             duration_secs, _ = self._analyze_duration_and_power(neg_files)
             self.stats['H_neg'] = duration_secs / 3600  
 
-        # --- Noise Clips Analysis ---
-        noise_files = self._get_directory_files(self.paths['noise'])
-        self.stats['H_noise'] = 0
-        self.stats['A_noise'] = 0
-        if noise_files:
-            duration_secs, avg_rms = self._analyze_duration_and_power(noise_files)
-            self.stats['H_noise'] = duration_secs / 3600  
-            self.stats['A_noise'] = avg_rms  
+       
+        all_noise_duration = 0
+        all_noise_rms = 0
+        num_noise_files = 0
+        self.stats['H_noise_paths'] = {} # for ConfigGenerator
+
+        background_paths = self.paths.get('noise', []) # `__init__` 
+        
+        for path in background_paths:
+            if not path: continue
+            
+            noise_files = self._get_directory_files(path)
+            if not noise_files: continue
+            
+            # 
+            dir_name = os.path.basename(path) if path else "unknown_noise"
+            duration, rms = self._analyze_duration_and_power(noise_files, desc=dir_name)
+            
+            self.stats['H_noise_paths'][path] = duration / 3600
+            
+            all_noise_duration += duration
+            all_noise_rms += rms * len(noise_files)
+            num_noise_files += len(noise_files)
+        
+        self.stats['H_noise'] = all_noise_duration / 3600
+        self.stats['A_noise'] = (all_noise_rms / num_noise_files) if num_noise_files > 0 else 0
 
         # --- RIR Clips Analysis ---
         rir_files = self._get_directory_files(self.paths['rir'])
@@ -140,43 +158,4 @@ class DatasetAnalyzer:
 
         print("Analysis complete!\n")
         return self.stats
-
-if __name__ == '__main__':
-    # This block allows you to test the analyzer independently.
-    # Create dummy directories and files to test.
-    # Example usage:
-    print("Running standalone test for DatasetAnalyzer...")
-    
-    # আপনার কম্পিউটারে টেস্ট করার জন্য এই পাথগুলো পরিবর্তন করুন
-    test_positive_path = "./training_data/positive"
-    test_negative_path = "./training_data/negative"
-    test_noise_path = "./training_data/noise"
-    test_rir_path = "./training_data/rir"
-
-    
-    os.makedirs(test_positive_path, exist_ok=True)
-    os.makedirs(test_negative_path, exist_ok=True)
-    os.makedirs(test_noise_path, exist_ok=True)
-    os.makedirs(test_rir_path, exist_ok=True)
-
-    
-    if not os.listdir(test_positive_path):
-        print("Creating a dummy audio file for testing...")
-        sample_rate = 16000
-        dummy_waveform = torch.randn(1, sample_rate * 2) # 2 seconds of noise
-        torchaudio.save(os.path.join(test_positive_path, "dummy.wav"), dummy_waveform, sample_rate)
-
-    analyzer = DatasetAnalyzer(
-        positive_path=test_positive_path,
-        negative_path=test_negative_path,
-        noise_path=test_noise_path,
-        rir_path=test_rir_path
-    )
-    
-    stats = analyzer.analyze()
-    
-    print("\n--- Analysis Results ---")
-    print(stats)
-    print("------------------------")
-
 

@@ -17,7 +17,9 @@ import numpy as np
 import yaml
 import logging
 import json
-
+import math
+import os
+import torch
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s: %(message)s')
 
@@ -104,7 +106,6 @@ class ConfigGenerator:
         effective_data_volume = base_hours_for_calculation * calculated_rounds
         
         
-
        # step 5
         quality_score = (1 - clamp(A_noise, 0, 1)) + clamp(N_rir / 500, 0, 1)
         normalized_quality = quality_score / 2
@@ -150,18 +151,135 @@ class ConfigGenerator:
         self.config['clr_step_size_up'] = int(total_cycle_steps * 0.4)
         self.config['clr_step_size_down'] = int(total_cycle_steps * 0.6)
 
-        # 
+ 
+        try:
+            import psutil
+            SYSTEM_INFO_AVAILABLE = True
+        except ImportError:
+            SYSTEM_INFO_AVAILABLE = False
+
+
+        final_training_batch_size = 64 # Default
+        if torch.cuda.is_available():
+            try:
+                vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                model_complexity = self.config.get('model_complexity_score', 2.0)
+                
+                if vram_gb >= 12: base_batch_size = 256
+                elif vram_gb >= 8: base_batch_size = 128
+                elif vram_gb >= 4: base_batch_size = 64
+                else: base_batch_size = 32
+                
+                complexity_factor = 2.0 / model_complexity
+                calculated_batch_size = base_batch_size * complexity_factor
+                clamped_batch_size = clamp(calculated_batch_size, 32, 256)
+                powers_of_2 = [32, 64, 128, 256]
+                final_training_batch_size = min(powers_of_2, key=lambda x: abs(x - clamped_batch_size))
+            except Exception:
+                final_training_batch_size = 64
+        else:
+            final_training_batch_size = 64
+
+        # --- Step 2: Calculate Source Distribution (your existing logic) ---
         noise_need = 1 - clamp(H_noise / 0.5, 0, 1)
         dist_noise = int(10 + 15 * noise_need)
-        neg_speech_need = 1 - clamp(H_neg_after_synth / (H_pos_after_synth * self.C['target_neg_pos_ratio']), 0, 1)
+        neg_speech_need = 1 - clamp(H_neg_after_synth / (H_pos_after_synth * self.C['target_neg_pos_ratio'] + 1e-9), 0, 1)
         remaining_percentage = 100 - dist_noise
         dist_neg_speech = int((remaining_percentage * 0.75) * (0.8 + 0.2 * neg_speech_need))
         dist_pos = 100 - dist_noise - dist_neg_speech
-        self.config['source_distribution'] = {
+        final_source_distribution = {
             'positive': dist_pos,
             'negative_speech': dist_neg_speech,
             'pure_noise': dist_noise
         }
+
+        # --- Step 3: Combine them into the final `batch_composition` dictionary ---
+        self.config['batch_composition'] = {
+            'batch_size': final_training_batch_size,
+            'source_distribution': final_source_distribution
+        }
+
+        # --- Cleanup: Remove the old top-level `source_distribution` if it exists ---
+        if 'source_distribution' in self.config:
+            del self.config['source_distribution']
+
+
+        noise_path_durations = self.stats.get('H_noise_paths', {})
+        user_background_paths = list(noise_path_durations.keys()) # Analyzer থেকে পাথের তালিকা পান
+
+        if noise_path_durations and user_background_paths:
+            h_target_noise = max(noise_path_durations.values())
+            
+            # 
+            self.config['background_paths_duplication_rate'] = [
+                int(math.ceil(h_target_noise / noise_path_durations.get(path, 1e-6))) 
+                if noise_path_durations.get(path, 0) > 0.001 else 1
+                for path in user_background_paths
+            ]
+        else:
+            self.config['background_paths_duplication_rate'] = []
+    
+
+        # --- `augmentation_batch_size` ---
+        if SYSTEM_INFO_AVAILABLE:
+            safe_ram_gb = max(0, (psutil.virtual_memory().total / (1024**3)) - 2.0)
+            core_factor = math.sqrt((os.cpu_count() or 4) / 4.0)
+            calculated_batch_size = 16.0 * (safe_ram_gb / 6.0) * core_factor
+            clamped_batch_size = clamp(calculated_batch_size, 16, 128)
+            self.config['augmentation_batch_size'] = min([16, 32, 64, 128], key=lambda x: abs(x - clamped_batch_size))
+        else:
+            self.config['augmentation_batch_size'] = 32
+
+
+        # # This value needs to be nested under `batch_composition`
+        # if 'batch_composition' not in self.config:
+        #     self.config['batch_composition'] = {}
+
+        # self.config['batch_composition']['batch_size'] = final_training_batch_size
+        # --- `tts_batch_size` ---
+        final_tts_batch_size = 32  # A safer default if all checks fail
+
+        if torch.cuda.is_available():
+            try:
+                vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                if vram_gb >= 12: final_tts_batch_size = 512
+                elif vram_gb >= 8: final_tts_batch_size = 256
+                elif vram_gb >= 4: final_tts_batch_size = 128
+                else: final_tts_batch_size = 32
+            except Exception:
+                # If GPU check fails, fall back to CPU logic
+                SYSTEM_INFO_AVAILABLE = False # Force CPU path
+                
+        # This block runs if no GPU is available OR if GPU check failed
+        if not torch.cuda.is_available() or not SYSTEM_INFO_AVAILABLE:
+            if SYSTEM_INFO_AVAILABLE:
+                # --- Intelligent CPU Logic ---
+                cpu_cores = os.cpu_count() or 4
+                total_ram_gb = psutil.virtual_memory().total / (1024**3)
+
+                # Heuristic: Batch size scales with cores and RAM
+                # A baseline modern CPU (8 cores, 16GB RAM) can handle a batch of ~64
+                core_score = math.sqrt(cpu_cores / 8.0) # Slower scaling for cores
+                ram_score = total_ram_gb / 16.0
+                
+                # Weighted average: Cores are slightly more important for this task
+                performance_metric = (0.6 * core_score) + (0.4 * ram_score)
+                
+                calculated_batch_size = 64 * performance_metric
+                
+                # Clamp to a reasonable range for CPU (16 to 256)
+                clamped_batch_size = clamp(calculated_batch_size, 16, 256)
+
+                # Round to the nearest power of 2 for efficiency
+                powers_of_2 = [16, 32, 64, 128, 256]
+                final_tts_batch_size = min(powers_of_2, key=lambda x: abs(x - clamped_batch_size))
+            else:
+                # Fallback if psutil is not available (cannot determine CPU resources)
+                final_tts_batch_size = 32
+
+        self.config['tts_batch_size'] = final_tts_batch_size
+
+
 
         logging.info("Intelligent configuration complete.")
         return self.config

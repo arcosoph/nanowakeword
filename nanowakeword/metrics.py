@@ -2,15 +2,11 @@
 # Modified and maintained by: Abid
 # ================================
 
-
-# Imports
 import re
 from tqdm import tqdm
 import numpy as np
 from typing import List
 
-
-# Define metric utility functions specific to the wakeword detection use-case
 
 def get_false_positives(scores: List, threshold: float, grouping_window: int = 50):
     """
