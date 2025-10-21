@@ -780,29 +780,37 @@ class Model(nn.Module):
             if step_ndx == max_steps - 1:
                 break
 
-# # Separate function to convert onnx models to tflite format
+
+# Separate function to convert onnx models to tflite format
 def convert_onnx_to_tflite(onnx_model_path, output_path):
     """The latest Python <3.12 version does not support current NanoWakeWord to convert the ONNX version of 
     the NanoWakeWord model to the TensorFlow Tflight format."""
-    print("The latest Python <3.12 version does not support current NanoWakeWord to convert the ONNX version of the NanoWakeWord model to the TensorFlow Tflight format.")
+    try:
+        print("If you face any issues while converting to TFLite, don’t worry. Your ONNX model is entirely your asset, and you can manually convert it to TFLite anytime you wish.")
 
-    import onnx
-    from onnx_tf.backend import prepare
-    import tensorflow as tf
+        import onnx
+        from onnx_tf.backend import prepare
+        import tensorflow as tf
+        import os
+        import tempfile
 
-    # Convert to tflite from onnx model
-    onnx_model = onnx.load(onnx_model_path)
-    tf_rep = prepare(onnx_model, device="CPU")
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tf_rep.export_graph(os.path.join(tmp_dir, "tf_model"))
-        converter = tf.lite.TFLiteConverter.from_saved_model(os.path.join(tmp_dir, "tf_model"))
-        tflite_model = converter.convert()
+        # Convert to tflite from onnx model
+        onnx_model = onnx.load(onnx_model_path)
+        tf_rep = prepare(onnx_model, device="CPU")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tf_rep.export_graph(os.path.join(tmp_dir, "tf_model"))
+            converter = tf.lite.TFLiteConverter.from_saved_model(os.path.join(tmp_dir, "tf_model"))
+            tflite_model = converter.convert()
 
-        print_info(f"Saving tflite model to '{output_path}'")
-        with open(output_path, 'wb') as f:
-            f.write(tflite_model)
+            print_info(f"Saving tflite model to '{output_path}'")
+            with open(output_path, 'wb') as f:
+                f.write(tflite_model)
 
-    return None
+        return None
+
+    except Exception as e:
+        print("If you face any issues while converting to TFLite, don’t worry. Your ONNX model is entirely your asset, and you can manually convert it to TFLite anytime you wish.")
+        print(f"Error occurred during conversion: {e}")
 
 
 

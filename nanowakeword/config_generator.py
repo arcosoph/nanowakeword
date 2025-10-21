@@ -83,10 +83,10 @@ class ConfigGenerator:
        # --- Step 3: Determining the basis of calculation ---
         if data_generation_is_planned:
             base_hours_for_calculation = H_pos_after_synth + H_neg_after_synth
-            logging.info("Calculating config for FUTURE dataset (including planned synthetic data).")
+            print("INFO:root: Calculating config for FUTURE dataset (including planned synthetic data).")
         else:
             base_hours_for_calculation = H_pos_initial + H_neg_initial
-            logging.info("Calculating config for CURRENT dataset (real data only).")
+            print("INFO:root: Calculating config for CURRENT dataset (real data only).")
       
             
         # --- Step 4: Calculate data volume and augmentation round ---

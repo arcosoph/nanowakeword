@@ -1,22 +1,19 @@
 
 <p align="center">
-  <img src="assets/logo/logo_0.png" alt="Logo" width="690">
+  <img src="assets/logo/logo_0.png" alt="Logo" width="200">
 </p>
-
 
 # NanoWakeWord
 
 ### The Intelligent, One-Command Wake Word Model Trainer
 
-**NanoWakeWord is a next-generation, fully automated framework for creating high-performance, custom wake word models. It's not just a tool; it's an intelligent engine that analyzes your data and crafts the perfect training strategy for you.**
+**NanoWakeWord is a next-generation, fully automated framework designed to build high-performance, custom wake word models. More than just a tool, it’s an intelligent engine that understands your data and optimizes the entire training process to deliver exceptional accuracy and efficiency.**
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb)
-[![PyPI](https://badge.fury.io/py/nanowakeword.svg)](https://badge.fury.io/py/nanowakeword)
-[![Python](https://img.shields.io/pypi/pyversions/nanowakeword.svg)](https://pypi.org/project/nanowakeword/)
-[![License](https://img.shields.io/badge/License-Apache_2.0-orange.svg)](https://github.com/arcosoph/nanowakeword/blob/main/LICENSE)
-[![Downloads](https://img.shields.io/pypi/dm/nanowakeword?label=downloads&color=green)](https://pypi.org/project/nanowakeword/)
-[![Last Commit](https://img.shields.io/github/last-commit/arcosoph/nanowakeword)](https://github.com/arcosoph/nanowakeword/commits/main)
-<!-- [![GitHub stars](https://img.shields.io/github/stars/arcosoph/nanowakeword?style=social)](https://github.com/arcosoph/nanowakeword) -->
+[![Open In Colab](https://img.shields.io/badge/Open%20in%20Colab-FFB000?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb)
+[![PyPI](https://img.shields.io/pypi/v/nanowakeword.svg?color=6C63FF&logo=pypi&logoColor=white)](https://pypi.org/project/nanowakeword/)
+[![Python](https://img.shields.io/pypi/pyversions/nanowakeword.svg?color=3776AB&logo=python&logoColor=white)](https://pypi.org/project/nanowakeword/)
+[![License](https://img.shields.io/pypi/l/nanowakeword?color=white&logo=apache&logoColor=black)](https://pypi.org/project/nanowakeword/)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/nanowakeword?period=total&units=INTERNATIONAL_SYSTEM&left_color=GRAY&right_color=BLACK&left_text=downloads)](https://pepy.tech/projects/nanowakeword)
 </div>
 
 ---
@@ -156,24 +153,16 @@ The performance shown above is a direct result of the **Intelligent Configuratio
 
 This intelligent, data-driven approach is what allows Nanowakeword to consistently produce robust and reliable models.
 
-## 📥 Pre-trained Models
+## 🎙️ Pre-trained Models
 
-To help you get started immediately, Nanowakeword provides a pre-trained, high-performance model ready for use. More community-requested models are also on the way!
+To help you get started quickly, `nanowakeword` comes with a rich collection of pre-trained models. These pre-trained models are ready to use and support a wide variety of wake words, eliminating the need to spend time training your own model from scratch.
 
-### Available Now: "Arcosoph"
-This is the official flagship model, developed and trained using Nanowakeword itself. It is highly accurate and serves as a perfect example of the quality you can achieve with this engine.
+Because our library of models is constantly evolving with new additions and improvements, we maintain a live, up-to-date list directly on our GitHub project page. This ensures you always have access to the latest information.
 
-*   **Wake Word:** "Arcosoph" (pronounced *Ar-co-soph*)
-*   **Performance:** Achieves a very low false-positive rate (less than one per 10 hours) while maintaining high accuracy.
-*   **How to Use:** Download the model files from the [Hugging Face](https://huggingface.co/arcosoph/nanowakeword-lstm-base/tree/main).
+For a comprehensive list of all available models and their descriptions, please visit the official model registry:
 
-### Coming Soon!
-We are planning to release more pre-trained models for common wake words based on community feedback. Some of the planned models include:
-*   "Hey Computer"
-*   "Okay Nano"
-*   "Jarvis"
+**[View the Official List of Pre-trained Models (✿◕‿◕✿)](https://huggingface.co/arcosoph/nanowakeword-models#pre-trained-models)**
 
-Stay tuned for updates!
 
 ## ⚖️ Our Philosophy
 
@@ -202,6 +191,9 @@ In a world of complex machine learning tools, Nanowakeword is built on a simple 
 
 **4. Can I train a model for a language other than English?**
 > Yes! NanoWakeWord is language-agnostic. As long as you can provide audio samples for your wake words, you can train a model for any language.
+
+**5. Which version of Nanowakeword should I use?**
+> Always use the latest version of Nanowakeword. Version v1.2.1 is the minimum supported, but using the latest ensures full compatibility and best performance.
 
 ## Contributing
 
