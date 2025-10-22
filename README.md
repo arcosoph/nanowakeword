@@ -10,6 +10,7 @@
 **NanoWakeWord is a next-generation, fully automated framework designed to build high-performance, custom wake word models. More than just a tool, it’s an intelligent engine that understands your data and optimizes the entire training process to deliver exceptional accuracy and efficiency.**
 
 [![Open In Colab](https://img.shields.io/badge/Open%20in%20Colab-FFB000?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb)
+[![Join the Discord](https://img.shields.io/badge/Join%20the%20Discord-5865F2?logo=discord&logoColor=white)](https://discord.gg/rYfShVvacB)
 [![PyPI](https://img.shields.io/pypi/v/nanowakeword.svg?color=6C63FF&logo=pypi&logoColor=white)](https://pypi.org/project/nanowakeword/)
 [![Python](https://img.shields.io/pypi/pyversions/nanowakeword.svg?color=3776AB&logo=python&logoColor=white)](https://pypi.org/project/nanowakeword/)
 [![License](https://img.shields.io/pypi/l/nanowakeword?color=white&logo=apache&logoColor=black)](https://pypi.org/project/nanowakeword/)
