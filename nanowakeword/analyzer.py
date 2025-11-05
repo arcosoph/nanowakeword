@@ -1,16 +1,20 @@
-# Copyright 2025 Arcosoph. All rights reserved.
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# ==============================================================================
+#  NanoWakeWord — Lightweight and Intelligent Wake Word Detection System
+#  © 2025 Arcosoph. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at:
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is provided on an "AS IS" BASIS,
+#  without warranties or conditions of any kind, either express or implied.
+#
+#  For more information, visit the official repository:
+#      https://github.com/arcosoph/nanowakeword
+# ==============================================================================
 
 
 
@@ -37,7 +41,9 @@ class DatasetAnalyzer:
     Analyzes audio datasets to extract key statistical features for the
     Intelligent Configuration Engine.
     """
-    def __init__(self, positive_path, negative_path, noise_path: list, rir_path):
+    # def __init__(self, positive_path, negative_path, noise_path: list, rir_path):
+    def __init__(self, positive_path, negative_path, noise_path: list, rir_path, 
+             future_positive_samples=0, future_negative_samples=0):
         """
         Initializes the analyzer with paths to the clean, processed datasets.
 
@@ -46,7 +52,7 @@ class DatasetAnalyzer:
             negative_path (str): Path to the directory of negative clips.
             noise_path (str): Path to the directory of background noise clips.
             rir_path (str): Path to the directory of Room Impulse Response (RIR) clips.
-        """
+        """        
         self.paths = {
             'positive': positive_path,
             'negative': negative_path,
@@ -54,6 +60,10 @@ class DatasetAnalyzer:
             'rir': rir_path
         }
         self.stats = {}
+        
+        self.future_positive_samples = future_positive_samples
+        self.future_negative_samples = future_negative_samples
+        self.avg_clip_duration_sec = 2.0
 
     def _get_directory_files(self, dir_path):
         """Helper function to get all file paths in a directory, handling errors."""
@@ -65,7 +75,6 @@ class DatasetAnalyzer:
         except Exception as e:
             print(f"ERROR: Could not read directory {dir_path}: {e}")
             return []
-
 
 
     def _analyze_duration_and_power(self, file_paths, desc="files"):

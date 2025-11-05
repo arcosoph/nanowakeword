@@ -30,6 +30,7 @@ TARGET_CHANNELS = 1
 TARGET_BITS_PER_SAMPLE = 16
 TARGET_ENCODING = "PCM_S"
 
+
 def needs_conversion(file_path):
     """
     Checks if an audio file needs to be converted to the standard format.

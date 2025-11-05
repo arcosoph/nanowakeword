@@ -1,4 +1,23 @@
-#---------------------)->  
+# Copyright 2022 David Scripka. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+############################################################
+# Modified by Arcosoph
+#  For more information, visit the official repository:
+#       https://github.com/arcosoph/nanowakeword
+############################################################
+
 import os
 import numpy as np
 import pathlib
@@ -50,13 +69,13 @@ class AudioFeatures():
             except ImportError:
                 raise ValueError("Tried to import onnxruntime, but it was not found. Please install it using `pip install onnxruntime`")
 
-        
-            from nanowakeword import PROJECT_ROOT
+
             import os
+            from nanowakeword import PROJECT_ROOT
+            from nanowakeword.resources.models import models
 
-            melspec_model_path = str(PROJECT_ROOT / "resources" / "models" / "melspectrogram.onnx")
-            embedding_model_path = str(PROJECT_ROOT / "resources" / "models" / "embedding_model.onnx")
-
+            melspec_model_path = models.melspectrogram_onnx
+            embedding_model_path = models.embedding_model_onnx
 
 
             if ".tflite" in melspec_model_path or ".tflite" in embedding_model_path:

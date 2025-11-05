@@ -1,38 +1,19 @@
-# ______________________
-# Silero VAD License
-# ______________________
-
-# MIT License
-
-# Copyright (c) 2020-present Silero Team
-
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
-########################################
-
-# This file contains the implementation of a class for voice activity detection (VAD),
-# based on the pre-trained model from Silero (https://github.com/snakers4/silero-vad).
-# It can be used as with the NanoWakeWord library, or independently.
-
-# ================================
-# Modified and maintained by: Abid
-# ================================
+#  NanoWakeWord: Lightweight, Intelligent Wake Word Detection
+#  Copyright 2025 Arcosoph. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+#  Project: https://github.com/arcosoph/nanowakeword
 
 
 
@@ -43,49 +24,52 @@ class VAD():
     A model class for a voice activity detection (VAD) based on Silero's model.
     Dependencies are lazy-loaded to optimize performance when VAD is not in use.
     """
+
     def __init__(self,
                  model_path: str = None,
                  n_threads: int = 1
                  ):
-        """Initialize the VAD model object.
-
-            Args:
-                model_path (str): The path to the Silero VAD ONNX model. If not provided,
-                                  the default model will be loaded from resources.
-                n_threads (int): The number of threads to use for the VAD model.
-        """
-        # --- Lazy-load all required libraries here ---
+        """Initialize the VAD model object."""
+        
+        # --- Truly Lazy Imports ---
+        # All imports are moved inside to completely break any import cycle.
         import onnxruntime as ort
         import numpy as np
-        import os
         from collections import deque
-        # ---------------------------------------------
+        import os
 
-        # মডেলের পাথ নির্ধারণ করুন যদি না দেওয়া থাকে
+        # --- The Core Fix: A fully self-contained model loading logic ---
         if model_path is None:
-            model_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "resources",
-                "models",
-                "silero_vad.onnx"
-            )
-
+            # To break the cycle, we avoid top-level imports and get the path dynamically.
+            # This is a robust way to find the models directory.
+            try:
+                from .resources.models import models
+                model_path = models.silero_vad_onnx
+            except ImportError as e:
+                # This is a fallback if the above still fails due to complex cycles.
+                print(f"[FATAL] A critical import cycle detected. Cannot auto-load VAD model: {e}")
+                # Provide a manual path as a last resort for the error message.
+                models_dir = os.path.join(os.path.dirname(__file__), 'resources', 'models')
+                expected_path = os.path.join(models_dir, 'silero_vad.onnx')
+                raise ImportError(
+                    "Could not lazy-load the VAD model due to a circular import. "
+                    f"Please check your project's __init__.py files. "
+                    f"Expected model path: {expected_path}"
+                ) from e
+        
         # Initialize the ONNX model
         sessionOptions = ort.SessionOptions()
         sessionOptions.inter_op_num_threads = n_threads
         sessionOptions.intra_op_num_threads = n_threads
+        
+        if not os.path.exists(model_path):
+             raise FileNotFoundError(f"VAD model not found at path: {model_path}")
+
         self.model = ort.InferenceSession(model_path, sess_options=sessionOptions,
                                           providers=["CPUExecutionProvider"])
-
-        # Create buffer
         self.prediction_buffer: Deque[float] = deque(maxlen=125)
-
-        # Set model parameters
         self.sample_rate = np.array(16000).astype(np.int64)
-
-        # Reset model to start
         self.reset_states()
-
 
     def reset_states(self, batch_size=1):
         # Lazy-load numpy here as well, in case this method is called independently.
@@ -120,3 +104,4 @@ class VAD():
 
     def __call__(self, x, frame_size=160 * 4):
         self.prediction_buffer.append(self.predict(x, frame_size))
+

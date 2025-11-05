@@ -1,17 +1,16 @@
-# Copyright 2025 Arcosoph. All rights reserved.
+# NanoWakeWord
+# Copyright 2025 Arcosoph
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+# You may not use this file except in compliance with the License.
+# You may obtain a copy of the License at:
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 #
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# (◔◡◔)
+# Project Repository: https://github.com/arcosoph/nanowakeword
+#
+# This software is provided "AS IS", without warranties or conditions of any kind.
+# See the License for the specific language governing permissions and limitations.
 
 import argparse
 import logging
@@ -174,7 +173,7 @@ def generate_samples(
     file_map = [(prompt, f"sample_{i}_{hash(prompt) % 10000}.wav") for i, prompt in enumerate(text_prompts)]
 
     TARGET_SAMPLE_RATE = 16000
-    _LOGGER.info(f"Generating {len(file_map)} samples using varied Piper synthesis configs...")
+    _LOGGER.info(f"Generating {len(file_map)} samples...")
 
     for index, (text_prompt, out_file) in tqdm(enumerate(file_map), total=len(file_map), desc="Generating Audio"):
         try:

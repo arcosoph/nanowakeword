@@ -1,16 +1,15 @@
-# Copyright 2025 Arcosoph. All rights reserved.
+# ==============================================================================
+#  NanoWakeWord — Lightweight Intelligent Wake Word Detection
+#  © 2025 Arcosoph. All Rights Reserved.
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+#  Licensed under the Apache License, Version 2.0:
+#      http://www.apache.org/licenses/LICENSE-2.0
 #
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+#  Distributed on an "AS IS" basis, without warranties or conditions of any kind.
+#  For details, visit the project repository:
+#      https://github.com/arcosoph/nanowakeword
+# ==============================================================================
+
 
 
 from rich.console import Console
@@ -23,7 +22,7 @@ console = Console()
 
 def print_banner():
     """Prints the minimalist, professional NanoWakeWord banner."""
-    banner_art = """
+    banner_art = r"""
   _   _               __          __   _     __          __           _ 
  | \ | |              \ \        / /  | |    \ \        / /          | |
  |  \| | __ _ _ __   __\ \  /\  / /_ _| | ____\ \  /\  / /__  _ __ __| |
@@ -36,7 +35,7 @@ def print_banner():
  
     
     console.print(f"\n[bold cyan]{banner_art}[/bold cyan]")
-    console.print("-" * 40)
+    # console.print("-" * 40)
 
 
 def print_step_header(step_num, title):
@@ -62,22 +61,26 @@ def print_final_report_header():
 
 
 def print_table(data_dict, title):
-    """Prints a minimalist table for statistics (with nice border)."""
+    """
+    Prints a theme-aware table that automatically adapts to light and dark
+    terminal backgrounds.
+    """
     table = Table(
-        title=title,
+        title=f"[bold]{title}[/bold]",
         show_header=True,
-        header_style="bold bright_blue",
-        box=box.ROUNDED 
+        header_style="bold magenta", # Magenta is visible on both light/dark themes
+        box=box.ROUNDED,
+        border_style="dim" # A less intense border color
     )
-    table.add_column("Parameter", style="white", no_wrap=True)
-    table.add_column("Value", style="red")
+
+    table.add_column("Parameter", style="dim", no_wrap=True)
+
+    table.add_column("Value", style="bold default")
     
     for key, value in data_dict.items():
         table.add_row(key, str(value))
         
     console.print(table)
-
-
 
 
                                                                                                                               

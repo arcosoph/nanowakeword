@@ -12,7 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# imports
+#####################################################
+# Modified by Arcosoph
+#  For more information, visit the official repository:
+#       https://github.com/arcosoph/nanowakeword
+######################################################
+
+
 import os
 import re
 import torch
@@ -32,9 +38,7 @@ from functools import partial
 from typing import List, Tuple
 from numpy.lib.format import open_memmap
 from multiprocessing.pool import ThreadPool
-from speechbrain.dataio.dataio import read_audio
-from speechbrain.processing.signal_processing import reverberate
-
+from scipy.signal import convolve
 
 # Load audio clips and structure into clips of the same length
 def stack_clips(audio_data, clip_size=16000*2):
@@ -85,7 +89,8 @@ def load_audio_clips(files, clip_size=32000):
     audio_data = []
     for i in files:
         try:
-            audio_data.append(read_audio(i))
+            # audio_data.append(read_audio(i))
+            audio_data.append(torchaudio.load(i)[0])
         except ValueError:
             continue
 
@@ -315,9 +320,6 @@ def mix_clips_batch(
     """
     Mixes foreground and background clips at a random SNR level in batches.
 
-    References: https://pytorch.org/audio/main/tutorials/audio_data_augmentation_tutorial.html and
-    https://speechbrain.readthedocs.io/en/latest/API/speechbrain.processing.speech_augmentation.html#speechbrain.processing.speech_augmentation.AddNoise
-
     Args:
         foreground_clips (List[str]): A list of paths to the foreground clips
         background_clips (List[str]): A list of paths to the background clips (randomly selected for each
@@ -394,16 +396,20 @@ def mix_clips_batch(
         # Load foreground clips/start indices and truncate as needed
         sr = 16000
         start_index_batch = start_index[i:i+batch_size]
-        foreground_clips_batch = [read_audio(j) for j in foreground_clips[i:i+batch_size]]
+        
+        foreground_clips_batch = [torchaudio.load(j)[0] for j in foreground_clips[i:i+batch_size]]
+
         foreground_clips_batch = [j[0] if len(j.shape) > 1 else j for j in foreground_clips_batch]
+
         if foreground_durations:
             foreground_clips_batch = [truncate_clip(j, int(k*sr), foreground_truncate_strategy)
                                       for j, k in zip(foreground_clips_batch, foreground_durations[i:i+batch_size])]
         labels_batch = np.array(labels[i:i+batch_size])
 
         # Load background clips and pad/truncate as needed
-        background_clips_batch = [read_audio(j) for j in random.sample(background_clips, batch_size)]
+        background_clips_batch = [torchaudio.load(j)[0] for j in random.sample(background_clips, batch_size)]
         background_clips_batch = [j[0] if len(j.shape) > 1 else j for j in background_clips_batch]
+
         background_clips_batch_delayed = []
         delay = np.random.randint(return_background_clips_delay[0], return_background_clips_delay[1] + 1)
         for ndx, background_clip in enumerate(background_clips_batch):
@@ -440,13 +446,30 @@ def mix_clips_batch(
         mixed_clips_batch = torch.vstack(mixed_clips)
         sequence_labels_batch = torch.from_numpy(np.vstack(sequence_labels))
 
+        
         # Apply reverberation to the batch (from a single RIR file)
         if rirs:
             if np.random.random() <= rir_probability:
                 rir_waveform, sr = torchaudio.load(random.choice(rirs))
                 if rir_waveform.shape[0] > 1:
                     rir_waveform = rir_waveform[random.randint(0, rir_waveform.shape[0]-1), :]
-                mixed_clips_batch = reverberate(mixed_clips_batch, rir_waveform, rescale_amp="avg")
+
+                rir_numpy = rir_waveform.numpy().flatten()
+                reverbed_clips = []
+    
+                for clip_tensor in mixed_clips_batch:
+                    
+                    clip_numpy = clip_tensor.cpu().numpy()
+                    
+                    reverbed_clip = convolve(clip_numpy, rir_numpy, mode='same')
+                    reverbed_clips.append(torch.from_numpy(reverbed_clip))
+
+                mixed_clips_batch = torch.stack(reverbed_clips)
+
+                abs_max, _ = torch.max(torch.abs(mixed_clips_batch), dim=1, keepdim=True)
+                
+                mixed_clips_batch = mixed_clips_batch / abs_max.clamp(min=1.0)
+
 
         # Apply volume augmentation
         if volume_augmentation:
@@ -541,161 +564,189 @@ def apply_reverb(x, rir_files):
     Returns:
         nd.array: The reverberated audio clips
     """
+
     if isinstance(rir_files, str):
-        rir_waveform, sr = torchaudio.load(rir_files[0])
+        rir_waveform, sr = torchaudio.load(rir_files) 
     elif isinstance(rir_files, list):
         rir_waveform, sr = torchaudio.load(random.choice(rir_files))
 
-    # Apply reverberation to the batch (from a single RIR file)
     if rir_waveform.shape[0] > 1:
         rir_waveform = rir_waveform[random.randint(0, rir_waveform.shape[0]-1), :]
-    reverbed = reverberate(torch.from_numpy(x), rir_waveform, rescale_amp="avg")
+    
+    rir_numpy = rir_waveform.numpy().flatten()
+    reverbed_clips = []
+    # Apply convolution to each clip of the input NumPy array 'x'
+    for clip_numpy in x:
+        reverbed_clip = convolve(clip_numpy, rir_numpy, mode='same')
+        reverbed_clips.append(reverbed_clip)
 
-    return reverbed.numpy()
+    reverbed_numpy = np.stack(reverbed_clips)
+
+    abs_max = np.max(np.abs(reverbed_numpy), axis=1, keepdims=True)
+    
+    reverbed_numpy = reverbed_numpy / np.maximum(abs_max, 1e-7)
+
+    return reverbed_numpy
+
+import torch
+import torchaudio
+import numpy as np
+import random
+import logging
+from typing import List
+from torch_audiomentations import Compose, Gain, PitchShift, AddColoredNoise, BandStopFilter, ApplyImpulseResponse
 
 
-# Alternate data augmentation method using audiomentations library (https://pypi.org/project/audiomentations/)
+def _add_background_noise_manual(samples: torch.Tensor, background_paths: List[str], min_snr: float, max_snr: float, sr: int) -> torch.Tensor:
+    """
+    A helper function to manually add background noise to a batch of samples
+    from a list of file paths. This supports multi-directory and duplication_rate features.
+    The input tensor is expected to be 3D: [batch, channels, samples].
+    """
+    device = samples.device
+    batch_size = samples.shape[0]
+
+    for i in range(batch_size):
+        if not background_paths:
+            continue
+            
+        noise_path = random.choice(background_paths)
+        try:
+            noise_waveform, noise_sr = torchaudio.load(noise_path)
+            if noise_sr != sr:
+                noise_waveform = torchaudio.functional.resample(noise_waveform, noise_sr, sr)
+            
+            # Use only the first channel of the noise
+            noise_waveform = noise_waveform[0].to(device)
+            target_length = samples.shape[2]
+            
+            # Ensure noise is at least as long as the sample
+            while len(noise_waveform) < target_length:
+                noise_waveform = torch.cat([noise_waveform, noise_waveform], dim=0)
+            
+            # Get a random snippet of the noise
+            start_index = random.randint(0, len(noise_waveform) - target_length)
+            noise_snippet = noise_waveform[start_index : start_index + target_length]
+
+            # Calculate SNR and mix
+            snr_db = random.uniform(min_snr, max_snr)
+            sample_rms = torch.sqrt(torch.mean(samples[i, 0, :] ** 2))
+            noise_rms = torch.sqrt(torch.mean(noise_snippet ** 2))
+            
+            # Avoid division by zero for silent clips
+            if sample_rms > 1e-6 and noise_rms > 1e-6:
+                snr_linear = 10 ** (snr_db / 20.0)
+                noise_scaling_factor = sample_rms / (snr_linear * noise_rms)
+                samples[i, 0, :] += noise_snippet * noise_scaling_factor
+
+        except Exception as e:
+            logging.warning(f"Failed to add background noise from {noise_path}: {e}")
+            continue
+
+    return samples
+
+
 def augment_clips(
         clip_paths: List[str],
         total_length: int,
         sr: int = 16000,
         batch_size: int = 128,
-        augmentation_probabilities: dict = {
-            "SevenBandParametricEQ": 0.25,
-            "TanhDistortion": 0.25,
-            "PitchShift": 0.25,
-            "BandStopFilter": 0.25,
-            "AddColoredNoise": 0.25,
-            "AddBackgroundNoise": 0.75,
-            "Gain": 1.0,
-            "RIR": 0.5
-        },
+        augmentation_settings: dict = None,
         background_clip_paths: List[str] = [],
-        RIR_paths: List[str] = []
+        RIR_paths: List[str] = [],
+        min_snr_in_db: float = 3.0,
+        max_snr_in_db: float = 20.0,
+        end_jitter_ms: int = 400
         ):
     """
-    Applies audio augmentations to the specified audio clips, returning a generator that applies
-    the augmentations in batches to support very large quantities of input audio files.
-
-    The augmentations (and probabilities) are chosen from experience based on training NanoWakeWord models, as well
-    as for the efficiency of the augmentation. The individual probabilities of each augmentation may be adjusted
-    with the "augmentation_probabilities" argument.
-
-    Args:
-        clip_paths (List[str]) = The input audio files (as paths) to augment. Note that these should be shorter
-                                 than the "total_length" argument, else they will be truncated.
-        total_length (int): The total length of audio files (in samples) after augmentation. All input clips
-                            will be left-padded with silence to reach this size, with between 0 and 200 ms
-                            of other audio after the end of the original input clip.
-        sr (int): The sample size of the input audio files
-        batch_size (int): The number of audio files to augment at once.
-        augmentation_probabilities (dict): The individual probabilities of each augmentation. If all probabilities
-                                           are zero, the input audio files will simply be padded with silence. THe
-                                           default values are:
-
-                                            {
-                                                "SevenBandParametricEQ": 0.25,
-                                                "TanhDistortion": 0.25,
-                                                "PitchShift": 0.25,
-                                                "BandStopFilter": 0.25,
-                                                "AddColoredNoise": 0.25,
-                                                "AddBackgroundNoise": 0.75,
-                                                "Gain": 1.0,
-                                                "RIR": 0.5
-                                            }
-
-        background_clip_paths (List[str]) = The paths to background audio files to mix with the input files
-        RIR_paths (List[str]) = The paths to room impulse response functions (RIRs) to convolve with the input files,
-                                producing a version of the input clip with different acoustic characteristics.
-
-    Returns:
-        ndarray: A batch of augmented audio clips of size (batch_size, total_length)
+    Applies a robust, production-grade, hardware-aware audio augmentation pipeline.
+    This definitive version correctly handles tensor dimensions, background noise from
+    multiple directories, and relies on the stable tensor-in-tensor-out behavior
+    of torch_audiomentations to prevent indexing errors.
     """
-    # Define augmentations
+    # --- 1. Finalize Settings and Determine Device ---
+    if augmentation_settings is None:
+        augmentation_settings = {}
+    
+    default_probs = {
+        "Gain": 1.0, "PitchShift": 0.4, "BandStopFilter": 0.2, 
+        "ColoredNoise": 0.3, "BackgroundNoise": 0.8, "RIR": 0.6
+    }
+    final_aug_probs = {**default_probs, **augmentation_settings}
 
-    # First pass augmentations that can't be done as a batch
-    augment1 = audiomentations.Compose([
-        audiomentations.SevenBandParametricEQ(min_gain_db=-6, max_gain_db=6, p=augmentation_probabilities["SevenBandParametricEQ"]),
-        audiomentations.TanhDistortion(
-            min_distortion=0.0001,
-            max_distortion=0.10,
-            p=augmentation_probabilities["TanhDistortion"]
-        ),
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+    # --- 2. Create the Augmentation Pipeline (The Correct Way) ---
+    # We REMOVE `output_type="dict"` and rely on the default tensor-in, tensor-out behavior.
+    augmenter = Compose([
+        Gain(min_gain_in_db=-9.0, max_gain_in_db=9.0, p=final_aug_probs.get("Gain", 0.0), p_mode="per_batch"),
+        PitchShift(min_transpose_semitones=-3.5, max_transpose_semitones=3.5, p=final_aug_probs.get("PitchShift", 0.0), sample_rate=sr, p_mode="per_batch"),
+        BandStopFilter(min_center_frequency=250, max_center_frequency=4000, p=final_aug_probs.get("BandStopFilter", 0.0), p_mode="per_batch"),
+        AddColoredNoise(min_snr_in_db=4.0, max_snr_in_db=30.0, p=final_aug_probs.get("ColoredNoise", 0.0), p_mode="per_batch"),
+        ApplyImpulseResponse(p=final_aug_probs.get("RIR", 0.0), ir_paths=RIR_paths, p_mode="per_batch", compensate_for_propagation_delay=True)
     ])
+    
+    augmenter.to(device)
 
-    # Augmentations that can be done as a batch
-    if background_clip_paths != []:
-        augment2 = torch_audiomentations.Compose([
-            torch_audiomentations.PitchShift(
-                min_transpose_semitones=-3,
-                max_transpose_semitones=3,
-                p=augmentation_probabilities["PitchShift"],
-                sample_rate=16000,
-                mode="per_batch"
-            ),
-            torch_audiomentations.BandStopFilter(p=augmentation_probabilities["BandStopFilter"], mode="per_batch"),
-            torch_audiomentations.AddColoredNoise(
-                min_snr_in_db=10, max_snr_in_db=30,
-                min_f_decay=-1, max_f_decay=2, p=augmentation_probabilities["AddColoredNoise"],
-                mode="per_batch"
-            ),
-            torch_audiomentations.AddBackgroundNoise(
-                p=augmentation_probabilities["AddBackgroundNoise"],
-                background_paths=background_clip_paths,
-                min_snr_in_db=-10,
-                max_snr_in_db=15,
-                mode="per_batch"
-            ),
-            torch_audiomentations.Gain(max_gain_in_db=0, p=augmentation_probabilities["Gain"]),
-        ])
-    else:
-        augment2 = torch_audiomentations.Compose([
-            torch_audiomentations.PitchShift(
-                min_transpose_semitones=-3,
-                max_transpose_semitones=3,
-                p=augmentation_probabilities["PitchShift"],
-                sample_rate=16000,
-                mode="per_batch"
-            ),
-            torch_audiomentations.BandStopFilter(p=augmentation_probabilities["BandStopFilter"], mode="per_batch"),
-            torch_audiomentations.AddColoredNoise(
-                min_snr_in_db=10, max_snr_in_db=30,
-                min_f_decay=-1, max_f_decay=2, p=augmentation_probabilities["AddColoredNoise"],
-                mode="per_batch"
-            ),
-            torch_audiomentations.Gain(max_gain_in_db=0, p=augmentation_probabilities["Gain"]),
-        ])
-
-    # Iterate through all clips and augment them
+    # --- 3. Process Clips in Batches (Generator Loop) ---
     for i in range(0, len(clip_paths), batch_size):
-        batch = clip_paths[i:i+batch_size]
-        augmented_clips = []
-        for clip in batch:
-            clip_data, clip_sr = torchaudio.load(clip)
-            clip_data = clip_data[0]
-            if clip_data.shape[0] > total_length:
-                clip_data = clip_data[0:total_length]
+        batch_paths = clip_paths[i:i+batch_size]
+        
+        # --- A. Load, Resample, and Prepare Clips on CPU ---
+        processed_clips = []
+        for clip_path in batch_paths:
+            try:
+                waveform, sample_rate = torchaudio.load(clip_path)
+                
+                if sample_rate != sr:
+                    waveform = torchaudio.functional.resample(waveform, sample_rate, sr)
+                
+                waveform = waveform[0] # Take only the first channel
 
-            if clip_sr != sr:
-                raise ValueError("Error! Clip does not have the correct sample rate! Don't worry, run it again without the --generate_clips flag, your data will not be lost. We will fix it soon.")
+                # --- B. Intelligent Jitter and Truncation Logic ---
+                if waveform.shape[0] > total_length:
+                    start_index = random.randint(0, waveform.shape[0] - total_length)
+                    processed_clip = waveform[start_index : start_index + total_length]
+                else:
+                    jitter_samples = random.randint(0, int((end_jitter_ms / 1000) * sr))
+                    start_pos = max(0, total_length - waveform.shape[0] - jitter_samples)
+                    
+                    padded_clip = torch.zeros(total_length)
+                    padded_clip[start_pos : start_pos + waveform.shape[0]] = waveform
+                    processed_clip = padded_clip
+                
+                processed_clips.append(processed_clip)
+            
+            except Exception as e:
+                logging.warning(f"Skipping file {clip_path} due to error: {e}")
+                continue
+        
+        if not processed_clips:
+            continue
 
-            clip_data = create_fixed_size_clip(clip_data, total_length, clip_sr)
+        # --- C. Batch Augmentation on Target Device (GPU/CPU) ---
+        batch_tensor_2d = torch.stack(processed_clips) # Shape: [batch_size, num_samples]
+        
+        # Add the 'num_channels' dimension before passing to the augmenter.
+        batch_tensor_3d = batch_tensor_2d.unsqueeze(1).to(device) # Shape: [batch_size, 1, num_samples]
 
-            # Do first pass augmentations
-            augmented_clips.append(torch.from_numpy(augment1(samples=clip_data, sample_rate=sr)))
+        # Apply the main augmentation pipeline. This now reliably returns a tensor.
+        augmented_batch_3d = augmenter(samples=batch_tensor_3d, sample_rate=sr)
+        
+        # --- D. Manually Apply Background Noise ---
+        if random.random() < final_aug_probs.get("BackgroundNoise", 0.0):
+            augmented_batch_3d = _add_background_noise_manual(
+                augmented_batch_3d, background_clip_paths, min_snr_in_db, max_snr_in_db, sr
+            )
+        
+        # --- E. Final Normalization and Conversion ---
+        max_vals = torch.max(torch.abs(augmented_batch_3d), dim=2, keepdim=True)[0]
+        normalized_batch = augmented_batch_3d / (max_vals + 1e-6)
+        
+        # Remove the 'num_channels' dimension before converting to numpy.
+        final_batch_2d = normalized_batch.squeeze(1)
 
-        # Do second pass augmentations
-        device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        augmented_batch = augment2(samples=torch.vstack(augmented_clips).unsqueeze(dim=1).to(device), sample_rate=sr).squeeze(axis=1)
-
-        # Do reverberation
-        if augmentation_probabilities["RIR"] >= np.random.random() and RIR_paths != []:
-            rir_waveform, sr = torchaudio.load(random.choice(RIR_paths))
-            augmented_batch = reverberate(augmented_batch.cpu(), rir_waveform, rescale_amp="avg")
-
-        # yield batch of 16-bit PCM audio data
-        yield (augmented_batch.cpu().numpy()*32767).astype(np.int16)
-
+        yield (final_batch_2d.cpu().numpy() * 32767).astype(np.int16)
 
 def create_fixed_size_clip(x, n_samples, sr=16000, start=None, end_jitter=.200):
     """
@@ -729,127 +780,114 @@ def create_fixed_size_clip(x, n_samples, sr=16000, start=None, end_jitter=.200):
     return dat
 
 
-# Load batches of data from mmaped numpy arrays
-class mmap_batch_generator:
+import numpy as np
+import torch
+
+def mmap_batch_generator(data_files, n_per_class, data_transform_funcs, label_transform_funcs, triplet_mode=True):
     """
-    A generator class designed to dynamically build batches from mmaped numpy arrays.
+    Generates batches of data from memory-mapped (.npy) files.
+    Can operate in standard classification mode or triplet generation mode.
 
-    The generator will return tuples of (data, labels) with a batch size determined
-    by the `n_per_class` initialization argument. When a mmaped numpy array has been
-    fully interated over, it will restart at the zeroth index automatically.
+    Args:
+        data_files (dict): A dictionary mapping class names to .npy file paths.
+        n_per_class (dict): A dictionary mapping class names to the number of samples per batch.
+        data_transform_funcs (dict): Functions to transform data for each class.
+        label_transform_funcs (dict): Functions to transform labels for each class.
+        triplet_mode (bool): If True, generates batches with (anchor, positive, negative) samples.
     """
-    def __init__(self,
-                 data_files: dict,
-                 label_files: dict = {},
-                 batch_size: int = 128,
-                 n_per_class: dict = {},
-                 data_transform_funcs: dict = {},
-                 label_transform_funcs: dict = {}
-                 ):
-        """
-        Initialize the generator object
+    memmaps = {name: np.load(path, mmap_mode='r') for name, path in data_files.items()}
+    class_indices = {name: np.arange(len(arr)) for name, arr in memmaps.items()}
+    
+    # Identify positive and negative classes for triplet mode
+    positive_key = 'positive' # Assuming 'positive' is the key for positive class
+    negative_keys = [k for k in data_files.keys() if k != positive_key]
 
-        Args:
-            data_files (dict): A dictionary of labels (as keys) and on-disk numpy array paths (as values).
-                               Keys should be integer strings representing class labels.
-            label_files (dict): A dictionary where the keys are the class labels and the values are the per-example
-                                labels. The values must be the same shape as the correponding numpy data arrays
-                                from the `data_files` argument.
-            batch_size (int): The number of samples per batch
-            n_per_class (dict): A dictionary with integer string labels (as keys) and number of example per batch
-                               (as values). If None (the default), batch sizes for each class will be
-                               automatically calculated based on the the input dataframe shapes and transformation
-                               functions.
+    if triplet_mode and (positive_key not in data_files or not negative_keys):
+        raise ValueError("Triplet mode requires at least one 'positive' class and one negative class in data_files.")
 
-            data_transform_funcs (dict): A dictionary of transformation functions to apply to each batch of per class
-                                    data loaded from the mmaped array. For example, with an array of shape
-                                    (batch, timesteps, features), if the goal is to half the timesteps per example,
-                                    (effectively doubling the size of the batch) this function could be passed:
+    while True:
+        batch_x, batch_y = [], []
+        
+        if not triplet_mode:
+            # Standard Classification Batch Generation 
+            for name, n_samples in n_per_class.items():
+                if n_samples > 0:
+                    indices = np.random.choice(class_indices[name], n_samples, replace=True)
+                    data = memmaps[name][indices]
+                    
+                    if name in data_transform_funcs:
+                        data = data_transform_funcs[name](data)
+                    
+                    batch_x.append(data)
+                    
+                    if name in label_transform_funcs:
+                        labels = label_transform_funcs[name](data)
+                        batch_y.extend(labels)
 
-                                    lambda x: np.vstack(
-                                        (x[:, 0:timesteps//2, :], x[:, timesteps//2:, :]
-                                    ))
+            yield torch.from_numpy(np.vstack(batch_x)).float(), torch.from_numpy(np.array(batch_y)).float()
 
-                                    The user should incorporate the effect of any transform on the values of the
-                                    `n_per_class` argument accordingly, in order to end of with the desired
-                                    total batch size for each iteration of the generator.
-            label_transform_funcs (dict): A dictionary of transformation functions to apply to each batch of labels.
-                                          For example, strings can be mapped to integers or one-hot encoded,
-                                          groups of classes can be merged together into one, etc.
-        """
-        # inputs
-        self.data_files = data_files
-        self.label_files = label_files
-        self.n_per_class = n_per_class
-        self.data_transform_funcs = data_transform_funcs
-        self.label_transform_funcs = label_transform_funcs
+        else:
+            # Triplet Batch Generation
+            n_positive_samples = n_per_class.get(positive_key, 0)
+            if n_positive_samples == 0:
+                continue
 
-        # Get array mmaps and store their shapes (but load files < 1 GB total size into memory)
-        self.data = {label: np.load(fl, mmap_mode='r') for label, fl in data_files.items()}
-        self.labels = {label: np.load(fl) for label, fl in label_files.items()}
-        self.data_counter = {label: 0 for label in data_files.keys()}
-        self.original_shapes = {label: self.data[label].shape for label in self.data.keys()}
-        self.shapes = {label: self.data[label].shape for label in self.data.keys()}
+            # 1. Select Anchor and Positive samples from the positive class
+            # We need 2 unique positive samples for each triplet
+            anchor_indices = np.random.choice(class_indices[positive_key], n_positive_samples, replace=True)
+            positive_indices = np.random.choice(class_indices[positive_key], n_positive_samples, replace=True)
+            
+            # Ensure anchor and positive are not the same (highly unlikely but good practice)
+            mask = anchor_indices == positive_indices
+            while np.any(mask):
+                positive_indices[mask] = np.random.choice(class_indices[positive_key], np.sum(mask), replace=True)
+                mask = anchor_indices == positive_indices
 
-        # # Update effective shape of mmap array based on user-provided transforms (currently broken)
-        # for lbl, f in self.data_transform_funcs.items():
-        #     dummy_data = np.random.random((1, self.original_shapes[lbl][1], self.original_shapes[lbl][2]))
-        #     new_shape = f(dummy_data).shape
-        #     self.shapes[lbl] = (new_shape[0]*self.original_shapes[lbl][0], new_shape[1], new_shape[2])
+            anchors = memmaps[positive_key][anchor_indices]
+            positives = memmaps[positive_key][positive_indices]
 
-        # Calculate batch sizes, if the user didn't specify them
-        scale_factor = 1
-        if not self.n_per_class:
-            self.n_per_class = {}
-            for lbl, shape in self.shapes.items():
-                dummy_data = np.random.random((10, self.shapes[lbl][1], self.shapes[lbl][2]))
-                if self.data_transform_funcs.get(lbl, None):
-                    scale_factor = self.data_transform_funcs.get(lbl, None)(dummy_data).shape[0]/10
+            # 2. Select Negative samples
+            # We distribute the negative sample selection across all negative classes
+            negatives = []
+            total_neg_needed = n_positive_samples
+            
+            # Simple distribution: randomly pick a negative class for each anchor
+            chosen_neg_classes = np.random.choice(negative_keys, total_neg_needed, replace=True)
+            
+            for neg_class in negative_keys:
+                num_needed_from_class = np.sum(chosen_neg_classes == neg_class)
+                if num_needed_from_class > 0:
+                    neg_indices = np.random.choice(class_indices[neg_class], num_needed_from_class, replace=True)
+                    negatives.append(memmaps[neg_class][neg_indices])
+            
+            if not negatives: # Failsafe if no negatives were selected
+                continue
+                
+            negatives = np.vstack(negatives)
 
-                ratio = self.shapes[lbl][0]/sum([i[0] for i in self.shapes.values()])
-                self.n_per_class[lbl] = max(1, int(int(batch_size*ratio)/scale_factor))
+            # Apply transformations if they exist
+            if positive_key in data_transform_funcs:
+                anchors = data_transform_funcs[positive_key](anchors)
+                positives = data_transform_funcs[positive_key](positives)
 
-            # Get estimated batches per epoch, including the effect of any user-provided transforms
-            batch_size = sum([val*scale_factor for val in self.n_per_class.values()])
-            batches_per_epoch = sum([i[0] for i in self.shapes.values()])//batch_size
-            self.batch_per_epoch = batches_per_epoch
-            print("Batches/steps per epoch:", batches_per_epoch)
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        # Build batch
-        while True:
-            X, y = [], []
-            for label, n in self.n_per_class.items():
-                # Restart at zeroth index if an array reaches the end
-                if self.data_counter[label] >= self.shapes[label][0]:
-                    self.data_counter[label] = 0
-
-                # Get data from mmaped file
-                x = self.data[label][self.data_counter[label]:self.data_counter[label]+n]
-                self.data_counter[label] += x.shape[0]
-
-                # Transform data
-                if self.data_transform_funcs and self.data_transform_funcs.get(label):
-                    x = self.data_transform_funcs[label](x)
-
-                # Make labels for data (following whatever the current shape of `x` is)
-                if self.label_files.get(label, None):
-                    y_batch = self.labels[label][self.data_counter[label]:self.data_counter[label]+n]
-                else:
-                    y_batch = [label]*x.shape[0]
-
-                # Transform labels
-                if self.label_transform_funcs and self.label_transform_funcs.get(label):
-                    y_batch = self.label_transform_funcs[label](y_batch)
-
-                # Add data to batch
-                X.append(x)
-                y.extend(y_batch)
-
-            return np.vstack(X), np.array(y)
+            for neg_key in negative_keys:
+                 if neg_key in data_transform_funcs:
+                     # This is a simplification; assumes all negatives can be transformed the same way.
+                     # For more complex cases, this logic would need to be more granular.
+                     negatives = data_transform_funcs[neg_key](negatives)
+                     break # Apply only the first available transform for simplicity
+            
+            # Create labels for classification loss
+            # Anchor and Positive are 1s, Negative is 0
+            labels_anchor = torch.ones(n_positive_samples, 1)
+            labels_positive = torch.ones(n_positive_samples, 1) # Not used in loss, but kept for consistency
+            labels_negative = torch.zeros(n_positive_samples, 1)
+            
+            yield (torch.from_numpy(anchors).float(),
+                   torch.from_numpy(positives).float(),
+                   torch.from_numpy(negatives).float(),
+                   labels_anchor.float(),
+                   labels_negative.float())
 
 
 # Function to remove empty rows from the end of a mmap array
