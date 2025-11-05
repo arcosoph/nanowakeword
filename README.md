@@ -224,7 +224,6 @@ COOLDOWN = 2     # A simple cooldown managed outside the interpreter
 # --- Initialization ---
 if not os.path.exists(MODEL_PATH):
     sys.exit(f"Error: Model not found at '{MODEL_PATH}'")
-
 try:
     print(" Initializing NanoInterpreter (Simple Mode)...")
     
@@ -239,7 +238,6 @@ try:
 
     last_detection_time = 0
     
-    # --- Main Loop ---
     while True:
         audio_chunk = np.frombuffer(stream.read(1280, exception_on_overflow=False), dtype=np.int16)
         
@@ -249,7 +247,7 @@ try:
         # The detection logic is simple and external.
         current_time = time.time()
         if score > THRESHOLD and (current_time - last_detection_time > COOLDOWN):
-            print(f"🎯 Detected '{key}'! (Score: {score:.2f})")
+            print(f"Detected '{key}'! (Score: {score:.2f})")
             last_detection_time = current_time
             interpreter.reset()
         else:
