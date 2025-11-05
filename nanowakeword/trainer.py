@@ -600,48 +600,50 @@ class Model(nn.Module):
 
     def export_model(self, model, model_name, output_dir):
         """
-        Exports the final trained model to a standard, inference-ready ONNX format
-        with a guaranteed output shape of [batch_size, 1, 1].
+        Exports the final trained model to a standard, inference-ready ONNX format.
+
+        This function ensures hardware independence by moving both the model and a
+        dummy input to the CPU before export. It also guarantees a standardized
+        output shape of [batch_size, 1, 1] for maximum compatibility.
         """
         # Ensure the model is in a sequential format for export
         if not isinstance(model, nn.Sequential):
             print_info("Reconstructing model into a sequential format for export.")
             model = nn.Sequential(self.model, self.classifier)
 
-        # A robust wrapper to ensure the final output shape
+        # A robust wrapper to apply sigmoid and ensure the final output shape
         class InferenceWrapper(nn.Module):
             def __init__(self, trained_model):
                 super().__init__()
                 self.trained_model = trained_model
 
             def forward(self, x):
-                # Get the logits from the trained model
                 logits = self.trained_model(x)
-                
-                # Apply sigmoid to get probabilities
                 probabilities = torch.sigmoid(logits)
-                
-                # The Guaranteed Fix 
-                # Explicitly reshape the output to [batch_size, 1, 1].
-                # .view(-1, 1, 1) is a forceful command that the ONNX exporter
-                # cannot easily optimize away. The '-1' automatically infers
-                # the batch size, making it flexible.
+                # Forcefully reshape the output to a standard 3D tensor
                 return probabilities.view(-1, 1, 1)
 
         exportable_model = InferenceWrapper(model)
         exportable_model.eval()
 
-        # Define a dummy input with batch size 1 for tracing the model
+        # Define a dummy input for tracing the model graph
         dummy_input = torch.rand(1, *self.input_shape)
         onnx_path = os.path.join(output_dir, model_name + '.onnx')
         
         print_info(f"Saving inference-ready ONNX model to '{onnx_path}'")
         
         opset_version = self.config.get("onnx_opset_version", 12)
+        
         try:
+            # For maximum compatibility and to prevent device errors, always move both
+            # the model and the dummy input to the CPU before exporting to ONNX.
+            
+            model_cpu = exportable_model.cpu()
+            dummy_input_cpu = dummy_input.cpu()
+            
             torch.onnx.export(
-                exportable_model,
-                dummy_input,
+                model_cpu,
+                dummy_input_cpu,
                 onnx_path,
                 opset_version=opset_version,
                 input_names=['input'],
@@ -649,8 +651,11 @@ class Model(nn.Module):
                 dynamic_axes={'input': {0: 'batch_size'}, 'output': {0: 'batch_size'}}
             )
             print_info("ONNX model saved successfully.")
+
         except Exception as e:
-            print_info(f"ERROR: Failed to export to ONNX. Error: {e}")
+            # Provide a more detailed error message
+            print_info(f"ERROR: Failed to export to ONNX. A problem occurred during the export process.")
+            print_info(f"   Details: {e}")
 
 
     def _perform_train_step(self, data, step_ndx, logger): 
