@@ -1,6 +1,6 @@
 
 <p align="center">
-  <img src="assets/logo/logo_0.png" alt="Logo" width="290">
+  <img src="https://raw.githubusercontent.com/arcosoph/nanowakeword/main/assets/logo/logo_0.png" alt="Logo" width="290">
 </p>
 
 # NanoWakeWord
@@ -15,16 +15,17 @@
 [![Python](https://img.shields.io/pypi/pyversions/nanowakeword.svg?color=3776AB&logo=python&logoColor=white)](https://pypi.org/project/nanowakeword/)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/nanowakeword?period=total&units=INTERNATIONAL_SYSTEM&left_color=GRAY&right_color=BLACK&left_text=downloads)](https://pepy.tech/projects/nanowakeword)
 [![License](https://img.shields.io/pypi/l/nanowakeword?color=white&logo=apache&logoColor=black)](https://pypi.org/project/nanowakeword/)
+
 </div>
 
 ---
 
 **Quick Access**
-- [Installation](#installation)
-- [Usage](#usage)
-- [Performance](#performance-and-evaluation)
-- [Using model](#using-your-trained-model-inference)
-- [FAQ](#faq)
+- [Installation](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#installation)
+- [Usage](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#usage)
+- [Performance](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#performance-and-evaluation)
+- [Using model](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#using-your-trained-model-inference)
+- [FAQ](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#faq)
 
 ## ✨ **Build Your Pro Model**
 Learn by doing. This Colab notebook walks you through each step to create and export your own optimized `.onnx` model—perfect for beginners and developers alike.
@@ -178,7 +179,7 @@ Below is a typical training performance graph for a model trained on a standard 
 ### 📈 Training Performance Graph
 
 <p align="center">
-  <img src="assets/Graphs/training_performance_graph.png" width="600">
+  <img src="https://raw.githubusercontent.com/arcosoph/nanowakeword/main/assets/Graphs/training_performance_graph.png" width="600">
 </p>
 
 ### Key Performance Insights:
@@ -224,6 +225,7 @@ COOLDOWN = 2     # A simple cooldown managed outside the interpreter
 # --- Initialization ---
 if not os.path.exists(MODEL_PATH):
     sys.exit(f"Error: Model not found at '{MODEL_PATH}'")
+
 try:
     print(" Initializing NanoInterpreter (Simple Mode)...")
     
@@ -238,6 +240,7 @@ try:
 
     last_detection_time = 0
     
+    # --- Main Loop ---
     while True:
         audio_chunk = np.frombuffer(stream.read(1280, exception_on_overflow=False), dtype=np.int16)
         
@@ -247,7 +250,7 @@ try:
         # The detection logic is simple and external.
         current_time = time.time()
         if score > THRESHOLD and (current_time - last_detection_time > COOLDOWN):
-            print(f"Detected '{key}'! (Score: {score:.2f})")
+            print(f"🎯 Detected '{key}'! (Score: {score:.2f})")
             last_detection_time = current_time
             interpreter.reset()
         else:
@@ -311,8 +314,8 @@ We welcome feedback and contributions to help shape the future of this project!
 
 Contributions are the lifeblood of open source. We welcome contributions of all forms, from bug reports and documentation improvements to new features.
 
-To get started, please see our **[Contribution Guide](CONTRIBUTING.md)**, which includes information on setting up a development environment, running tests, and our code of conduct.
+To get started, please see our **[Contribution Guide](https://github.com/arcosoph/nanowakeword/blob/main/CONTRIBUTING.md)**, which includes information on setting up a development environment, running tests, and our code of conduct.
 
 ## License
 
-This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache 2.0 License - see the [LICENSE](https://github.com/arcosoph/nanowakeword/blob/main/LICENSE) file for details.
