@@ -62,26 +62,31 @@ def print_final_report_header():
 
 def print_table(data_dict, title):
     """
-    Prints a theme-aware table that automatically adapts to light and dark
-    terminal backgrounds.
+    Prints a professional, monochrome, and theme-agnostic table.
+    This classic black-and-white style offers maximum readability and a timeless look.
     """
     table = Table(
-        title=f"[bold]{title}[/bold]",
+        title=f"[blue]{title}[/blue]", # A standout, inverted title
         show_header=True,
-        header_style="bold magenta", # Magenta is visible on both light/dark themes
-        box=box.ROUNDED,
-        border_style="dim" # A less intense border color
+        # header_style="bold white",           # Simple, bold white for headers
+        box=box.SQUARE,                        # A clean, minimalist box style
+        border_style="dim"                     # A subtle border
     )
 
-    table.add_column("Parameter", style="dim", no_wrap=True)
+    # `bright_black` is the most theme-adaptive color for text.
+    # It appears as light gray on dark terminals and dark gray on light terminals.
+    table.add_column("Parameter", style="bright_black", no_wrap=True, justify="lift")
 
-    table.add_column("Value", style="bold default")
+    # `white` is a strong, neutral color for the most important data.
+    table.add_column("Value")
     
     for key, value in data_dict.items():
-        table.add_row(key, str(value))
+        value_str = str(value)
+        if len(value_str) > 80:
+            value_str = value_str[:77] + "..."
+        table.add_row(key, value_str)
         
     console.print(table)
-
 
                                                                                                                               
                                                                                                                               
