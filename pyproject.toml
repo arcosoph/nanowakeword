@@ -64,7 +64,7 @@ train = [
     "mutagen>=1.46, <2.0",
 
     # --- TTS & Phonemization ---
-    "phonemize==0.2.1", # Your library, pinned exactly for full control.
+    "phonemize>=0.2, <1.0", 
     "pronouncing>=0.2, <1.0",
     "sounddevice>=0.4.6, <1.0",
     
