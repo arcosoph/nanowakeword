@@ -137,6 +137,13 @@ batch_composition:
     pure_noise: 27
 
 
+# Checkpointing & Resuming Configuration (Optional)
+checkpointing:
+  enabled: true                 # Set to 'true' to enable saving checkpoints. Default is false.
+  interval_steps: 500           # Save a checkpoint every N steps.
+  limit: 3                      # Keep only the latest N checkpoints to save disk space.
+
+
 # ==============================================================================
 # ⚙️ SECTION X: WORKFLOW STAGES (Set to 'true' or 'false')
 # ==============================================================================

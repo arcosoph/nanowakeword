@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.2] - 2025-11-08
+
+### Added
+
+-   **Powerful Training Resumption Capability**:
+    -   Introduced a robust checkpointing system that allows users to resume interrupted training sessions seamlessly.
+    -   Added a new `--resume <path_to_project>` command-line argument to load the latest checkpoint and continue training.
+    -   New `checkpointing` section in `config.yaml` gives users full control over the feature, including enabling/disabling it, setting the save interval (`interval_steps`), and limiting the number of saved checkpoints (`limit`).
+    -   Checkpoints now save the complete training state, including the model, optimizer, scheduler, step number, and loss history, ensuring a flawless recovery.
+
+### Fixed
+
+-   **Critical Bug in LSTM/GRU Training**:
+    -   Resolved a critical `AttributeError` (`'LSTMModel' object has no attribute 'layer1'`) that caused the training process to crash when using `LSTM`, `GRU`, or `CNN` model architectures.
+    -   The error was triggered by a debug code block that was not model-agnostic. The logic has been refactored to work reliably with all model types, making the training process stable across all architectures.
+
+
 ## [1.3.0] - 2025-11-5
 
 This release marks a fundamental re-architecture of the NanoWakeWord trainer, transforming it from a static script into a transparent, scalable, and highly sophisticated training framework. The focus is on engineering excellence, providing unparalleled control, and producing state-of-the-art models ready for production environments.

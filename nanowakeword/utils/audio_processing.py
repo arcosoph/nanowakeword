@@ -13,7 +13,7 @@
 # limitations under the License.
 
 ############################################################
-# Modified by Arcosoph
+# Modified by Muhammad Abid
 #  For more information, visit the official repository:
 #       https://github.com/arcosoph/nanowakeword
 ############################################################

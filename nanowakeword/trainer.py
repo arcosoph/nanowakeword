@@ -517,7 +517,7 @@ class Model(nn.Module):
             return avg_state_dict
 
 
-    def auto_train(self, X_train, steps, table_updater, debug_path):
+    def auto_train(self, X_train, steps, table_updater, debug_path, resume_from_dir=None):
             """
             A modern, single-sequence training process that combines the best checkpoints to
               create a final and robust model.
@@ -527,7 +527,8 @@ class Model(nn.Module):
                 X=X_train,
                 max_steps=steps,
                 log_path=debug_path,
-                table_updater=table_updater        
+                table_updater=table_updater,
+                resume_from_dir=resume_from_dir        
             )
 
             print_info("Training finished. Merging best checkpoints to create final model...")
@@ -719,8 +720,7 @@ class Model(nn.Module):
                 logger.info(f"Total Weighted Loss: {weighted_triplet + weighted_class:.6f}")  
             # ========================== END DEBUG BLOCK 2 ===================================
 
-            # total_loss = (loss_triplet * 0.5) + (loss_class * 1.0)
-            # train_model মেথডের ভেতরে
+            # train_mode
             loss_weight_triplet = self.config.get("loss_weight_triplet", 0.5)
             loss_weight_class = self.config.get("loss_weight_class", 1.0)
             total_loss = (loss_triplet * loss_weight_triplet) + (loss_class * loss_weight_class)
@@ -729,11 +729,18 @@ class Model(nn.Module):
 
             # ========================== DEBUG BLOCK 3B: GRADIENTS ===========================
             if debug_mode and  step_ndx % log_interval == 0:
-                first_layer_grad = self.model.layer1.weight.grad.mean().item()
+                # Get the gradient of the very first parameter of the model, regardless of layer name
+                first_param_grad = next(self.model.parameters()).grad
+                if first_param_grad is not None:
+                    first_layer_grad = first_param_grad.mean().item()
+                else:
+                    first_layer_grad = 0.0  # Or handle as you see fit if grad is None
+
                 classifier_grad = self.classifier.weight.grad.mean().item()
+
                 logger.info(f"\n[DEBUG] Step {step_ndx}: Gradient Check")  
-                logger.info(f"Gradient mean of model's first layer: {first_layer_grad:.8f}")  
-                logger.info(f"Gradient mean of classifier layer:    {classifier_grad:.8f}")  
+                logger.info(f"Gradient mean of model's first parameter: {first_layer_grad:.8f}")  
+                logger.info(f"Gradient mean of classifier layer:    {classifier_grad:.8f}")                
             # ========================== END DEBUG BLOCK 3B ==================================
 
             default_max_norm = self.config.get("max_norm", 1.0)
@@ -745,120 +752,200 @@ class Model(nn.Module):
             return total_loss.detach().cpu().item()
 
 
-    def train_model(self, X, max_steps, log_path, table_updater):
-                    
-            import logging
-            from logging.handlers import RotatingFileHandler
-            import os
 
-            # --- 1. INITIAL SETUP ---
-            # This section prepares logging and all training parameters from your original code.
-            debug_mode = self.config.get("debug_mode", False)
-            log_dir = os.path.join(log_path, "training_debug")
-            os.makedirs(log_dir, exist_ok=True)
-            debug_log_file = os.path.join(log_dir, "training_debug.log")
-            if debug_mode:
-                logger = logging.getLogger("NanoTrainerDebug")
-                logger.setLevel(logging.INFO)
-                if not logger.handlers:
-                    handler = RotatingFileHandler(debug_log_file, maxBytes=5_000_000, backupCount=30)
-                    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
-                    handler.setFormatter(formatter)
-                    logger.addHandler(handler)
-                logger.propagate = False
-                print_info(f"[INFO] Debug mode ON. Logs will be saved to:\n{debug_log_file}")
-            else:
-                logger = logging.getLogger("NanoTrainerDebug")
-                logger.disabled = True
-                print_info("[INFO] Debug mode OFF. Logging disabled.")
-
-            ema_loss = None
-            self.best_training_checkpoints = [] 
-            self.best_training_scores = []
-            checkpoint_averaging_top_k= self.config.get("checkpoint_averaging_top_k", 5)
-            default_warmup_steps = int(max_steps * 0.15)
-            WARMUP_STEPS = self.config.get("WARMUP_STEPS", default_warmup_steps)
-            default_patience_steps = int(max_steps * 0.15)
-            patience = self.config.get("early_stopping_patience", default_patience_steps)
-            min_delta = self.config.get("main_delta", 0.0001)
-            best_ema_loss_for_stopping = float('inf')
-            steps_without_improvement = 0
-            ema_alpha = self.config.get("ema_alpha", 0.01)
-
-            if patience < 0:
-                print_info("Early stopping is DISABLED. Training will run for the full duration of 'steps'.")
-            else:
-              print_info(f"Training for {max_steps} steps. Model checkpointing and early stopping will activate after {WARMUP_STEPS} warm-up steps.")
-
-            self.to(self.device)
-            self.model.train() 
-            self.classifier.train()
-
-            # --- 2. DRY RUN FIRST STEP ---
-            # We run the first step silently to allow ConfigProxy to track all parameters
-            # used inside the training loop, like 'max_norm'.
-            data_iterator = iter(X)
-            try:
-                first_batch = next(data_iterator)
-                # The '0' is for the initial step_ndx
-                # initial_loss = self._perform_train_step(logger=logger, first_batch, step_ndx=0)
-                initial_loss = self._perform_train_step(first_batch, step_ndx=0, logger=logger)
-                self.history["loss"].append(initial_loss)
-                ema_loss = initial_loss
-            except StopIteration:
-                print("\n[ERROR] Data source is empty. Cannot start training.")
-                return
-
-            # --- 3. PRINT THE COMPLETE CONFIGURATION TABLE ---
-            # Now that the first step has run, the table will be complete.
-            table_updater.update(force_print=True)
-            
-            # --- 4. RUN THE MAIN TRAINING LOOP ---
-            # The tqdm progress bar starts below the table. 'initial=1' means one step is already done.
-            training_loop = tqdm(data_iterator, total=max_steps, desc="Training", initial=1)
-
-            # We start enumeration from 1 since step 0 is complete.
-            for step_ndx, data in enumerate(training_loop, 1):
+    def train_model(self, X, max_steps, log_path, table_updater, resume_from_dir=None):
                 
-                current_loss = self._perform_train_step(data, step_ndx=step_ndx, logger=logger)
-                self.history["loss"].append(current_loss)
+                import logging
+                from logging.handlers import RotatingFileHandler
+                import os
+                import re # Regular expressions for parsing filenames
+
+                # --- 1. INITIAL SETUP ---
+                # This section remains the same, preparing logging.
+                debug_mode = self.config.get("debug_mode", False)
+                log_dir = os.path.join(log_path, "training_debug")
+                os.makedirs(log_dir, exist_ok=True)
+                debug_log_file = os.path.join(log_dir, "training_debug.log")
+                if debug_mode:
+                    logger = logging.getLogger("NanoTrainerDebug")
+                    logger.setLevel(logging.INFO)
+                    if not logger.handlers:
+                        handler = RotatingFileHandler(debug_log_file, maxBytes=5_000_000, backupCount=30)
+                        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
+                        handler.setFormatter(formatter)
+                        logger.addHandler(handler)
+                    logger.propagate = False
+                    print_info(f"Debug mode ON. Logs will be saved to:\n{debug_log_file}")
+                else:
+                    logger = logging.getLogger("NanoTrainerDebug")
+                    logger.disabled = True
+                    # print_info("Debug mode OFF. Logging disabled.")
+
+                # CHECKPOINTING CONFIGURATION 
+                # Reads the 'checkpointing' section from config.yaml.
+                # If the section doesn't exist, it defaults to being disabled.
+                checkpoint_cfg = self.config.get("checkpointing", {})
+                checkpointing_enabled = checkpoint_cfg.get("enabled", False)
+                checkpoint_interval = checkpoint_cfg.get("interval_steps", 1000)
+                checkpoint_limit = checkpoint_cfg.get("limit", 3)
+                checkpoint_dir = os.path.join(log_path, "checkpoints")
+                if checkpointing_enabled:
+                    os.makedirs(checkpoint_dir, exist_ok=True)
+                    print_info(f"Checkpointing is ENABLED. A checkpoint will be saved every {checkpoint_interval} steps.")
                 
-                # Update Exponential Moving Average (EMA) Loss
-                # ema_loss = 0.01 * current_loss + (1 - 0.01) * 
-                ema_loss = ema_alpha * current_loss + (1 - ema_alpha) * ema_loss
 
+                # Training parameter setup -
+                # This section also remains the same.
+                ema_loss = None
+                self.best_training_checkpoints = [] 
+                self.best_training_scores = []
+                checkpoint_averaging_top_k= self.config.get("checkpoint_averaging_top_k", 5)
+                default_warmup_steps = int(max_steps * 0.15)
+                WARMUP_STEPS = self.config.get("WARMUP_STEPS", default_warmup_steps)
+                default_patience_steps = int(max_steps * 0.15)
+                patience = self.config.get("early_stopping_patience", default_patience_steps)
+                min_delta = self.config.get("main_delta", 0.0001)
+                best_ema_loss_for_stopping = float('inf')
+                steps_without_improvement = 0
+                ema_alpha = self.config.get("ema_alpha", 0.01)
 
-                # Checkpointing logic (after warm-up)
-                if step_ndx > WARMUP_STEPS:
-                    current_score = ema_loss
+                if patience < 0:
+                    print_info("Early stopping is DISABLED. Training will run for the full duration of 'steps'.")
+                else:
+                    print_info(f"Training for {max_steps} steps. Model checkpointing and early stopping will activate after {WARMUP_STEPS} warm-up steps.")
+
+                self.to(self.device)
+                self.model.train() 
+                self.classifier.train()
+
+                start_step = 0
+                data_iterator = iter(X)
+
+                if resume_from_dir:
+                    # Construct the path to the checkpoints folder within the specified resume directory
+                    resume_checkpoint_dir = os.path.join(resume_from_dir, "2_training_artifacts", "checkpoints")
+                    print_info(f"Attempting to resume training from: {resume_checkpoint_dir}")
                     
-                    if len(self.best_training_checkpoints) < checkpoint_averaging_top_k:
-                        self.best_training_checkpoints.append(copy.deepcopy(self.state_dict()))
-                        self.best_training_scores.append({"step": step_ndx, "stable_loss": current_score})
-                    else:
-                        worst_score = max(s['stable_loss'] for s in self.best_training_scores)
-                        if current_score < worst_score:
-                            worst_idx = [i for i, s in enumerate(self.best_training_scores) if s['stable_loss'] == worst_score][0]
-                            self.best_training_checkpoints[worst_idx] = copy.deepcopy(self.state_dict())
-                            self.best_training_scores[worst_idx] = {"step": step_ndx, "stable_loss": current_score}
+                    if os.path.exists(resume_checkpoint_dir):
+                        # Find all checkpoint files in the directory
+                        checkpoints = [f for f in os.listdir(resume_checkpoint_dir) if f.startswith("checkpoint_step_") and f.endswith(".pth")]
+                        if checkpoints:
+                            # Robustly find the latest checkpoint by parsing the step number from the filename
+                            latest_step = -1
+                            latest_checkpoint_file = None
+                            for cp_file in checkpoints:
+                                match = re.search(r"checkpoint_step_(\d+).pth", cp_file)
+                                if match:
+                                    step = int(match.group(1))
+                                    if step > latest_step:
+                                        latest_step = step
+                                        latest_checkpoint_file = cp_file
+                            
+                            if latest_checkpoint_file:
+                                checkpoint_path = os.path.join(resume_checkpoint_dir, latest_checkpoint_file)
+                                print_info(f"Loading latest checkpoint: {checkpoint_path}")
+                                checkpoint = torch.load(checkpoint_path, map_location=self.device)
+                                
+                                # Restore the complete state
+                                self.load_state_dict(checkpoint['model_state_dict'])
+                                self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+                                
+                                start_step = checkpoint.get('step', 0)
+                                ema_loss = checkpoint.get('ema_loss', None)
+                                steps_without_improvement = checkpoint.get('steps_without_improvement', 0)
+                                best_ema_loss_for_stopping = checkpoint.get('best_ema_loss_for_stopping', float('inf'))
+                                self.history['loss'] = checkpoint.get('loss_history', [])
 
-                # Your original table_updater call is no longer needed here.
-                # table_updater.update()
-
-                # Early Stopping logic
-                if patience > 0:
-                    if ema_loss < best_ema_loss_for_stopping - min_delta:
-                        best_ema_loss_for_stopping = ema_loss
-                        steps_without_improvement = 0
+                                print_info(f"Successfully restored state. Resuming training from step {start_step + 1}.")
+                                
+                                # CRITICAL: Fast-forward the data iterator to the correct position
+                                print_info("Synchronizing data stream to the restored step...")
+                                for _ in tqdm(range(start_step + 1), desc="Fast-forwarding data", unit="steps", leave=False):
+                                    next(data_iterator, None)
+                            else:
+                                print_info("WARNING: Checkpoint files found, but their names are not in the expected format. Starting fresh.")
+                        else:
+                            print_info("WARNING: No valid checkpoint files found in the directory. Starting fresh.")
                     else:
-                        steps_without_improvement += 1
+                        print_info(f"WARNING: Checkpoint directory not found at '{resume_checkpoint_dir}'. Starting fresh.")
+                
+                # The "dry run" for the first step ONLY happens if we are NOT resuming.
+                if start_step == 0:
+                    try:
+                        first_batch = next(data_iterator)
+                        initial_loss = self._perform_train_step(first_batch, step_ndx=0, logger=logger)
+                        self.history["loss"].append(initial_loss)
+                        ema_loss = initial_loss
+                        start_step = 1 # The main loop will now correctly start from step 1
+                    except StopIteration:
+                        print("\n[ERROR] Data source is empty. Cannot start training.")
+                        return
+                
+                table_updater.update(force_print=True)
+
+                # The main training loop now correctly starts from `start_step`.
+                training_loop = tqdm(data_iterator, total=max_steps, desc="Training", initial=start_step)
+                for step_ndx, data in enumerate(training_loop, start=start_step):
                     
-                    if step_ndx > WARMUP_STEPS and steps_without_improvement >= patience:
-                        print(f"\nINFO: Early stopping triggered at step {step_ndx}. No improvement in stable loss for {patience} steps.")
+                    current_loss = self._perform_train_step(data, step_ndx=step_ndx, logger=logger)
+                    self.history["loss"].append(current_loss)
+                    
+                    if ema_loss is None: ema_loss = current_loss
+                    ema_loss = ema_alpha * current_loss + (1 - ema_alpha) * ema_loss
+
+                    # The logic for checkpoint averaging (best models) remains the same
+                    if step_ndx > WARMUP_STEPS:
+                        current_score = ema_loss
+                        if len(self.best_training_checkpoints) < checkpoint_averaging_top_k:
+                            self.best_training_checkpoints.append(copy.deepcopy(self.state_dict()))
+                            self.best_training_scores.append({"step": step_ndx, "stable_loss": current_score})
+                        else:
+                            worst_score = max(s['stable_loss'] for s in self.best_training_scores)
+                            if current_score < worst_score:
+                                worst_idx = [i for i, s in enumerate(self.best_training_scores) if s['stable_loss'] == worst_score][0]
+                                self.best_training_checkpoints[worst_idx] = copy.deepcopy(self.state_dict())
+                                self.best_training_scores[worst_idx] = {"step": step_ndx, "stable_loss": current_score}
+
+                    # Early stopping logic remains the same
+                    if patience > 0:
+                        if ema_loss < best_ema_loss_for_stopping - min_delta:
+                            best_ema_loss_for_stopping = ema_loss
+                            steps_without_improvement = 0
+                        else:
+                            steps_without_improvement += 1
+                        
+                        if step_ndx > WARMUP_STEPS and steps_without_improvement >= patience:
+                            print(f"\nINFO: Early stopping triggered at step {step_ndx}. No improvement in stable loss for {patience} steps.")
+                            break
+
+                    if checkpointing_enabled and step_ndx > 0 and step_ndx % checkpoint_interval == 0:
+                        # Gather all necessary data to save a complete checkpoint
+                        checkpoint_data = {
+                            'step': step_ndx,
+                            'model_state_dict': self.state_dict(),
+                            'optimizer_state_dict': self.optimizer.state_dict(),
+                            'scheduler_state_dict': self.scheduler.state_dict(),
+                            'ema_loss': ema_loss,
+                            'best_ema_loss_for_stopping': best_ema_loss_for_stopping,
+                            'steps_without_improvement': steps_without_improvement,
+                            'loss_history': self.history['loss']
+                        }
+                        checkpoint_name = f"checkpoint_step_{step_ndx}.pth"
+                        torch.save(checkpoint_data, os.path.join(checkpoint_dir, checkpoint_name))
+                        
+                        # Manage checkpoint limit: Keep only the latest N checkpoints
+                        all_checkpoints = sorted(
+                            [f for f in os.listdir(checkpoint_dir) if f.startswith("checkpoint_step_")],
+                            # Sort numerically, not alphabetically (so step_10000 comes after step_2000)
+                            key=lambda f: int(re.search(r"(\d+)", f).group(1))
+                        )
+                        if len(all_checkpoints) > checkpoint_limit:
+                            os.remove(os.path.join(checkpoint_dir, all_checkpoints[0]))
+                        
+                    if step_ndx >= max_steps - 1:
                         break
-                    
-                if step_ndx >= max_steps - 1:
-                    break
+
 
 class ConfigProxy:
     def __init__(self, data: dict, root_proxy=None, prefix=""):
@@ -1060,6 +1147,15 @@ def train(cli_args=None):
         "--overwrite", # NO SHORTHAND BY DESIGN FOR SAFETY
         help="Forces regeneration of feature files, overwriting any existing ones. Use with caution.",
         action="store_true"
+    )
+
+    # NEW 
+    parser.add_argument(
+        "--resume",
+        help="Path to the project directory to resume training from. (e.g., --resume ./trained_models/my_wakeword_v1)",
+        type=str,
+        default=None,
+        metavar="PATH"
     )
     
     args = parser.parse_args(cli_args)
@@ -1692,7 +1788,8 @@ def train(cli_args=None):
             X_train=X_train,
             steps=config.get("steps", 15000),
             debug_path=artifacts_dir,
-            table_updater=dynamic_table
+            table_updater=dynamic_table,
+            resume_from_dir=args.resume 
         )
 
         # 5. Post-Training Steps: Plotting and Exporting 

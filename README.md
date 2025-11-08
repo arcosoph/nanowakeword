@@ -71,7 +71,7 @@ Learn by doing. This Colab notebook walks you through each step to create and ex
 
 ### Installation
 
-Install the lightweight core package for **inference**:
+Install the latest stable version from PyPI for **inference**:
 ```bash
 pip install nanowakeword
 ```
@@ -79,6 +79,11 @@ pip install nanowakeword
 To **train your own models**, install the full package with all training dependencies:
 ```bash
 pip install "nanowakeword[train]"
+```
+**Pro-Tip: Bleeding-Edge Updates**  
+While the PyPI package offers the latest stable release, you can install the most up-to-the-minute version directly from GitHub to get access to new features and fixes before they are officially released:
+```bash
+pip install git+https://github.com/arcosoph/nanowakeword.git
 ```
 
 **FFmpeg:** If you want to train your model you must have FFmpeg installed on your system and available in your system's PATH. This is required for automatic audio preprocessing.
@@ -133,9 +138,15 @@ The primary method for controlling the NanoWakeWord framework is through a `conf
 
     # Add more setting (Optional)
     # For example, to apply a specific set of parameters:
-    n_blocks: 3      
-    layer_size: 256
+    n_blocks: 3
+    # ...
     classification_loss: labelsmoothing
+    # ...
+    checkpointing:
+      enabled: true
+      interval_steps: 500
+      limit: 3
+    # Other...
     ```
 *For a full explanation of all parameters, please see the [`training_config.yaml`](https://github.com/arcosoph/nanowakeword/blob/main/examples/training_config.yaml) or [`train_config_full.yaml`](https://github.com/arcosoph/nanowakeword/blob/main/examples/train_config_full.yaml) file in the `examples` folder.*
 
@@ -157,6 +168,7 @@ For on-the-fly experiments or to temporarily modify your pipeline without editin
 | `--transform_clips` | `-t`                      | Activates the preparatory 'transform' stage (augmentation and feature extraction).                      |
 | `--train_model`     | `-T`                      | Activates the final 'Training' stage to build the model.                                                |
 | `--force-verify`    | `-f`                      | Forces re-verification of all data directories, ignoring the cache.                                     |
+| `--resume`          | *(none)*                  | Resumes training from the latest checkpoint in the specified project directory.                         |
 | `--overwrite`       | *(none by design)*       | Forces regeneration of feature files. **Use with caution as this deletes existing data.**                 |
 
 ### The Intelligent Workflow
@@ -207,25 +219,27 @@ This intelligent, automated, and data-centric approach is the core of Nanowakewo
 
 ## Using Your Trained Model (Inference)
 
-Once you have your `model.onnx` file, using it for inference is simple. Here’s a minimal example in Python using the `nanowakeword` librarie.
+Your trained `.onnx` model is ready for action! The easiest and most powerful way to run inference is with our lightweight `NanoInterpreter` class. It's designed for high performance and requires minimal code to get started.
+
+Here’s a practical example of how to use it:
 
 ```python
 import pyaudio
 import numpy as np
 import os
 import sys
-from nanowakeword.nanointerpreter import NanoInterpreter 
 import time
+# Import the interpreter class from the library
+from nanowakeword.nanointerpreter import NanoInterpreter 
 # --- Simple Configuration ---
-MODEL_PATH = r"trained_models\hey_computer_v1\3_model\hey_computer_v1.onnx"
+MODEL_PATH = r"model/path/your.onnx"
 THRESHOLD = 0.9  # A simple threshold for detection
 COOLDOWN = 2     # A simple cooldown managed outside the interpreter
 # If you want, you can use more advanced methods like VAD or PATIENCE_FRAMES.
 
-# --- Initialization ---
+# Initialization 
 if not os.path.exists(MODEL_PATH):
     sys.exit(f"Error: Model not found at '{MODEL_PATH}'")
-
 try:
     print(" Initializing NanoInterpreter (Simple Mode)...")
     
@@ -240,7 +254,7 @@ try:
 
     last_detection_time = 0
     
-    # --- Main Loop ---
+    # Main Loop 
     while True:
         audio_chunk = np.frombuffer(stream.read(1280, exception_on_overflow=False), dtype=np.int16)
         
@@ -250,7 +264,7 @@ try:
         # The detection logic is simple and external.
         current_time = time.time()
         if score > THRESHOLD and (current_time - last_detection_time > COOLDOWN):
-            print(f"🎯 Detected '{key}'! (Score: {score:.2f})")
+            print(f"Detected '{key}'! (Score: {score:.2f})")
             last_detection_time = current_time
             interpreter.reset()
         else:
