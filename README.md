@@ -25,6 +25,7 @@
 - [Usage](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#usage)
 - [Performance](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#performance-and-evaluation)
 - [Using model](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#using-your-trained-model-inference)
+- [Features](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#features)
 - [FAQ](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#faq)
 
 ## ✨ **Build Your Pro Model**
@@ -38,29 +39,70 @@ Learn by doing. This Colab notebook walks you through each step to create and ex
 | **CNN** | Effective for short, sharp, and explosive wake words. | Highly efficient at feature extraction. | [▶️ **With CNN**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=cnn) |
 | **RNN** | A classic architecture, good for baseline experiments. | Simple recurrent structure. | [▶️ **With RNN**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=rnn) |
 
-## Key Features
+## Core Features and Architecture of Nanowakeword
 
-*   **Intelligent, Data-Driven Architecture with Full Override Capability:**
-    The framework's core is an intelligent engine that analyzes your dataset to generate an optimal baseline architecture and a complete set of training hyperparameters. This provides a state-of-the-art starting point out-of-the-box. For advanced users and researchers, **every single parameter**—from model depth and optimizer choice to loss function weights and learning rate schedules—is exposed in the `.yaml` configuration, offering granular control for experimentation and fine-tuning.
+Nanowakeword is not just a tool; it's a sophisticated and complete ecosystem designed to automate and optimize every stage of the wake word detection pipeline, from data processing to training and real-time deployment. The core features behind its high performance are:
 
-*   **State-of-the-Art Hybrid Training Strategy:**
-    We've implemented a powerful training methodology that combines **Triplet Loss** with a pluggable **Classification Loss** (`labelsmoothing`, `focalloss`, `bce`). This hybrid approach forces the model to learn highly discriminative and robust acoustic embeddings, which is critical for minimizing false activations in real-world scenarios. The entire training stack, including schedulers and optimizers, is modular, allowing for advanced customization.
+<details>
+<summary><strong>1. Dynamic, Data-Driven Hyper-parameter Optimization</strong></summary>
 
-*   **Train on Virtually Unlimited Data with Memory-Mapping:**
-    Break the RAM barrier. NanoWakeWord's data pipeline is built on a memory-mapped generator that streams features directly from disk. This allows you to train on massive, terabyte-scale datasets as seamlessly as you would with smaller ones, enabling a level of scale typically reserved for enterprise-grade systems.
+The framework's most powerful component is its intelligent configuration engine. Instead of spending hours on manual tuning, you simply define your model architecture (e.g., `dnn` or `lstm`), and Nanowakeword handles the rest. It analyzes your dataset to automatically generate an optimized training plan, which includes:
 
-*   **Autonomous Optimization with Checkpoint Averaging:**
-    The training process is more than a simple loop; it's an autonomous optimization system. It uses an Exponential Moving Average (EMA) of the loss to analyze model stability, intelligently triggers early stopping, and automatically averages the weights of the best-performing checkpoints. This produces a final model with superior generalization and resilience against overfitting.
+*   **Model Complexity Scaling:** Automatically scales the number of layers (`n_blocks`) and neurons (`layer_size`) based on the volume of your data, preventing both underfitting and overfitting.
+*   **Optimized Training Duration:** Determines the ideal number of training steps (`steps`) by analyzing data quantity and quality, ensuring the model converges perfectly.
+*   **Dynamic Learning Rate Schedules:** Calculates the optimal `max_lr` and `base_lr` for modern schedulers like `CyclicLR` or `OneCycleLR` based on dataset size, leading to faster and more stable training.
+*   **Advanced Overfitting Prevention:** Computes an effective dropout probability (`dropout_prob`) by analyzing the ratio between model capacity and dataset size, significantly improving the model's generalization capabilities.
+*   **Hardware-Aware Resource Management:** The engine is conscious of your system's hardware (VRAM, RAM, CPU cores). It determines the most efficient batch sizes for data generation (`tts_batch_size`), augmentation (`augmentation_batch_size`), and training (`batch_size`) to ensure maximum resource utilization.
+*   **Data-Informed Augmentation Strategy:** Dynamically adjusts the intensity (e.g., `min_snr_in_db`, `max_snr_in_db`) and probability of augmentations by analyzing the amount of noise and RIR (Reverberation) data you provide.
+*   **Automatic Pre-processing:** Just drop your raw audio files (`.mp3`, `.m4a`, `.flac`, etc.) into the data folders — NanoWakeWord automatically handles resampling, channel conversion, and format standardization.
 
-*   **Transparent, Live Training Dashboard:**
-    Gain complete transparency into the training process. The framework features a sophisticated, non-destructive terminal dashboard that provides a real-time, comprehensive view of every active parameter. This allows engineers and researchers to monitor the exact state of the system, from learning rates to batch composition, without interrupting the workflow.
+While this intelligent engine provides a powerful, optimized baseline, it does not sacrifice flexibility. **Advanced users retain full control and can override any automatically generated parameter by simply specifying their desired value in the `config.yaml` file.**
 
-*   **Strategic Batch Composition Engine:**
-    Go beyond simple data loading. This powerful feature gives you expert-level control over the makeup of every single training batch. You can strategically define the precise ratio of positive, negative speech, and pure noise samples, allowing you to directly address specific training challenges like class imbalance or difficult false-positive cases.
+</details>
 
-*   **Automatic Pre-processing:**
-     Just drop your raw audio files (MP3, M4A, FLAC, etc.) into the data folders. NanoWakeWord handles resampling, channel conversion, and format conversion automatically.
+<details>
+<summary><strong>2. Production-Grade Automated Data Pipeline</strong></summary>
 
+The foundation of a robust model is diverse and realistic data. Nanowakeword's data pipeline automates this complex task:
+
+*   **Phonetic Adversarial Negative Generation:** Instead of just using random negative samples, it analyzes the phonology (pronunciation) of your wake word to generate phonetically similar but semantically different words (e.g., for "Hey Jarvis," it might create "Hay Carcass" or "Haze Jockeys"). This is a highly effective technique for minimizing false positives.
+*   **On-the-fly Data Augmentation:** A powerful augmentation pipeline is applied in real-time to every audio clip during training. This includes:
+    *   Realistic background noise at various SNR levels.
+    *   Room reverberation effects via RIR convolution.
+    *   Pitch shifting, band-stop filters, and colored noise.
+    This process prepares the model to perform reliably in any real-world environment.
+*   **Large-Scale Dataset Handling (`mmap`):** If your dataset is larger than your system's RAM, Nanowakeword uses memory-mapped files. This allows you to train on hundreds of gigabytes of data smoothly, without any memory issues.
+
+</details>
+
+<details>
+<summary><strong>3. State-of-the-Art Training Architecture and Techniques</strong></summary>
+
+Nanowakeword employs modern techniques not only in data handling but also in the training process itself to guarantee superior results:
+
+*   **Hybrid Loss Function:** It simultaneously optimizes for two distinct objectives using a combined loss function:
+    *   **Triplet Loss:** Maximizes the distance in the embedding space between the wake word and other sounds, teaching the model to recognize fine-grained differences.
+    *   **Classification Loss (Focal Loss/Label Smoothing):** Enhances classification accuracy and effectively handles the class imbalance inherent in wake word datasets.
+    This dual approach makes the model exceptionally robust.
+*   **Checkpoint Averaging:** Instead of selecting only the final or single best model, it averages the weights of the most stable and best-performing checkpoints from the training session. This "ensembling" technique produces a final model that is far more reliable and generalizes better.
+*   **Fault-Tolerant & Resumable Training:** Long training sessions can be interrupted. Nanowakeword automatically saves checkpoints and allows you to resume training from the exact point you left off, even synchronizing the data generator to its correct position.
+*   **Live Training Dashboard:** A clean, dynamic table of all effective training parameters is displayed in the terminal during training, giving you complete transparency and control over the entire process.
+
+</details>
+
+<details>
+<summary><strong>4. Efficient and Deployment-Ready Inference Engine</strong></summary>
+
+A model is only as good as its deployment. Nanowakeword's inference engine is specifically designed for edge devices and real-time applications:
+
+*   **Stateful Streaming Architecture:** It can process continuous audio streams in small, incremental chunks. For recurrent models like LSTMs/GRUs, it automatically manages the hidden state, ensuring fast and accurate detection with very low latency.
+*   **Universal ONNX Export:** The model is exported to the industry-standard ONNX format, which delivers maximum performance with hardware acceleration on any platform (desktop, embedded systems, mobile).
+*   **Integrated Pre- and Post-Processing Pipeline:** The inference engine is a complete solution, not just a model runner. It includes:
+    *   **Voice Activity Detection (VAD):** Saves computational power by keeping the model idle when no one is speaking.
+    *   **Noise Reduction:** An optional built-in noise reduction feature improves detection accuracy in noisy environments.
+    *   **Debouncing & Patience Filters:** Prevents accidental activations from short, transient noises and ensures that the wake word is triggered only on intentional utterances.
+
+</details>
 
 ## Getting Started
 
