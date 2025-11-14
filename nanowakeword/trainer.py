@@ -22,6 +22,7 @@
 # (✿◕‿◕✿)
 import os
 import sys
+import math
 import yaml
 import copy
 import scipy
@@ -42,6 +43,11 @@ import matplotlib.pyplot as plt
 from nanowakeword.utils.audio_processing import compute_features_from_generator
 from nanowakeword.data import augment_clips, mmap_batch_generator, generate_adversarial_texts
 from nanowakeword.utils.logger import print_banner, print_step_header, print_info, print_key_value, print_final_report_header, print_table
+# All Architectures
+from .architectures import (
+    CNNModel, LSTMModel, Net, GRUModel, RNNModel, TransformerModel, 
+    CRNNModel, TCNModel, QuartzNetModel, ConformerModel, EBranchformerModel
+)
 
 # To make the terminal look clean
 warnings.filterwarnings("ignore")
@@ -93,7 +99,6 @@ class TripletLoss(nn.Module):
         distance_negative = (anchor - negative).pow(2).sum(1)
         losses = torch.relu(distance_positive - distance_negative + self.margin)
         return losses.mean()
-
 
 
 class FocalLoss(nn.Module):
@@ -193,121 +198,74 @@ class Model(nn.Module):
         embedding_dim = config.get("embedding_dim", 64)
 
         if model_type == "cnn":
-            class CNNModel(nn.Module):
-                def __init__(self, input_shape, embedding_dim, dropout_prob, activation_fn):
-                    super().__init__()
-                    self.conv1 = nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=1)
-                    self.relu1 = activation_fn
-                    self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-                    self.conv2 = nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1)
-                    self.relu2 = activation_fn
-                    self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-                    conv_output_size = self._get_conv_output(input_shape)
-                    self.flatten = nn.Flatten()
-                    self.fc1 = nn.Linear(conv_output_size, 128)
-                    self.relu3 = activation_fn
-                    self.dropout = nn.Dropout(dropout_prob)
-                    self.fc2 = nn.Linear(128, embedding_dim) 
-                def _get_conv_output(self, shape):
-                    with torch.no_grad():
-                        input = torch.zeros(1, 1, *shape)
-                        output = self.pool1(self.relu1(self.conv1(input)))
-                        output = self.pool2(self.relu2(self.conv2(output)))
-                        return int(np.prod(output.shape))
-                def forward(self, x):
-                    if x.dim() == 3: x = x.unsqueeze(1)
-                    x = self.pool1(self.relu1(self.conv1(x)))
-                    x = self.pool2(self.relu2(self.conv2(x)))
-                    x = self.flatten(x)
-                    x = self.relu3(self.fc1(x))
-                    x = self.dropout(x)
-                    x = self.fc2(x) 
-                    return x
             self.model = CNNModel(input_shape, embedding_dim, dropout_prob=dropout_prob, activation_fn=self.activation_fn)
-            
+       
         elif model_type == "lstm":
-            class LSTMModel(nn.Module):
-                def __init__(self, input_dim, hidden_dim, n_layers, embedding_dim, bidirectional, dropout_prob):
-                    super().__init__()
-                    self.lstm = nn.LSTM(
-                        input_dim, hidden_dim, n_layers,
-                        batch_first=True, bidirectional=bidirectional,
-                        dropout=dropout_prob if n_layers > 1 else 0
-                    )
-                    linear_input_size = hidden_dim * 2 if bidirectional else hidden_dim
-                    self.dropout = nn.Dropout(dropout_prob)
-                    self.fc = nn.Linear(linear_input_size, embedding_dim) 
-                def forward(self, x):
-                    lstm_out, _ = self.lstm(x)
-                    last_output = lstm_out[:, -1, :]
-                    out = self.dropout(last_output)
-                    out = self.fc(out)
-                    return out
             self.model = LSTMModel(input_shape[1], layer_dim, n_blocks, embedding_dim, bidirectional=True, dropout_prob=dropout_prob)
-            
+
         elif model_type == "dnn":
-            class FCNBlock(nn.Module):
-                def __init__(self, layer_dim, activation_fn):
-                    super().__init__()
-                    self.fcn_layer = nn.Linear(layer_dim, layer_dim)
-                    self.relu = activation_fn
-                    self.layer_norm = nn.LayerNorm(layer_dim)
-                def forward(self, x):
-                    return self.relu(self.layer_norm(self.fcn_layer(x)))
-            class Net(nn.Module):
-                def __init__(self, input_shape, layer_dim, n_blocks, embedding_dim, dropout_prob, activation_fn):
-                    super().__init__()
-                    self.flatten = nn.Flatten()
-                    self.layer1 = nn.Linear(input_shape[0]*input_shape[1], layer_dim)
-                    self.relu1 = activation_fn
-                    self.layernorm1 = nn.LayerNorm(layer_dim)
-                    self.dropout = nn.Dropout(dropout_prob)
-                    self.blocks = nn.ModuleList([FCNBlock(layer_dim, activation_fn) for _ in range(n_blocks)])
-                    self.last_layer = nn.Linear(layer_dim, embedding_dim) 
-                def forward(self, x):
-                    x = self.relu1(self.layernorm1(self.layer1(self.flatten(x))))
-                    x = self.dropout(x)
-                    for block in self.blocks:
-                        x = block(x)
-                    x = self.last_layer(x) 
-                    return x
             self.model = Net(input_shape, layer_dim, n_blocks, embedding_dim, dropout_prob=dropout_prob, activation_fn=self.activation_fn)
             
         elif model_type == "gru":
-            class GRUModel(nn.Module):
-                def __init__(self, input_dim, hidden_dim, n_layers, embedding_dim, bidirectional, dropout_prob):
-                    super().__init__()
-                    self.gru = nn.GRU(
-                        input_dim, hidden_dim, n_layers,
-                        batch_first=True, bidirectional=bidirectional,
-                        dropout=dropout_prob if n_layers > 1 else 0
-                    )
-                    linear_input_size = hidden_dim * 2 if bidirectional else hidden_dim
-                    self.dropout = nn.Dropout(dropout_prob)
-                    self.fc = nn.Linear(linear_input_size, embedding_dim) # <--  
-                def forward(self, x):
-                    gru_out, _ = self.gru(x)
-                    last_output = gru_out[:, -1, :]
-                    out = self.dropout(last_output)
-                    out = self.fc(out)
-                    return out
             self.model = GRUModel(input_shape[1], layer_dim, n_blocks, embedding_dim, bidirectional=True, dropout_prob=dropout_prob)
             
         elif model_type == "rnn":
-            class RNNModel(nn.Module):
-                def __init__(self, input_shape, embedding_dim, n_blocks, dropout_prob):
-                    super().__init__()
-                    self.layer1 = nn.LSTM(
-                        input_shape[-1], 64, num_layers=n_blocks, bidirectional=True,
-                        batch_first=True, dropout=dropout_prob if n_blocks > 1 else 0
-                    )
-                    self.dropout = nn.Dropout(dropout_prob)
-                    self.layer2 = nn.Linear(64*2, embedding_dim)   
-                def forward(self, x):
-                    out, _ = self.layer1(x)
-                    last_output = self.dropout(out[:, -1])
-                    return self.layer2(last_output)
             self.model = RNNModel(input_shape, embedding_dim, n_blocks, dropout_prob=dropout_prob)
+        
+        elif model_type == "transformer":
+            d_model = config.get("transformer_d_model", 128)
+            n_head = config.get("transformer_n_head", 4)
+            self.model = TransformerModel(
+                input_dim=input_shape[1], d_model=d_model, n_head=n_head, 
+                n_layers=n_blocks, embedding_dim=embedding_dim, dropout_prob=dropout_prob
+            )
+
+        elif model_type == "crnn":
+            cnn_channels = config.get("crnn_cnn_channels", [16, 32, 32])
+            rnn_type = config.get("crnn_rnn_type", "lstm")
+            self.model = CRNNModel(
+                input_shape=input_shape, rnn_type=rnn_type, rnn_hidden_size=layer_dim, 
+                n_rnn_layers=n_blocks, cnn_channels=cnn_channels, embedding_dim=embedding_dim,
+                dropout_prob=dropout_prob, activation_fn=self.activation_fn
+            )
+
+        elif model_type == "tcn":
+            tcn_channels = config.get("tcn_channels", [64, 64, 128])
+            tcn_kernel_size = config.get("tcn_kernel_size", 3)
+            self.model = TCNModel(
+                input_dim=input_shape[1], num_channels=tcn_channels, embedding_dim=embedding_dim,
+                kernel_size=tcn_kernel_size, dropout_prob=dropout_prob
+            )
+
+        elif model_type == "quartznet":
+            default_quartznet_config = [[256, 33, 1], [256, 33, 1], [512, 39, 1]]
+            quartznet_config = config.get("quartznet_config", default_quartznet_config)
+            self.model = QuartzNetModel(
+                input_dim=input_shape[1], quartznet_config=quartznet_config,
+                embedding_dim=embedding_dim, dropout_prob=dropout_prob
+            )
+
+        elif model_type == "conformer":
+            conformer_d_model = config.get("conformer_d_model", 144)
+            conformer_n_head = config.get("conformer_n_head", 4)
+            self.model = ConformerModel(
+                input_dim=input_shape[1], d_model=conformer_d_model, n_head=conformer_n_head,
+                n_layers=n_blocks, embedding_dim=embedding_dim, dropout_prob=dropout_prob
+            )
+
+        elif model_type == "e_branchformer":
+            branchformer_d_model = config.get("branchformer_d_model", 144)
+            branchformer_n_head = config.get("branchformer_n_head", 4)
+            self.model = EBranchformerModel(
+                input_dim=input_shape[1], d_model=branchformer_d_model, n_head=branchformer_n_head,
+                n_layers=n_blocks, embedding_dim=embedding_dim, dropout_prob=dropout_prob
+            )
+        
+        else:
+            raise ValueError(
+                f"Unsupported model_type: '{model_type}'. "
+                "Supported types are: dnn, lstm, gru, rnn, cnn, transformer, crnn, tcn, quartznet, conformer, e_branchformer."
+            )
 
 
         triplet_margin = config.get("triplet_loss_margin", 0.2)
@@ -435,7 +393,6 @@ class Model(nn.Module):
                     "Supported types are: 'cyclic', 'onecycle', 'cosine'."
                 )
 
-    
     def plot_history(self, output_dir):
             """
             Creates a meaningful graph of training loss and its stable form (EMA).
@@ -499,22 +456,31 @@ class Model(nn.Module):
 
 
     def average_models(self, state_dicts: list):
-            """The given model averages the weights of the state_dicts."""
-            if not state_dicts:
-                raise ValueError("Cannot average an empty list of state dicts.")
+                """The given model averages the weights of the state_dicts."""
+                if not state_dicts:
+                    raise ValueError("Cannot average an empty list of state dicts.")
 
-            avg_state_dict = copy.deepcopy(state_dicts[0])
-            for key in avg_state_dict:
-                avg_state_dict[key].fill_(0)
-
-            for state_dict in state_dicts:
+                avg_state_dict = copy.deepcopy(state_dicts[0])
+                
+                # Zero out all floating-point parameters to prepare for summation.
+                # We will skip non-floating point parameters like 'num_batches_tracked'.
                 for key in avg_state_dict:
-                    avg_state_dict[key] += state_dict[key]
+                    if avg_state_dict[key].is_floating_point():
+                        avg_state_dict[key].fill_(0)
 
-            for key in avg_state_dict:
-                avg_state_dict[key] /= len(state_dicts)
+                # Sum up the parameters from all checkpoints.
+                for state_dict in state_dicts:
+                    for key in avg_state_dict:
+                        if avg_state_dict[key].is_floating_point():
+                            avg_state_dict[key] += state_dict[key]
 
-            return avg_state_dict
+                # Divide the summed parameters by the number of checkpoints to get the average.
+                for key in avg_state_dict:
+                    if avg_state_dict[key].is_floating_point():
+                        avg_state_dict[key] /= len(state_dicts)
+                # Non-floating point parameters (like counters) will retain the value from the first checkpoint.
+
+                return avg_state_dict
 
 
     def auto_train(self, X_train, steps, table_updater, debug_path, resume_from_dir=None):
@@ -547,7 +513,6 @@ class Model(nn.Module):
                 final_model.load_state_dict(averaged_state_dict)
                 final_model.eval() 
 
-            
             print_info("Calculating performance metrics for the final averaged model...")
             
             final_results = collections.OrderedDict()
@@ -597,8 +562,6 @@ class Model(nn.Module):
             # Returning the completed and averaged model
             return final_model
     
-
-
     def export_model(self, model, model_name, output_dir):
         """
         Exports the final trained model to a standard, inference-ready ONNX format.
@@ -633,8 +596,9 @@ class Model(nn.Module):
         
         print_info(f"Saving inference-ready ONNX model to '{onnx_path}'")
         
-        opset_version = self.config.get("onnx_opset_version", 12)
-        
+        opset_version = self.config.get("onnx_opset_version", 17)
+        print_info(f"Using ONNX opset version: {opset_version}")
+
         try:
             # For maximum compatibility and to prevent device errors, always move both
             # the model and the dummy input to the CPU before exporting to ONNX.
@@ -655,7 +619,7 @@ class Model(nn.Module):
 
         except Exception as e:
             # Provide a more detailed error message
-            print_info(f"ERROR: Failed to export to ONNX. A problem occurred during the export process.")
+            print_info("ERROR: ONNX export failed. Fix the issue and run again with --resume if a checkpoint exists.")
             print_info(f"   Details: {e}")
 
 
@@ -802,14 +766,25 @@ class Model(nn.Module):
                 checkpoint_averaging_top_k= self.config.get("checkpoint_averaging_top_k", 5)
                 default_warmup_steps = int(max_steps * 0.15)
                 WARMUP_STEPS = self.config.get("WARMUP_STEPS", default_warmup_steps)
-                default_patience_steps = int(max_steps * 0.15)
-                patience = self.config.get("early_stopping_patience", default_patience_steps)
                 min_delta = self.config.get("main_delta", 0.0001)
                 best_ema_loss_for_stopping = float('inf')
                 steps_without_improvement = 0
                 ema_alpha = self.config.get("ema_alpha", 0.01)
 
-                if patience < 0:
+                # Default patience value
+                default_patience_steps = int(max_steps * 0.15)
+
+                # Check if user has explicitly provided early_stopping_patience
+                user_patience = self.config.get("early_stopping_patience", None)
+
+                if user_patience is not None:
+                    patience = user_patience  # user override
+                elif self.config["steps"] < 3000:
+                    patience = 0  # auto disable for short trainings
+                else:
+                    patience = default_patience_steps
+
+                if patience == 0:
                     print_info("Early stopping is DISABLED. Training will run for the full duration of 'steps'.")
                 else:
                     print_info(f"Training for {max_steps} steps. Model checkpointing and early stopping will activate after {WARMUP_STEPS} warm-up steps.")
@@ -1800,7 +1775,6 @@ def train(cli_args=None):
             model_name=config.get("model_name", GNMV(config.get("model_type", "dnn"))), 
             output_dir=model_save_dir
         )
-
 
 if __name__ == '__main__':
     train()

@@ -82,7 +82,7 @@ max_snr_in_db: 20.0
 # Section 4: Model Architecture
 # ===========================================
 
-# Model type: "dnn", "lstm", "gru", "cnn", "rnn" # (default: DNN)
+# Model type: "dnn", "lstm", "gru", "cnn", "rnn", "transformer", "" # (default: DNN)
 model_type: gru # Very fast to train (DNN), but LSTM is more powerful. #(default: DNN)
 
 # Size of each model layer (number of neurons).

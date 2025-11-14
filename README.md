@@ -3,106 +3,107 @@
   <img src="https://raw.githubusercontent.com/arcosoph/nanowakeword/main/assets/logo/logo_0.png" alt="Logo" width="290">
 </p>
 
-# NanoWakeWord
-
-### Next-Generation Wake Word Framework
+<p align="center">
+    <a href="https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb"><img alt="Open In Colab" src="https://img.shields.io/badge/Open%20in%20Colab-FFB000?logo=googlecolab&logoColor=white"></a>
+    <a href="https://discord.gg/rYfShVvacB"><img alt="Join the Discord" src="https://img.shields.io/badge/Join%20the%20Discord-5865F2?logo=discord&logoColor=white"></a>
+    <a href="https://pypi.org/project/nanowakeword/"><img alt="PyPI" src="https://img.shields.io/pypi/v/nanowakeword.svg?color=6C63FF&logo=pypi&logoColor=white"></a>
+    <a href="https://pypi.org/project/nanowakeword/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/nanowakeword.svg?color=3776AB&logo=python&logoColor=white"></a>
+    <a href="https://pepy.tech/projects/nanowakeword"><img alt="PyPI Downloads" src="https://static.pepy.tech/personalized-badge/nanowakeword?period=total&units=INTERNATIONAL_SYSTEM&left_color=GRAY&right_color=BLACK&left_text=downloads"></a>
+    <a href="https://pypi.org/project/nanowakeword/"><img alt="License" src="https://img.shields.io/pypi/l/nanowakeword?color=white&logo=apache&logoColor=black"></a>
+</p>
 
 **NanoWakeWord is a next-generation, adaptive framework designed to build high-performance, custom wake word models. More than just a tool, it’s an intelligent engine that understands your data and optimizes the entire training process to deliver exceptional accuracy and efficiency.**
-
-[![Open In Colab](https://img.shields.io/badge/Open%20in%20Colab-FFB000?logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb)
-[![Join the Discord](https://img.shields.io/badge/Join%20the%20Discord-5865F2?logo=discord&logoColor=white)](https://discord.gg/rYfShVvacB)
-[![PyPI](https://img.shields.io/pypi/v/nanowakeword.svg?color=6C63FF&logo=pypi&logoColor=white)](https://pypi.org/project/nanowakeword/)
-[![Python](https://img.shields.io/pypi/pyversions/nanowakeword.svg?color=3776AB&logo=python&logoColor=white)](https://pypi.org/project/nanowakeword/)
-[![PyPI Downloads](https://static.pepy.tech/personalized-badge/nanowakeword?period=total&units=INTERNATIONAL_SYSTEM&left_color=GRAY&right_color=BLACK&left_text=downloads)](https://pepy.tech/projects/nanowakeword)
-[![License](https://img.shields.io/pypi/l/nanowakeword?color=white&logo=apache&logoColor=black)](https://pypi.org/project/nanowakeword/)
-
-</div>
-
----
 
 **Quick Access**
 - [Installation](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#installation)
 - [Usage](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#usage)
 - [Performance](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#performance-and-evaluation)
 - [Using model](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#using-your-trained-model-inference)
-- [Features](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#core-features-and-architecture-of-nanowakeword)
+- [Features](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#state-of-the-art-features-and-architecture)
 - [FAQ](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#faq)
 
-## ✨ **Build Your Pro Model**
-Learn by doing. This Colab notebook walks you through each step to create and export your own optimized `.onnx` model—perfect for beginners and developers alike.
+## ✨ **Choose Your Architecture, Build Your Pro Model**
+NanoWakeWord is a versatile framework offering a rich library of neural network architectures. Each is optimized for different scenarios, allowing you to build the perfect model for your specific needs. This Colab notebook lets you experiment with any of them.
 
 | Architecture | Recommended Use Case | Performance Profile | Start Training |
 | :--- | :--- | :--- | :--- |
-| **DNN** | Excellent for general use. Fast, lightweight, and reliable. | Fastest training, lowest resource usage. | [▶️ **With DNN**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=dnn) |
-| **LSTM** | Ideal for noisy environments or complex, multi-syllable wake words. | Best-in-class noise robustness. | [▶️ **With LSTM**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=lstm) |
-| **GRU** | A faster, lighter alternative to LSTM with similar high performance. | Great balance between robustness and speed. | [▶️ **With GRU**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=gru) |
-| **CNN** | Effective for short, sharp, and explosive wake words. | Highly efficient at feature extraction. | [▶️ **With CNN**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=cnn) |
-| **RNN** | A classic architecture, good for baseline experiments. | Simple recurrent structure. | [▶️ **With RNN**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=rnn) |
+| **DNN** | General use on resource-constrained devices (e.g., MCUs). | **Fastest Training, Low Memory** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=dnn) |
+| **CNN** | Short, sharp, and explosive wake words. | Efficient Feature Extraction | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=cnn) |
+| **LSTM** | Noisy environments or complex, multi-syllable phrases. | **Best-in-Class Noise Robustness** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=lstm) |
+| **GRU** | A faster, lighter alternative to LSTM with similar high performance. | Balanced: Speed & Robustness | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=gru) |
+| **CRNN** | Challenging audio requiring both feature and context analysis. | Hybrid Power: CNN + RNN | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=crnn) |
+| **TCN** | Modern, high-speed sequential processing. | **Faster than RNNs** (Parallel) | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=tcn) |
+| **QuartzNet**| Top accuracy with a small footprint on edge devices. | **Parameter-Efficient & Accurate** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=quartznet) |
+| **Transformer**| **Deep Contextual Understanding** via Self-Attention mechanism. | **SOTA Performance & Flexibility** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=transformer) |
+| **Conformer** | State-of-the-art hybrid for ultimate real-world performance. | **SOTA: Global + Local Features** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=conformer) |
+| **E-Branchformer**| Bleeding-edge research for potentially the highest accuracy. | Peak Accuracy Potential | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=e_branchformer) |
+| **RNN** | Baseline experiments or educational purposes. | Simple & Foundational | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=rnn) |
 
-## Core Features and Architecture of Nanowakeword
+## State-of-the-Art Features and Architecture
 
-Nanowakeword is not just a tool; it's a sophisticated and complete ecosystem designed to automate and optimize every stage of the wake word detection pipeline, from data processing to training and real-time deployment. The core features behind its high performance are:
+Nanowakeword is not merely a tool; it's a holistic, end-to-end ecosystem engineered to democratize the creation of state-of-the-art, custom wake word models. It moves beyond simple scripting by integrating a series of automated, production-grade systems that orchestrate the entire lifecycle—from data analysis and feature engineering to advanced training and deployment-optimized inference.
 
 <details>
-<summary><strong>1. Dynamic, Data-Driven Hyper-parameter Optimization</strong></summary>
+<summary><strong>1. Automated ML Engineering for Peak Performance</strong></summary>
 
-The framework's most powerful component is its intelligent configuration engine. Instead of spending hours on manual tuning, you simply define your model architecture (e.g., `dnn` or `lstm`), and Nanowakeword handles the rest. It analyzes your dataset to automatically generate an optimized training plan, which includes:
+The cornerstone and "brain" of the framework is its data-driven configuration engine. This system performs a holistic analysis of your unique dataset and hardware environment to replace hours of manual, error-prone hyper-parameter tuning with a single, intelligent process. It crafts a powerful, optimized training baseline by synergistically determining:
 
-*   **Model Complexity Scaling:** Automatically scales the number of layers (`n_blocks`) and neurons (`layer_size`) based on the volume of your data, preventing both underfitting and overfitting.
-*   **Optimized Training Duration:** Determines the ideal number of training steps (`steps`) by analyzing data quantity and quality, ensuring the model converges perfectly.
-*   **Dynamic Learning Rate Schedules:** Calculates the optimal `max_lr` and `base_lr` for modern schedulers like `CyclicLR` or `OneCycleLR` based on dataset size, leading to faster and more stable training.
-*   **Advanced Overfitting Prevention:** Computes an effective dropout probability (`dropout_prob`) by analyzing the ratio between model capacity and dataset size, significantly improving the model's generalization capabilities.
-*   **Hardware-Aware Resource Management:** The engine is conscious of your system's hardware (VRAM, RAM, CPU cores). It determines the most efficient batch sizes for data generation (`tts_batch_size`), augmentation (`augmentation_batch_size`), and training (`batch_size`) to ensure maximum resource utilization.
-*   **Data-Informed Augmentation Strategy:** Dynamically adjusts the intensity (e.g., `min_snr_in_db`, `max_snr_in_db`) and probability of augmentations by analyzing the amount of noise and RIR (Reverberation) data you provide.
+*   **Adaptive Architectural Scaling:** It doesn't just use a fixed architecture; it sculpts one for you. The engine dynamically scales the model's complexity—tuning its depth, width, and regularization (e.g., layers, neurons, dropout) to perfectly match the volume and complexity of your training data. This core function is critical for preventing both underfitting on small datasets and overfitting on large ones.
+
+*   **Optimized Training & Convergence Strategy:** Based on data characteristics, it formulates a multi-stage, dynamic learning rate schedule and determines the precise training duration required to reach optimal convergence. This ensures the model is trained to its full potential without wasting computational resources on diminishing returns.
+
+*   **Hardware-Aware Performance Tuning:** The engine profiles your entire hardware stack (CPU cores, system RAM, and GPU VRAM) to maximize throughput at every stage. It calculates the maximum efficient batch sizes for data generation, augmentation, and model training, ensuring that your hardware's full potential is unlocked.
+
 *   **Automatic Pre-processing:** Just drop your raw audio files (`.mp3`, `.m4a`, `.flac`, etc.) into the data folders — NanoWakeWord automatically handles resampling, channel conversion, and format standardization.
 
-While this intelligent engine provides a powerful, optimized baseline, it does not sacrifice flexibility. **Advanced users retain full control and can override any automatically generated parameter by simply specifying their desired value in the `config.yaml` file.**
+*   **Data-Driven Augmentation Policy:** Rather than applying a generic augmentation strategy, the engine crafts a custom augmentation policy. It analyzes the statistical properties of your provided noise and reverberation files to tailor the intensity, probability, and type of on-the-fly augmentations, creating a training environment that mirrors real-world challenges.
+
+While this engine provides a state-of-the-art baseline, it does not sacrifice flexibility. **Advanced users retain full, granular control and can override any of the dozens of automatically generated parameters by simply specifying their desired value in the `.yaml` file.**
 
 </details>
 
 <details>
-<summary><strong>2. Production-Grade Automated Data Pipeline</strong></summary>
+<summary><strong>2. The Production-Grade Data Pipeline: From Raw Audio to Optimized Features</strong></summary>
 
-The foundation of a robust model is diverse and realistic data. Nanowakeword's data pipeline automates this complex task:
+Recognizing that data is the bedrock of any great model, Nanowakeword automates the entire data engineering lifecycle with a pipeline designed for scale and quality:
 
-*   **Phonetic Adversarial Negative Generation:** Instead of just using random negative samples, it analyzes the phonology (pronunciation) of your wake word to generate phonetically similar but semantically different words (e.g., for "Hey Jarvis," it might create "Hay Carcass" or "Haze Jockeys"). This is a highly effective technique for minimizing false positives.
-*   **On-the-fly Data Augmentation:** A powerful augmentation pipeline is applied in real-time to every audio clip during training. This includes:
-    *   Realistic background noise at various SNR levels.
-    *   Room reverberation effects via RIR convolution.
-    *   Pitch shifting, band-stop filters, and colored noise.
-    This process prepares the model to perform reliably in any real-world environment.
-*   **Large-Scale Dataset Handling (`mmap`):** If your dataset is larger than your system's RAM, Nanowakeword uses memory-mapped files. This allows you to train on hundreds of gigabytes of data smoothly, without any memory issues.
+*   **Phonetic Adversarial Negative Generation:** This is a key differentiator. The system moves beyond generic noise and random words by performing a phonetic analysis of your wake word. It then synthesizes acoustically confusing counter-examples—phrases that sound similar but are semantically different. This forces the model to learn fine-grained phonetic boundaries, dramatically reducing the false positive rate in real-world use.
+
+*   **Dynamic On-the-Fly Augmentation:** During training, a powerful augmentation engine injects a rich tapestry of real-world acoustic scenarios in real-time. This includes applying background noise at varying SNR levels, convolving clips with room impulse responses (RIR) for realistic reverberation, and applying a suite of other transformations like pitch shifting and filtering.
+
+*   **Seamless Large-Scale Data Handling (`mmap`):** The framework shatters the memory ceiling of conventional training scripts. By utilizing memory-mapped files, it streams features directly from disk, enabling seamless training on datasets that can be hundreds of gigabytes or even terabytes in size, all on standard consumer hardware.
 
 </details>
 
 <details>
-<summary><strong>3. State-of-the-Art Training Architecture and Techniques</strong></summary>
+<summary><strong>3. A Modern Training Paradigm: State-of-the-Art Optimization Techniques</strong></summary>
 
-Nanowakeword employs modern techniques not only in data handling but also in the training process itself to guarantee superior results:
+The training process itself is infused with cutting-edge techniques to ensure the final model is not just accurate, but exceptionally robust and reliable:
 
-*   **Hybrid Loss Function:** It simultaneously optimizes for two distinct objectives using a combined loss function:
-    *   **Triplet Loss:** Maximizes the distance in the embedding space between the wake word and other sounds, teaching the model to recognize fine-grained differences.
-    *   **Classification Loss (Focal Loss/Label Smoothing):** Enhances classification accuracy and effectively handles the class imbalance inherent in wake word datasets.
-    This dual approach makes the model exceptionally robust.
-*   **Checkpoint Averaging:** Instead of selecting only the final or single best model, it averages the weights of the most stable and best-performing checkpoints from the training session. This "ensembling" technique produces a final model that is far more reliable and generalizes better.
-*   **Fault-Tolerant & Resumable Training:** Long training sessions can be interrupted. Nanowakeword automatically saves checkpoints and allows you to resume training from the exact point you left off, even synchronizing the data generator to its correct position.
-*   **Live Training Dashboard:** A clean, dynamic table of all effective training parameters is displayed in the terminal during training, giving you complete transparency and control over the entire process.
+*   **Hybrid Loss Architecture:** The model's learning is guided by a sophisticated, dual-objective loss function. **Triplet Loss** sculpts a highly discriminative embedding space, pushing dissimilar sounds far apart. Simultaneously, a **Classification Loss** (such as Focal Loss or Label Smoothing) fine-tunes the final decision boundary for raw accuracy. These two losses work in concert to produce models with superior discrimination capabilities.
+
+*   **Checkpoint Ensembling / Stochastic Weight Averaging (SWA):** Instead of relying on a single "best" checkpoint, the framework identifies and averages the weights of the most stable and high-performing models from the training run. This powerful ensembling technique finds a flatter, more robust minimum in the loss landscape, leading to a final model with provably better generalization to unseen data.
+
+*   **Resilient, Fault-Tolerant Workflow:** Long training sessions are protected. The framework automatically saves the entire training state—model weights, optimizer progress, scheduler state, and even the precise position of the data generator. This allows you to resume an interrupted session from the exact point you left off, ensuring zero progress is lost.
+
+*   **Transparent Live Dashboard:** A clean, dynamic terminal table provides a real-time, transparent view of all effective training parameters as they are being used, offering complete insight into the automated process.
 
 </details>
 
 <details>
-<summary><strong>4. Efficient and Deployment-Ready Inference Engine</strong></summary>
+<summary><strong>4. The Deployment-Optimized Inference Engine: High Performance on the Edge</strong></summary>
 
-A model is only as good as its deployment. Nanowakeword's inference engine is specifically designed for edge devices and real-time applications:
+A model's true value is in its deployment. Nanowakeword's inference engine is designed from the ground up for efficiency, low latency, and the challenges of real-world deployment:
 
-*   **Stateful Streaming Architecture:** It can process continuous audio streams in small, incremental chunks. For recurrent models like LSTMs/GRUs, it automatically manages the hidden state, ensuring fast and accurate detection with very low latency.
-*   **Universal ONNX Export:** The model is exported to the industry-standard ONNX format, which delivers maximum performance with hardware acceleration on any platform (desktop, embedded systems, mobile).
-*   **Integrated Pre- and Post-Processing Pipeline:** The inference engine is a complete solution, not just a model runner. It includes:
-    *   **Voice Activity Detection (VAD):** Saves computational power by keeping the model idle when no one is speaking.
-    *   **Noise Reduction:** An optional built-in noise reduction feature improves detection accuracy in noisy environments.
-    *   **Debouncing & Patience Filters:** Prevents accidental activations from short, transient noises and ensures that the wake word is triggered only on intentional utterances.
+*   **Stateful Streaming Architecture:** It processes continuous audio streams incrementally, maintaining temporal context via hidden states for recurrent models (like LSTMs/GRUs). This is essential for delivering instant, low-latency predictions in real-time applications.
+
+*   **Universal ONNX Export:** The final trained model is exported to the industry-standard ONNX format. This guarantees maximum hardware acceleration and platform-agnostic deployment across a vast range of environments, from powerful servers to resource-constrained edge devices.
+
+*   **Integrated On-Device Post-Processing Stack:** The engine is a complete, production-ready solution. It incorporates an on-device stack that includes optional **Voice Activity Detection (VAD)** to conserve power, **Noise Reduction** to enhance clarity, and intelligent **Debouncing/Patience Filters**. This stack transforms the raw model output into a reliable, robust trigger, ready for integration out of the box.
 
 </details>
+
+
 
 ## Getting Started
 
@@ -163,7 +164,7 @@ The primary method for controlling the NanoWakeWord framework is through a `conf
     ```yaml
     # In your config.yaml
     # Essential Paths (Required)
-    model_type: dnn # Or other architectures such as `LSTM`, `GRU`, `RNN` etc
+    model_type: dnn # Or other architectures such as `LSTM`, `GRU`, `RNN`, `Transformer` etc..
     model_name: "my_wakeword_v1"
     output_dir: "./trained_models"
     positive_data_path: "./training_data/positive"

@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.3] - 2025-11-14
+
+### Added
+
+-   **Massive Expansion of the Model Architecture Library:** Nanowakeword now supports a comprehensive suite of state-of-the-art neural network architectures, transforming it into a versatile and powerful speech modeling toolkit. The new additions include:
+    -   **CRNN (Convolutional Recurrent Neural Network):** A robust hybrid model combining the strengths of CNNs and RNNs.
+    -   **TCN (Temporal Convolutional Network):** A modern, high-speed alternative to RNNs for sequence modeling.
+    -   **QuartzNet:** A highly parameter-efficient architecture for achieving top performance with a small model footprint.
+    -   **Transformer:** The foundational attention-based model for deep contextual understanding.
+    -   **Conformer & E-Branchformer:** State-of-the-art and bleeding-edge architectures that fuse Transformers and CNNs for ultimate performance.
+
+### Fixed
+
+-   **ONNX Export Failure for Modern Architectures:**
+    -   Resolved a critical `RuntimeError` that prevented modern architectures (Transformer, Conformer, etc.) from being exported to the ONNX format.
+    -   The issue was traced to an outdated default ONNX opset version. The framework now defaults to a modern, backward-compatible opset version (17), ensuring that all models, from classic to state-of-the-art, can be exported successfully.
+-   **Model Averaging Error with BatchNorm:**
+    -   Fixed a `RuntimeError` (`result type Float can't be cast to... Long`) that occurred during the checkpoint averaging process for models containing `BatchNorm` layers (e.g., CRNN).
+    -   The `average_models` function has been improved to intelligently handle and average only floating-point parameters, ignoring integer-based counters like `num_batches_tracked`.
+-   **TCN Model Initialization Bug:**
+    -   Corrected a `TypeError` that prevented the TCN architecture from being initialized correctly due to an issue with `nn.Sequential` handling non-module `lambda` functions. The TCN block has been refactored for robust performance.
+
+### Improved
+
+-   **Intelligent Configuration Engine:** The `ConfigGenerator` has been refined for more realistic and efficient hyperparameter selection. The default maximum `augmentation_rounds` has been lowered to reduce feature computation time while maintaining high model quality.
+-   **Codebase Structure & Maintainability:** In a major refactoring effort, all model architecture definitions have been moved from the monolithic `trainer.py` file into a dedicated, well-organized `architectures.py` file. This significantly improves code clarity, modularity, and future maintainability.
+
 ## [1.3.2] - 2025-11-08
 
 ### Added

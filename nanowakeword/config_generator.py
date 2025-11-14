@@ -82,8 +82,8 @@ class ConfigGenerator:
         else:
             required_multiplier = 10 
             
-        AUG_ROUNDS_MIN = 3
-        AUG_ROUNDS_MAX = 7 
+        AUG_ROUNDS_MIN = 2
+        AUG_ROUNDS_MAX = 5 
             
         calculated_rounds = int(round(clamp(required_multiplier, AUG_ROUNDS_MIN, AUG_ROUNDS_MAX)))
         self.config['augmentation_rounds'] = calculated_rounds
