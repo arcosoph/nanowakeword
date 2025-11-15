@@ -1,175 +1,118 @@
-# ===================================================================
-#  NanoWakeWord - Minimal Training Configuration
-#  This file contains only the most essential settings to get you started.
-#  For a full list of all available options, see `train_config_full.yaml`.⚠️
-# ===================================================================
+# ==============================================================================
+# Nanowakeword: Advanced Training Configuration Template
+#
+# This file demonstrates a production-ready configuration for training a robust
+# wake word model. It showcases how to fine-tune various aspects of the
+# data pipeline, model architecture, and training process.
+#
+# Any parameter specified here will override the intelligent defaults.
+# ==============================================================================
 
+# -----------------------------------------------------------------
+# 1. Model & Architecture Definition
+# -----------------------------------------------------------------
+# We select LSTM for its excellent noise robustness.
+model_type: "lstm"
+model_name: "jarvis_lstm_v2"
+output_dir: "./trained_models"
 
-# ⚠️ Important: Fields marked as REQUIRED below must be provided.
-# Missing or incorrect values ​​may cause training failure or unexpected results
-
-# ===========================================
-# Section 1: Paths & Names
-# ===========================================
-
-model_name: my_manual_model_v1 # Give a unique name for your model (default name: user_default_model_v1)
-output_dir: ./trained_models    # All outputs (features, models) will be saved here (REQUIRED)
-
-wakeword_data_path: ./training_data/positive #(REQUIRED)
-background_data_path: ./training_data/negative #(REQUIRED)
-
-# Extra audio files for data augmentation
-background_paths: #(REQUIRED)
-  - ./training_data/noise
-rir_paths: #(REQUIRED)
-  - ./training_data/
-  
-
-# =======================================================
-# Section 2: Data Generation (only for generate_clips)
-# =======================================================
-
-target_phrase: 
-  - "jarvis" # For generating synthetic data using TTS
-
-# Number of positive and negative samples to generate for training
-generate_positive_samples: 1500  # positive data
-generate_negative_samples: 2700 # nagative data
-
-# Batch size for text-to-speech (TTS)
-tts_batch_size: 128
-
-
-# =======================================================
-# Section 3: Data Augmentation 
-# =======================================================
-
-# How many times each original audio clip will be used during augmentation.
-# More rounds = more variation, but also more time.
-augmentation_rounds: 7
-
-# Number of clips processed per batch during augmentation.
-augmentation_batch_size: 128 
-
-
-
-# Balances the usage frequency of different background noise folders during augmentation.
-# The rates correspond to each path in 'background_paths'. A rate of [3, 1] for two
-# paths means clips from the first folder will be used three times as often as the second.
-background_paths_duplication_rate:
-  - 1
-
-# --- Background Noise Loudness (Signal-to-Noise Ratio in dB) ---
-# This range determines how loud the background noise is.
-
-# Minimum SNR. Negative values mean the noise can be LOUDER than the speech.
-min_snr_in_db: -5.0
-
-# Maximum SNR. Positive values mean the speech is ALWAYS LOUDER than the noise.
-max_snr_in_db: 20.0
-
-# ===========================================
-# Section 4: Model Architecture
-# ===========================================
-
-# Model type: "dnn", "lstm", "gru", "cnn", "rnn", "transformer", "" # (default: DNN)
-model_type: gru # Very fast to train (DNN), but LSTM is more powerful. #(default: DNN)
-
-# Size of each model layer (number of neurons).
-layer_size: 256
-
-# Total number of layers/blocks in the model.
+# --- Architecture-specific parameters for 'lstm' ---
+# Number of recurrent layers in the LSTM model.
 n_blocks: 3
+# Number of hidden units in each LSTM layer.
+layer_size: 256
+# The final dimension of the output embedding vector.
+embedding_dim: 128
+# Activation function used in some architectures.
+activation_function: "relu"
 
 
-# =================================================
-# Section 5: Training Hyperparameters
-# =================================================
+# -----------------------------------------------------------------
+# 2. Data Sources & Synthetic Generation
+# -----------------------------------------------------------------
+positive_data_path: "./training_data/positive"
+negative_data_path: "./training_data/negative"
+background_paths:
+  - "./training_data/noise/ambient"
+  - "./training_data/noise/speech_noise"
+rir_paths:
+  - "./training_data/rir"
 
-# Dropout rate (to reduce overfitting). Range: 0.0 to 1.0
-dropout_prob: 0.5
+# --- TTS Generation ---
+target_phrase: ["jarvis"]
+generate_positive_samples: 1000
+generate_negative_samples: 3000
+# Add custom phrases to the negative set to handle specific false-positive cases.
+# custom_negative_phrases: ["iss", "just vis", "jaa"] # Optional because Nanowakeword does this very well on its own.
 
-# Type of scheduler to use.
-# Options: "cyclic", "onecycle", "cosine".
-#   - "cyclic": The powerful default. Bounces LR between a min and max value.
-#   - "onecycle": Starts slow, goes up to max, then smoothly down. Great for fast training.
-#   - "cosine": Smoothly decreases the LR from max to a minimum value.
+
+# -----------------------------------------------------------------
+# 3. Augmentation & Feature Engineering
+# -----------------------------------------------------------------
+# Manually override the augmentation policy for a more aggressive strategy.
+augmentation_settings:
+  BackgroundNoise: 0.85  # Increase probability of adding background noise.
+  RIR: 0.70              # Increase probability of adding reverberation.
+  PitchShift: 0.40
+
+# Define a custom Signal-to-Noise Ratio (SNR) range for noise augmentation.
+min_snr_in_db: -5
+max_snr_in_db: 15
+
+# Force regeneration of feature files, overwriting any existing ones.
+# Use with caution.
+# overwrite: true
+
+
+# -----------------------------------------------------------------
+# 4. Training, Optimization & Loss Function
+# -----------------------------------------------------------------
+# Manually set the total number of training steps.
+steps: 25000
+
+# --- Advanced Batch Composition ---
+# Define the exact makeup of each training batch.
+batch_composition:
+  batch_size: 128
+  source_distribution:
+    positive: 35
+    negative_speech: 45
+    pure_noise: 20
+
+# --- Optimizer & Scheduler ---
+optimizer_type: "adamw"
+learning_rate_max: 0.0002
 lr_scheduler_type: "cyclic"
 
-# Total number of training steps. (And used by 'onecycle' and 'cosine')
-steps: 18000
-
-# Maximum learning rate. (Used by all schedulers)
-learning_rate_max: 0.0001
-
-# Minimum learning rate. (Used by 'cyclic' and 'cosine')
-learning_rate_base: 0.00001
-
-#  Parameters for 'cyclic' scheduler ONLY 
-# Number of steps for the "up" phase of CyclicLR.
-clr_step_size_up: 3600
-
-# Number of steps for the "down" phase of CyclicLR.
-clr_step_size_down: 5400
-
-# =================================================
-# Section 6: Batch Composition
-# =================================================
-
-batch_composition:
-  # Total number of samples per batch during training.
-  batch_size: 64
-
-  # Distribution of sample types in each batch (sum must be 100).
-  source_distribution:
-    positive: 33
-    negative_speech: 40
-    pure_noise: 27
+# --- Loss Function Configuration ---
+# Choose a specific loss function and fine-tune its parameters.
+classification_loss: "focalloss"
+focal_loss_alpha: 0.30
+focal_loss_gamma: 2.5
+triplet_loss_margin: 0.25
 
 
-# Checkpointing & Resuming Configuration (Optional)
-checkpointing:
-  enabled: true                 # Set to 'true' to enable saving checkpoints. Default is false.
-  interval_steps: 500           # Save a checkpoint every N steps.
-  limit: 3                      # Keep only the latest N checkpoints to save disk space.
-
-
-# ==============================================================================
-# ⚙️ SECTION X: WORKFLOW STAGES (Set to 'true' or 'false')
-# ==============================================================================
-# These boolean flags control which major steps of the training pipeline are
-# executed. This gives you granular control over the workflow.
-
-# Stage 1: Generate Clips
-# Set to 'true' to create new, synthetic audio clips using Text-to-Speech (TTS).
-# This is useful for balancing your dataset or creating data from scratch.
+# -----------------------------------------------------------------
+# 5. Pipeline Control, Fault Tolerance & Export
+# -----------------------------------------------------------------
+# Define which stages of the pipeline to execute.
 generate_clips: true
-
-# Stage 2: Transform Clips
-# Set to 'true' to run the core data processing pipeline. This powerful step
-# transforms all raw audio clips (both real and synthetic) into the final,
-
-# training-ready numerical features (.npy files) by performing two key actions:
-#   1. Data Augmentation: Creates thousands of variations with background noise,
-#      reverb, and other effects to make the model robust.
-#   2. Feature Extraction: Converts the augmented audio into Mel spectrograms,
-#      the numerical format the model understands.
 transform_clips: true
-
-# Stage 3: Train Model
-# Set to 'true' to run the final model training process using the features
-# created in the 'transform_clips' stage.
 train_model: true
 
-# oftional: force_verify
-# When set to True, forces re-verification of all data directories 
-# regardless of previous verification. Normally, verification is automatic and only 
-# runs if the dataset has changed or a problem is detected. Use this flag only 
-# if you want to manually ensure data integrity. Otherwise, there is no need to provide this parameter.
-force_verify: false
+# --- Fault Tolerance & Checkpointing ---
+# Enable and configure the automatic checkpointing system.
+checkpointing:
+  enabled: true
+  interval_steps: 1500
+  limit: 5
 
-# Oftional: overwrite
-# When set to True, existing processed features will be regenerated
-# if the transform_clips stage is executed. Ensures that all features are
-# fresh and consistent with the current configuration and augmentations.
-overwrite: True
+# --- Export Settings ---
+# Specify the ONNX opset version for maximum compatibility.
+onnx_opset_version: 17
+
+# --- Debugging ---
+# Enable debug mode to save detailed logs.
+# debug_mode: true
+
+# and other if you want
