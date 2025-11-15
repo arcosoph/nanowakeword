@@ -52,16 +52,6 @@ augmentation_rounds: 7
 augmentation_batch_size: 128 
 
 
-# Background Noise & Reverb Intensity 
-# These probabilities (0.0 to 1.0) control how often augmentations are applied.
-# Higher values make the model more robust to real-world environments but can
-# increase training time and complexity.
-
-# The probability of applying reverberation (echo) to simulate different rooms.
-RIR: 0.6
-
-# The probability of mixing in background noise to simulate noisy conditions.
-BackgroundNoise: 0.7
 
 # Balances the usage frequency of different background noise folders during augmentation.
 # The rates correspond to each path in 'background_paths'. A rate of [3, 1] for two
