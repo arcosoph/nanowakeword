@@ -32,7 +32,7 @@ These are the fundamental settings that define your project and the primary mode
     *   **Type:** `string`
     *   **Default:** `"dnn"`
     *   <details>
-        <summary><strong>(👉ﾟヮﾟ)👉 Click to see Guidance & Architecture Trade-offs</strong></summary>
+        <summary><strong>Click for Guidance & Architecture Trade-offs</strong></summary>
         
         Choosing the right architecture depends on your specific goals for accuracy, speed, and noise robustness. Here is a guide to help you decide:
 
@@ -47,7 +47,7 @@ These are the fundamental settings that define your project and the primary mode
 
         *   **For Modern Performance & Efficiency (`tcn`, `quartznet`):**
             *   **`tcn`:** A high-speed, parallelizable alternative to RNNs. It uses causal, dilated convolutions to capture long-range dependencies, often resulting in faster training and inference than LSTMs with competitive accuracy.
-            *   **`quartznet`:** A highly parameter-efficient architecture from NVIDIA. It uses depthwise-separable convolutions to achieve top-tier accuracy with a very small model footprint, making it a perfect choice for powerful but lightweight edge deployment.
+            *   **`quartznet`:** A highly parameter-efficient architecture. It uses depthwise-separable convolutions to achieve top-tier accuracy with a very small model footprint, making it a perfect choice for powerful but lightweight edge deployment.
 
         *   **For State-of-the-Art Accuracy (`transformer`, `conformer`, `e_branchformer`):**
             *   **`transformer`:** The foundational attention-based model. Its self-attention mechanism allows it to weigh the importance of different parts of the audio simultaneously, giving it a deep "global" understanding of the entire utterance.
@@ -64,13 +64,11 @@ These are the fundamental settings that define your project and the primary mode
     *   **Example:** `model_name: "jarvis_v2"`
 
 *   `output_dir`
-    *   **Description:** The root directory where all trained models and their associated assets (features, checkpoints, graphs) will be saved.
+    *   **Description:** The root directory where all trained models and their associated assets will be saved.
     *   **Type:** `string` (path)
     *   **Default:** `"./trained_models"`
 
 ### 2. Data Sources & Pipeline Control
-
-These parameters define where your data is located and which stages of the Nanowakeword pipeline should be executed.
 
 *   `positive_data_path`, `negative_data_path`
     *   **Description:** Paths to the folders containing your positive (wake word) and negative (non-wake word) audio samples.
@@ -78,7 +76,7 @@ These parameters define where your data is located and which stages of the Nanow
     *   **Default:** `null` (Required)
 
 *   `background_paths`, `rir_paths`
-    *   **Description:** Lists of paths to folders containing background noise and Room Impulse Response (RIR) audio files, respectively. These are crucial for robust data augmentation.
+    *   **Description:** Lists of paths to folders containing background noise and Room Impulse Response (RIR) audio files, respectively.
     *   **Type:** `list` of `string` (paths)
     *   **Default:** `[]`
 
@@ -89,15 +87,13 @@ These parameters define where your data is located and which stages of the Nanow
 
 ### 3. Synthetic Data Generation (TTS)
 
-Configure the built-in TTS engine to generate synthetic training data.
-
 *   `target_phrase`
     *   **Description:** The wake word or phrase you want the TTS engine to generate.
     *   **Type:** `list` of `string`
     *   **Default:** `null`
 
 *   `generate_positive_samples`, `generate_negative_samples`
-    *   **Description:** The number of positive and negative audio samples to generate.
+    *   **Description:** The number of positive and negative audio samples to generate via TTS.
     *   **Type:** `integer`
     *   **Default:** `0`
 
@@ -113,30 +109,32 @@ Configure the built-in TTS engine to generate synthetic training data.
 
 ### 4. Audio Processing & Feature Engineering
 
-Control how raw audio is processed into numerical features.
-
-*   `audio_processing.clip_length_samples`
-    *   **Description:** Manually forces all training clips to a fixed length in samples (at 16kHz). If this is set, the autotune feature will be skipped.
-    *   **Type:** `integer`
-    *   **Default:** `null` (Autotune is used)
-
-*   `audio_processing.autotune_length.*`
-    *   **Description:** A group of parameters to control the automatic clip length detection. It is generally recommended to keep this enabled.
-    *   `enabled`: `boolean`, default `true`.
-    *   `duration_buffer_ms`: `integer`, default `750`. Extra padding added to the median clip length.
-    *   `min_allowable_length`: `integer`, default `16000`. The absolute minimum clip length.
+*   `audio_processing`
+    *   **Description:** A block of parameters to control how raw audio is processed. All parameters within this block are nested.
+    *   **Type:** `dict`
+    *   **Example of correct YAML structure:**
+        ```yaml
+        audio_processing:
+          # Manually forces all training clips to a fixed length (in samples).
+          # If this is set, the autotune feature below is skipped.
+          clip_length_samples: 32000
+          
+          # Controls the automatic clip length detection feature.
+          autotune_length:
+            enabled: true
+            duration_buffer_ms: 750
+            min_allowable_length: 16000
+        ```
 
 *   `overwrite`
-    *   **Description:** If `true`, forces the regeneration of feature files, overwriting any existing ones. Use with caution as this can be time-consuming.
+    *   **Description:** If `true`, forces the regeneration of all feature files, overwriting any existing ones. Use with caution as this can be time-consuming.
     *   **Type:** `boolean`
     *   **Default:** `false`
 
 ### 5. Data Augmentation
 
-Fine-tune the on-the-fly data augmentation pipeline.
-
 *   `augmentation_rounds`
-    *   **Description:** The number of times the entire dataset is passed through the augmentation engine.
+    *   **Description:** The number of times the entire dataset is passed through the augmentation engine. A higher number creates more training data but increases processing time.
     *   **Type:** `integer`
     *   **Default:** `Intelligently Generated` (typically between 2 and 5).
 
@@ -145,46 +143,54 @@ Fine-tune the on-the-fly data augmentation pipeline.
     *   **Type:** `integer` or `float`
     *   **Default:** `Intelligently Generated`
 
-*   `augmentation_settings.*`
-    *   **Description:** A group of parameters to set the probability (from `0.0` to `1.0`) for applying specific augmentations.
-    *   **Options:** `BackgroundNoise`, `RIR`, `PitchShift`, `BandStopFilter`, `ColoredNoise`, etc.
-    *   **Default:** `Intelligently Generated`
+*   `augmentation_settings`
+    *   **Description:** A block of parameters to set the probability (from `0.0` to `1.0`) for applying specific on-the-fly augmentations.
+    *   **Options:** `BackgroundNoise`, `RIR`, `PitchShift`, `BandStopFilter`, `ColoredNoise`, `ParametricEQ`, `Distortion`, `Gain`.
+    *   **Default:** `Intelligently Generated` based on provided data.
+    *   **Example of correct YAML structure:**
+        ```yaml
+        augmentation_settings:
+          BackgroundNoise: 0.85
+          RIR: 0.70
+          PitchShift: 0.40
+          ColoredNoise: 0.25
+        ```
 
 ### 6. Model Architecture Specifics
 
 These parameters allow you to customize the internal structure of your chosen `model_type`.
 
 *   `n_blocks`
-    *   **Description:** A general-purpose parameter used to define the depth of many architectures (e.g., number of LSTM layers, Transformer layers, etc.).
+    *   **Description:** A general-purpose parameter used to define the depth of many architectures (e.g., number of LSTM layers, Transformer layers, Conformer blocks).
     *   **Type:** `integer`
     *   **Default:** `Intelligently Generated`
 
 *   `layer_size`
-    *   **Description:** A general-purpose parameter for the width of many architectures (e.g., number of hidden units in an LSTM/GRU layer).
+    *   **Description:** A general-purpose parameter for the width of many architectures (e.g., number of hidden units in an LSTM/GRU layer, or the base size for DNN layers).
     *   **Type:** `integer`
     *   **Default:** `Intelligently Generated`
 
 *   `embedding_dim`
-    *   **Description:** The final dimension of the output embedding vector from the core model.
+    *   **Description:** The final dimension of the output embedding vector from the core model, before the classifier. A larger dimension can capture more information but increases model size.
     *   **Type:** `integer`
     *   **Default:** `64`
     
 *   `activation_function`
-    *   **Description:** The activation function used in some architectures.
+    *   **Description:** The activation function to be used in some architectures (like DNN, CNN, CRNN).
     *   **Type:** `string`
     *   **Default:** `"relu"`
     *   <details>
-        <summary><strong>(👉ﾟヮﾟ)👉 Click to see Guidance & Trade-offs</strong></summary>
+        <summary><strong>Click for Guidance & Trade-offs</strong></summary>
 
         *   `"relu"`: The standard, fast, and reliable choice. It's computationally cheap and works well in most cases.
-        *   `"gelu"` and `"silu"` (also known as Swish): More modern, smoother functions that can sometimes lead to slightly better accuracy and faster convergence, especially in deeper, Transformer-based models. They come at a very minor computational cost.
+        *   `"gelu"` and `"silu"` (also known as Swish): More modern, smoother functions that can sometimes lead to slightly better accuracy and faster convergence, especially in deeper models. They come at a very minor computational cost.
         </details>
     *   **Example:** `activation_function: "silu"`
 
-*   **Architecture-Specific Parameters:**
-    *   `crnn_cnn_channels`: `list`, e.g., `[16, 32, 64]`
-    *   `crnn_rnn_type`: `string`, e.g., `"lstm"` or `"gru"`
-    *   `tcn_channels`: `list`, e.g., `[64, 128]`
+*   **Architecture-Specific Parameters:** Below are parameters that only apply to certain `model_type` values.
+    *   `crnn_cnn_channels`: `list` of `integer`, e.g., `[16, 32, 64]`
+    *   `crnn_rnn_type`: `string`, either `"lstm"` or `"gru"`
+    *   `tcn_channels`: `list` of `integer`, e.g., `[64, 128]`
     *   `tcn_kernel_size`: `integer`, e.g., `3`
     *   `quartznet_config`: `list` of `list`, e.g., `[[256, 33, 1], [512, 39, 1]]`
     *   `transformer_d_model`, `transformer_n_head`: `integer`
@@ -193,38 +199,38 @@ These parameters allow you to customize the internal structure of your chosen `m
 
 ### 7. Training, Optimization & Batching
 
-Configure the core training loop, optimizer, and how data is batched.
-
 *   `steps`
-    *   **Description:** The total number of training steps to perform.
+    *   **Description:** The total number of training steps to perform. More steps can lead to better convergence but also risk overfitting and take longer.
     *   **Type:** `integer`
     *   **Default:** `Intelligently Generated`
 
-*   `batch_composition.batch_size`
-    *   **Description:** The number of samples in each training batch.
-    *   **Type:** `integer`
-    *   **Default:** `Intelligently Generated` based on hardware.
-    
-*   `batch_composition.source_distribution`
-    *   **Description:** Defines the percentage of positive, negative speech, and pure noise samples in each batch. The sum must be 100.
-    *   **Type:** `dict`
-    *   **Default:** `Intelligently Generated`
+*   `batch_composition`
+    *   **Description:** A block of parameters defining the makeup of each training batch.
+    *   **Default:** `Intelligently Generated` based on data stats and hardware.
+    *   **Example of correct YAML structure:**
+        ```yaml
+        batch_composition:
+          batch_size: 128
+          source_distribution:
+            positive: 35
+            negative_speech: 45
+            pure_noise: 20
+        ```
 
 *   `optimizer_type`
     *   **Description:** The optimization algorithm to use.
     *   **Type:** `string`
     *   **Default:** `"adamw"`
     *   <details>
-        <summary><strong>(👉ﾟヮﾟ)👉 Click to see Guidance & Trade-offs</strong></summary>
+        <summary><strong>Click for Guidance & Trade-offs</strong></summary>
 
         *   `"adamw"`: An improved version of the Adam optimizer with decoupled weight decay. It often leads to better model generalization and is the **recommended default** for most modern deep learning tasks.
-        *   `"adam"`: The classic and highly effective adaptive optimizer. It's a very strong and reliable choice.
-        *   `"sgd"`: Stochastic Gradient Descent. A foundational optimizer. While often slower to converge than adaptive optimizers, it can sometimes find better, more generalizable minima with careful tuning of the learning rate and momentum.
+        *   `"adam"`: The classic and highly effective adaptive optimizer. A very strong and reliable choice.
+        *   `"sgd"`: Stochastic Gradient Descent. A foundational optimizer. While often slower to converge, it can sometimes find better, more generalizable minima with careful tuning of the learning rate and momentum.
         </details>
-    *   **Example:** `optimizer_type: "adamw"`
 
 *   `learning_rate_max`, `learning_rate_base`
-    *   **Description:** The maximum and base learning rates for schedulers like CyclicLR.
+    *   **Description:** The maximum and base learning rates for schedulers like `cyclic`.
     *   **Type:** `float`
     *   **Default:** `Intelligently Generated`
 
@@ -233,38 +239,33 @@ Configure the core training loop, optimizer, and how data is batched.
     *   **Type:** `string`
     *   **Default:** `"cyclic"`
     *   <details>
-        <summary><strong>(👉ﾟヮﾟ)👉 Click to see Guidance & Trade-offs</strong></summary>
-
+        <summary><strong>Click for Guidance & Trade-offs</strong></summary>
+        
         *   `"cyclic"` (CyclicLR): A powerful scheduler that cycles the learning rate between a base and max value. It's excellent for exploring the loss landscape and can help the model escape from local minima.
-        *   `"onecycle"` (OneCycleLR): Another very powerful scheduler that is known for enabling "super-convergence" (achieving good results with much faster training). It's a great choice for many tasks.
-        *   `"cosine"` (CosineAnnealingLR): A simple and effective scheduler that smoothly decreases the learning rate in a cosine curve. It is very predictable, robust, and a very popular choice in recent research.
+        *   `"onecycle"` (OneCycleLR): Another very powerful scheduler known for enabling "super-convergence" (achieving good results with much faster training). A great choice for many tasks.
+        *   `"cosine"` (CosineAnnealingLR): A simple and effective scheduler that smoothly decreases the learning rate in a cosine curve. It is very predictable, robust, and a popular choice in recent research.
         </details>
-    *   **Example:** `lr_scheduler_type: "onecycle"`
 
 ### 8. Loss Function Configuration
-
-Fine-tune the loss functions that guide the model's learning.
 
 *   `classification_loss`
     *   **Description:** The primary classification loss function.
     *   **Type:** `string`
     *   **Default:** `"labelsmoothing"`
     *   <details>
-        <summary><strong>(👉ﾟヮﾟ)👉 Click to see Guidance & Trade-offs</strong></summary>
+        <summary><strong>Click for Guidance & Trade-offs</strong></summary>
 
         *   `"labelsmoothing"`: A robust default that improves generalization. It prevents the model from becoming overconfident by slightly "blurring" the hard 0 and 1 labels (e.g., to 0.1 and 0.9). This encourages the model to learn less extreme weights.
-        *   `"focalloss"`: Specifically designed to handle class imbalance, which is very common in wake word datasets where negative samples vastly outnumber positive ones. It automatically down-weights easy-to-classify examples, forcing the model to focus its efforts on the harder, more ambiguous samples.
-        *   `"bce"` (Binary Cross-Entropy): The standard, fundamental loss for binary classification tasks. It's a good baseline but can be sensitive to class imbalance and may not perform as well as the other two options without careful tuning.
+        *   `"focalloss"`: Specifically designed to handle class imbalance, which is very common in wake word datasets (many more negative samples than positive). It automatically down-weights easy-to-classify examples, forcing the model to focus on harder, ambiguous samples.
+        *   `"bce"` (Binary Cross-Entropy): The standard, fundamental loss for binary classification. It's a good baseline but can be sensitive to class imbalance and may not perform as well as the other two options without careful tuning.
         </details>
-    *   **Example:** `classification_loss: "focalloss"`
 
 *   `focal_loss_alpha`, `focal_loss_gamma`
-    *   **Description:** Tuning parameters for Focal Loss. Only used if `classification_loss` is `"focalloss"`.
+    *   **Description:** Tuning parameters for Focal Loss, used only if `classification_loss: "focalloss"`.
     *   **Type:** `float`
-    *   **Default:** `alpha: 0.25`, `gamma: 2.0`
 
 *   `label_smoothing`
-    *   **Description:** The smoothing factor for Label Smoothing BCE loss.
+    *   **Description:** The smoothing factor (`0.0` to `1.0`) for Label Smoothing loss.
     *   **Type:** `float`
     *   **Default:** `0.1`
 
@@ -274,40 +275,41 @@ Fine-tune the loss functions that guide the model's learning.
     *   **Default:** `0.2`
 
 *   `loss_weight_triplet`, `loss_weight_class`
-    *   **Description:** The weights to apply to the triplet and classification components of the final hybrid loss.
+    *   **Description:** The weights to apply to the triplet and classification components of the final hybrid loss, controlling their relative importance.
     *   **Type:** `float`
     *   **Default:** `triplet: 0.5`, `class: 1.0`
 
 ### 9. Training Stability & Fault Tolerance
 
-Control mechanisms like early stopping and checkpointing.
-
 *   `early_stopping_patience`
     *   **Description:** The number of steps without improvement in the stable (EMA) loss before training is stopped. Set to `0` or a negative value to disable.
     *   **Type:** `integer`
-    *   **Default:** `Intelligently Generated` (or disabled for very short trainings).
+    *   **Default:** `Intelligently Generated`
 
-*   `checkpointing.*`
-    *   **Description:** A group of parameters to control the automatic checkpointing and resumption system.
-    *   `enabled`: `boolean`, default `false`.
-    *   `interval_steps`: `integer`, default `1000`.
-    *   `limit`: `integer`, default `3`. (Number of recent checkpoints to keep).
+*   `checkpointing`
+    *   **Description:** A block of parameters to control the automatic checkpointing and resumption system.
+    *   **Default:** `enabled: false`
+    *   **Example of correct YAML structure:**
+        ```yaml
+        checkpointing:
+          enabled: true
+          interval_steps: 1500
+          limit: 5
+        ```
 
 *   `checkpoint_averaging_top_k`
-    *   **Description:** The number of best-performing checkpoints to average together to create the final model.
+    *   **Description:** The number of best-performing checkpoints to average together to create the final model. This ensembling technique often improves generalization.
     *   **Type:** `integer`
     *   **Default:** `5`
 
 ### 10. Export & Debugging
 
-Settings related to the final model export and debugging during training.
-
 *   `onnx_opset_version`
-    *   **Description:** The ONNX opset version to use for exporting the model. Modern architectures (Transformer, Conformer) require a higher version (>=14).
+    *   **Description:** The ONNX opset version to use for exporting the model. Modern architectures (Transformer, Conformer) require a higher version (e.g., >=14).
     *   **Type:** `integer`
     *   **Default:** `17`
 
 *   `debug_mode`
-    *   **Description:** If `true`, enables verbose logging to a file during training, which is useful for debugging gradients and data shapes.
+    *   **Description:** If `true`, enables verbose logging to a file (`training_debug.log`) during training, which is useful for debugging gradients and data shapes.
     *   **Type:** `boolean`
     *   **Default:** `false`
