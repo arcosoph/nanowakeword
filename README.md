@@ -191,7 +191,7 @@ The primary method for controlling the NanoWakeWord framework is through a `conf
       limit: 3
     # Other...
     ```
-*For a full explanation of all parameters, please see the [`training_config.yaml`](https://github.com/arcosoph/nanowakeword/blob/main/examples/training_config.yaml) or [`train_config_full.yaml`](https://github.com/arcosoph/nanowakeword/blob/main/examples/train_config_full.yaml) file in the `examples` folder.*
+*For a full explanation of all parameters, please see the [`training_config`](https://github.com/arcosoph/nanowakeword/blob/main/examples/training_config.yaml) or [`CONFIGURATION_GUIDE`](https://github.com/arcosoph/nanowakeword/blob/main/CONFIGURATION_GUIDE.md).*
 
 
 3.  **Execute the Pipeline:**
