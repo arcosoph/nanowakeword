@@ -39,6 +39,14 @@ NanoWakeWord is a versatile framework offering a rich library of neural network 
 | **E-Branchformer**| Bleeding-edge research for potentially the highest accuracy. | Peak Accuracy Potential | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=e_branchformer) |
 | **RNN** | Baseline experiments or educational purposes. | Simple & Foundational | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=rnn) |
 
+---
+### **Release Notes & Status**
+
+Nanowakeword is under active development. For important updates, version-specific notes, and the latest stability status of all features, please refer to our official status document.
+
+**[➡️ View Latest Release Notes & Project Status](https://github.com/arcosoph/nanowakeword/blob/main/STATUS.md)**
+
+
 ## State-of-the-Art Features and Architecture
 
 Nanowakeword is not merely a tool; it's a holistic, end-to-end ecosystem engineered to democratize the creation of state-of-the-art, custom wake word models. It moves beyond simple scripting by integrating a series of automated, production-grade systems that orchestrate the entire lifecycle—from data analysis and feature engineering to advanced training and deployment-optimized inference.
