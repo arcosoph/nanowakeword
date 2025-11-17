@@ -13,7 +13,7 @@
 # -----------------------------------------------------------------
 # We select LSTM for its excellent noise robustness.
 model_type: "lstm"
-model_name: "jarvis_lstm_v2"
+model_name: "jarvis_lstm_v1"
 output_dir: "./trained_models"
 
 # --- Architecture-specific parameters for 'lstm' ---
@@ -83,13 +83,6 @@ batch_composition:
 optimizer_type: "adamw"
 learning_rate_max: 0.0002
 lr_scheduler_type: "cyclic"
-
-# --- Loss Function Configuration ---
-# Choose a specific loss function and fine-tune its parameters.
-classification_loss: "focalloss"
-focal_loss_alpha: 0.30
-focal_loss_gamma: 2.5
-triplet_loss_margin: 0.25
 
 
 # -----------------------------------------------------------------
