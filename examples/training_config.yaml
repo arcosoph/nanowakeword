@@ -11,8 +11,8 @@
 # -----------------------------------------------------------------
 # 1. Model & Architecture Definition
 # -----------------------------------------------------------------
-# We select LSTM for its excellent noise robustness.
-model_type: "lstm"
+# We select tcn for its excellent noise robustness.
+model_type: "tcn"
 model_name: "jarvis_lstm_v1"
 output_dir: "./trained_models"
 
@@ -22,7 +22,7 @@ n_blocks: 3
 # Number of hidden units in each LSTM layer.
 layer_size: 256
 # The final dimension of the output embedding vector.
-embedding_dim: 128
+# embedding_dim: 128  # We will use the default lr.
 # Activation function used in some architectures.
 activation_function: "relu"
 
@@ -81,7 +81,7 @@ batch_composition:
 
 # --- Optimizer & Scheduler ---
 optimizer_type: "adamw"
-learning_rate_max: 0.0002
+# learning_rate_max: 0.0002  # We will use the default lr.
 lr_scheduler_type: "cyclic"
 
 
