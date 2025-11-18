@@ -10,9 +10,9 @@ This document provides timely updates, performance notes, stability reports, and
 
 #### Architecture Stability Report
 
-*   **✅ Production-Ready:** `DNN`, `CNN`, `LSTM`, `GRU`, `RNN`,  `Transformer`. These architectures are stable and recommended for production use.
+*   **✅ Production-Ready:** `DNN`, `CNN`, `LSTM`, `GRU`, `RNN`,  `Transformer`, `TCN`. These architectures are stable and recommended for production use.
 
-*   **⚠️ Experimental:** `QuartzNet`, `Conformer`, `E-Branchformer`, `CRNN`, `TCN`.
+*   **⚠️ Experimental:** `QuartzNet`, `Conformer`, `E-Branchformer`, `CRNN`.
     *   **Recommendation:** These state-of-the-art architectures are provided for advanced users and researchers. In the current version, they have shown to be highly sensitive to hyperparameter configurations and may not converge to a useful solution with the default settings ("model collapse"). We are making it our highest priority to develop robust intelligent defaults for these models in a future release. **We strongly advise against using them for production purposes at this time.**
 
 ---
