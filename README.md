@@ -145,7 +145,7 @@ pip install git+https://github.com/arcosoph/nanowakeword.git
 
 ## Usage
 
-The primary method for controlling the NanoWakeWord framework is through a `config.yaml` file. This file acts as the central hub for your entire project, defining data paths and controlling which pipeline stages are active.
+The primary method for controlling the NanoWakeWord framework is through a `.yaml` file. This file acts as the central hub for your entire project, defining data paths and controlling which pipeline stages are active.
 
 ### Simple Example Workflow
 
@@ -168,7 +168,7 @@ The primary method for controlling the NanoWakeWord framework is through a `conf
     ```
 
 2.  **Define Your Configuration:**
-    Create a `config.yaml` file to manage your training pipeline. This approach ensures your experiments are repeatable and well-documented.
+    Create a `.yaml` file to manage your training pipeline. This approach ensures your experiments are repeatable and well-documented.
     ```yaml
     # In your config.yaml
     # Essential Paths (Required)
