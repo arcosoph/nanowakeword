@@ -31,14 +31,15 @@ import torchaudio
 import numpy as np
 import pronouncing
 from tqdm import tqdm
-import audiomentations
 from pathlib import Path
-import torch_audiomentations
 from functools import partial
 from typing import List, Tuple
 from numpy.lib.format import open_memmap
 from multiprocessing.pool import ThreadPool
 from scipy.signal import convolve
+from torch_audiomentations import Compose, Gain, PitchShift, AddColoredNoise, BandStopFilter, ApplyImpulseResponse
+
+
 
 # Load audio clips and structure into clips of the same length
 def stack_clips(audio_data, clip_size=16000*2):
@@ -588,59 +589,48 @@ def apply_reverb(x, rir_files):
 
     return reverbed_numpy
 
-import torch
-import torchaudio
-import numpy as np
-import random
-import logging
-from typing import List
-from torch_audiomentations import Compose, Gain, PitchShift, AddColoredNoise, BandStopFilter, ApplyImpulseResponse
-
 
 def _add_background_noise_manual(samples: torch.Tensor, background_paths: List[str], min_snr: float, max_snr: float, sr: int) -> torch.Tensor:
     """
-    A helper function to manually add background noise to a batch of samples
-    from a list of file paths. This supports multi-directory and duplication_rate features.
-    The input tensor is expected to be 3D: [batch, channels, samples].
+    Optimized background noise injection.
     """
     device = samples.device
     batch_size = samples.shape[0]
+    
+    if not background_paths:
+        return samples
 
     for i in range(batch_size):
-        if not background_paths:
+        if random.random() < 0.5: 
             continue
-            
-        noise_path = random.choice(background_paths)
+
         try:
+            noise_path = random.choice(background_paths)
             noise_waveform, noise_sr = torchaudio.load(noise_path)
+            
             if noise_sr != sr:
                 noise_waveform = torchaudio.functional.resample(noise_waveform, noise_sr, sr)
             
-            # Use only the first channel of the noise
             noise_waveform = noise_waveform[0].to(device)
-            target_length = samples.shape[2]
+            target_length = samples.shape[2] # [batch, channel, time]
             
-            # Ensure noise is at least as long as the sample
-            while len(noise_waveform) < target_length:
-                noise_waveform = torch.cat([noise_waveform, noise_waveform], dim=0)
+            if len(noise_waveform) < target_length:
+                repeats = (target_length // len(noise_waveform)) + 1
+                noise_waveform = noise_waveform.repeat(repeats)
             
-            # Get a random snippet of the noise
             start_index = random.randint(0, len(noise_waveform) - target_length)
             noise_snippet = noise_waveform[start_index : start_index + target_length]
 
-            # Calculate SNR and mix
-            snr_db = random.uniform(min_snr, max_snr)
-            sample_rms = torch.sqrt(torch.mean(samples[i, 0, :] ** 2))
-            noise_rms = torch.sqrt(torch.mean(noise_snippet ** 2))
+            sample_rms = samples[i, 0, :].pow(2).mean().sqrt()
+            noise_rms = noise_snippet.pow(2).mean().sqrt()
             
-            # Avoid division by zero for silent clips
-            if sample_rms > 1e-6 and noise_rms > 1e-6:
-                snr_linear = 10 ** (snr_db / 20.0)
-                noise_scaling_factor = sample_rms / (snr_linear * noise_rms)
-                samples[i, 0, :] += noise_snippet * noise_scaling_factor
+            snr_db = random.uniform(min_snr, max_snr)
+            
+            if noise_rms > 1e-9:
+                desired_noise_rms = sample_rms / (10**(snr_db / 20))
+                samples[i, 0, :] += noise_snippet * (desired_noise_rms / noise_rms)
 
         except Exception as e:
-            logging.warning(f"Failed to add background noise from {noise_path}: {e}")
             continue
 
     return samples
@@ -654,99 +644,88 @@ def augment_clips(
         augmentation_settings: dict = None,
         background_clip_paths: List[str] = [],
         RIR_paths: List[str] = [],
-        min_snr_in_db: float = 3.0,
-        max_snr_in_db: float = 20.0,
-        end_jitter_ms: int = 400
+        min_snr_in_db: float = 5.0,  
+        max_snr_in_db: float = 25.0,
+        end_jitter_ms: int = 200
         ):
     """
-    Applies a robust, production-grade, hardware-aware audio augmentation pipeline.
-    This definitive version correctly handles tensor dimensions, background noise from
-    multiple directories, and relies on the stable tensor-in-tensor-out behavior
-    of torch_audiomentations to prevent indexing errors.
+    UPDATED: Uses 'per_example' mode for diverse augmentation within batches.
     """
-    # --- 1. Finalize Settings and Determine Device ---
     if augmentation_settings is None:
         augmentation_settings = {}
     
     default_probs = {
-        "Gain": 1.0, "PitchShift": 0.4, "BandStopFilter": 0.2, 
-        "ColoredNoise": 0.3, "BackgroundNoise": 0.8, "RIR": 0.6
+        "Gain": 1.0, 
+        "PitchShift": 0.5,        
+        "BandStopFilter": 0.2, 
+        "ColoredNoise": 0.4,      
+        "BackgroundNoise": 0.7,   
+        "RIR": 0.5                
     }
     final_aug_probs = {**default_probs, **augmentation_settings}
 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    # --- 2. Create the Augmentation Pipeline (The Correct Way) ---
-    # We REMOVE `output_type="dict"` and rely on the default tensor-in, tensor-out behavior.
     augmenter = Compose([
-        Gain(min_gain_in_db=-9.0, max_gain_in_db=9.0, p=final_aug_probs.get("Gain", 0.0), p_mode="per_batch"),
-        PitchShift(min_transpose_semitones=-3.5, max_transpose_semitones=3.5, p=final_aug_probs.get("PitchShift", 0.0), sample_rate=sr, p_mode="per_batch"),
-        BandStopFilter(min_center_frequency=250, max_center_frequency=4000, p=final_aug_probs.get("BandStopFilter", 0.0), p_mode="per_batch"),
-        AddColoredNoise(min_snr_in_db=4.0, max_snr_in_db=30.0, p=final_aug_probs.get("ColoredNoise", 0.0), p_mode="per_batch"),
-        ApplyImpulseResponse(p=final_aug_probs.get("RIR", 0.0), ir_paths=RIR_paths, p_mode="per_batch", compensate_for_propagation_delay=True)
+        Gain(min_gain_in_db=-12.0, max_gain_in_db=6.0, p=final_aug_probs.get("Gain", 0.0), p_mode="per_example"),
+        PitchShift(min_transpose_semitones=-3.0, max_transpose_semitones=3.0, p=final_aug_probs.get("PitchShift", 0.0), sample_rate=sr, p_mode="per_example"),
+        BandStopFilter(min_center_frequency=200, max_center_frequency=3500, p=final_aug_probs.get("BandStopFilter", 0.0), p_mode="per_example"),
+        AddColoredNoise(min_snr_in_db=5.0, max_snr_in_db=25.0, p=final_aug_probs.get("ColoredNoise", 0.0), p_mode="per_example"),
+        ApplyImpulseResponse(p=final_aug_probs.get("RIR", 0.0), ir_paths=RIR_paths, p_mode="per_example", compensate_for_propagation_delay=True)
     ])
     
     augmenter.to(device)
 
-    # --- 3. Process Clips in Batches (Generator Loop) ---
     for i in range(0, len(clip_paths), batch_size):
         batch_paths = clip_paths[i:i+batch_size]
-        
-        # --- A. Load, Resample, and Prepare Clips on CPU ---
         processed_clips = []
+        
         for clip_path in batch_paths:
             try:
+                # Torchaudio load is safer inside try-except
                 waveform, sample_rate = torchaudio.load(clip_path)
-                
                 if sample_rate != sr:
                     waveform = torchaudio.functional.resample(waveform, sample_rate, sr)
                 
-                waveform = waveform[0] # Take only the first channel
+                waveform = waveform[0] 
 
-                # --- B. Intelligent Jitter and Truncation Logic ---
+                # Smart Padding/Cutting
                 if waveform.shape[0] > total_length:
                     start_index = random.randint(0, waveform.shape[0] - total_length)
                     processed_clip = waveform[start_index : start_index + total_length]
                 else:
-                    jitter_samples = random.randint(0, int((end_jitter_ms / 1000) * sr))
-                    start_pos = max(0, total_length - waveform.shape[0] - jitter_samples)
-                    
+                    padding = total_length - waveform.shape[0]
+                    offset = random.randint(0, padding) 
                     padded_clip = torch.zeros(total_length)
-                    padded_clip[start_pos : start_pos + waveform.shape[0]] = waveform
+                    padded_clip[offset : offset + waveform.shape[0]] = waveform
                     processed_clip = padded_clip
                 
                 processed_clips.append(processed_clip)
-            
-            except Exception as e:
-                logging.warning(f"Skipping file {clip_path} due to error: {e}")
+            except Exception:
                 continue
         
         if not processed_clips:
             continue
 
-        # --- C. Batch Augmentation on Target Device (GPU/CPU) ---
-        batch_tensor_2d = torch.stack(processed_clips) # Shape: [batch_size, num_samples]
+        # GPU Processing
+        batch_tensor = torch.stack(processed_clips).unsqueeze(1).to(device) # [B, 1, T]
         
-        # Add the 'num_channels' dimension before passing to the augmenter.
-        batch_tensor_3d = batch_tensor_2d.unsqueeze(1).to(device) # Shape: [batch_size, 1, num_samples]
-
-        # Apply the main augmentation pipeline. This now reliably returns a tensor.
-        augmented_batch_3d = augmenter(samples=batch_tensor_3d, sample_rate=sr)
+        # 1. GPU Augmentations
+        augmented_batch = augmenter(samples=batch_tensor, sample_rate=sr)
         
-        # --- D. Manually Apply Background Noise ---
-        if random.random() < final_aug_probs.get("BackgroundNoise", 0.0):
-            augmented_batch_3d = _add_background_noise_manual(
-                augmented_batch_3d, background_clip_paths, min_snr_in_db, max_snr_in_db, sr
+        # 2. Manual Background Noise (Real Noise)
+        if final_aug_probs.get("BackgroundNoise", 0.0) > 0:
+            augmented_batch = _add_background_noise_manual(
+                augmented_batch, background_clip_paths, min_snr_in_db, max_snr_in_db, sr
             )
         
-        # --- E. Final Normalization and Conversion ---
-        max_vals = torch.max(torch.abs(augmented_batch_3d), dim=2, keepdim=True)[0]
-        normalized_batch = augmented_batch_3d / (max_vals + 1e-6)
-        
-        # Remove the 'num_channels' dimension before converting to numpy.
-        final_batch_2d = normalized_batch.squeeze(1)
+        # 3. Normalize (Safety check against exploding gradients)
+        max_val, _ = torch.max(torch.abs(augmented_batch), dim=2, keepdim=True)
+        augmented_batch = augmented_batch / (max_val + 1e-8)
 
-        yield (final_batch_2d.cpu().numpy() * 32767).astype(np.int16)
+        # Yield as Int16 numpy array
+        yield (augmented_batch.squeeze(1).cpu().numpy() * 32767).astype(np.int16)
+
 
 def create_fixed_size_clip(x, n_samples, sr=16000, start=None, end_jitter=.200):
     """
@@ -780,114 +759,100 @@ def create_fixed_size_clip(x, n_samples, sr=16000, start=None, end_jitter=.200):
     return dat
 
 
-import numpy as np
-import torch
-
 def mmap_batch_generator(data_files, n_per_class, data_transform_funcs, label_transform_funcs, triplet_mode=True):
     """
-    Generates batches of data from memory-mapped (.npy) files.
-    Can operate in standard classification mode or triplet generation mode.
-
-    Args:
-        data_files (dict): A dictionary mapping class names to .npy file paths.
-        n_per_class (dict): A dictionary mapping class names to the number of samples per batch.
-        data_transform_funcs (dict): Functions to transform data for each class.
-        label_transform_funcs (dict): Functions to transform labels for each class.
-        triplet_mode (bool): If True, generates batches with (anchor, positive, negative) samples.
+    SMART BATCH GENERATOR: Prioritizes 'negative_speech' in Triplet Mode.
     """
     memmaps = {name: np.load(path, mmap_mode='r') for name, path in data_files.items()}
     class_indices = {name: np.arange(len(arr)) for name, arr in memmaps.items()}
     
-    # Identify positive and negative classes for triplet mode
-    positive_key = 'positive' # Assuming 'positive' is the key for positive class
-    negative_keys = [k for k in data_files.keys() if k != positive_key]
+    positive_key = 'positive'
+    
+    neg_speech_key = 'adversarial_negative' 
 
-    if triplet_mode and (positive_key not in data_files or not negative_keys):
-        raise ValueError("Triplet mode requires at least one 'positive' class and one negative class in data_files.")
+    if neg_speech_key not in data_files:
+        possible_keys = [k for k in data_files.keys() if 'negative' in k and k != 'pure_noise']
+        neg_speech_key = possible_keys[0] if possible_keys else None
+
+    pure_noise_key = 'pure_noise'
+    
+    all_negative_keys = [k for k in data_files.keys() if k != positive_key]
 
     while True:
-        batch_x, batch_y = [], []
-        
         if not triplet_mode:
-            # Standard Classification Batch Generation 
+            # Standard Classification Mode (No changes needed mostly)
+            batch_x, batch_y = [], []
             for name, n_samples in n_per_class.items():
-                if n_samples > 0:
+                if n_samples > 0 and name in memmaps:
                     indices = np.random.choice(class_indices[name], n_samples, replace=True)
                     data = memmaps[name][indices]
-                    
-                    if name in data_transform_funcs:
-                        data = data_transform_funcs[name](data)
-                    
+                    if name in data_transform_funcs: data = data_transform_funcs[name](data)
                     batch_x.append(data)
-                    
-                    if name in label_transform_funcs:
-                        labels = label_transform_funcs[name](data)
-                        batch_y.extend(labels)
-
-            yield torch.from_numpy(np.vstack(batch_x)).float(), torch.from_numpy(np.array(batch_y)).float()
+                    if name in label_transform_funcs: batch_y.extend(label_transform_funcs[name](data))
+            
+            if batch_x:
+                yield torch.from_numpy(np.vstack(batch_x)).float(), torch.from_numpy(np.array(batch_y)).float()
 
         else:
-            # Triplet Batch Generation
-            n_positive_samples = n_per_class.get(positive_key, 0)
-            if n_positive_samples == 0:
-                continue
-
-            # 1. Select Anchor and Positive samples from the positive class
-            # We need 2 unique positive samples for each triplet
-            anchor_indices = np.random.choice(class_indices[positive_key], n_positive_samples, replace=True)
-            positive_indices = np.random.choice(class_indices[positive_key], n_positive_samples, replace=True)
+            # SMART TRIPLET MODE 
+            n_pos = n_per_class.get(positive_key, 32) # Default 32 if missing
             
-            # Ensure anchor and positive are not the same (highly unlikely but good practice)
-            mask = anchor_indices == positive_indices
-            while np.any(mask):
-                positive_indices[mask] = np.random.choice(class_indices[positive_key], np.sum(mask), replace=True)
-                mask = anchor_indices == positive_indices
+            # 1. Anchor & Positive (From Positive Class)
+            anchor_idxs = np.random.choice(class_indices[positive_key], n_pos, replace=True)
+            pos_idxs = np.random.choice(class_indices[positive_key], n_pos, replace=True)
+            
+            anchors = memmaps[positive_key][anchor_idxs]
+            positives = memmaps[positive_key][pos_idxs]
 
-            anchors = memmaps[positive_key][anchor_indices]
-            positives = memmaps[positive_key][positive_indices]
-
-            # 2. Select Negative samples
-            # We distribute the negative sample selection across all negative classes
+            # 2. Smart Negative Selection (Hard Negative Priority)
             negatives = []
-            total_neg_needed = n_positive_samples
             
-            # Simple distribution: randomly pick a negative class for each anchor
-            chosen_neg_classes = np.random.choice(negative_keys, total_neg_needed, replace=True)
+            n_hard_neg = int(n_pos * 0.7) 
+            n_easy_neg = n_pos - n_hard_neg
             
-            for neg_class in negative_keys:
-                num_needed_from_class = np.sum(chosen_neg_classes == neg_class)
-                if num_needed_from_class > 0:
-                    neg_indices = np.random.choice(class_indices[neg_class], num_needed_from_class, replace=True)
-                    negatives.append(memmaps[neg_class][neg_indices])
-            
-            if not negatives: # Failsafe if no negatives were selected
-                continue
-                
-            negatives = np.vstack(negatives)
+            # Hard Negatives (Speech)
+            if neg_speech_key and neg_speech_key in memmaps:
+                hard_idxs = np.random.choice(class_indices[neg_speech_key], n_hard_neg, replace=True)
+                negatives.append(memmaps[neg_speech_key][hard_idxs])
+            else:
+                # If there is no specific speech negative, take a random negative
+                n_easy_neg += n_hard_neg 
 
-            # Apply transformations if they exist
+            # Easy Negatives (Noise)
+            if pure_noise_key in memmaps:
+                easy_idxs = np.random.choice(class_indices[pure_noise_key], n_easy_neg, replace=True)
+                negatives.append(memmaps[pure_noise_key][easy_idxs])
+            elif all_negative_keys:
+                # If there is no noise, then any other negative
+                rnd_key = np.random.choice(all_negative_keys)
+                easy_idxs = np.random.choice(class_indices[rnd_key], n_easy_neg, replace=True)
+                negatives.append(memmaps[rnd_key][easy_idxs])
+
+            if not negatives: continue # Safety
+            
+            negatives = np.vstack(negatives)
+            
+            # Shuffle negatives to mix hard and easy
+            np.random.shuffle(negatives)
+
+            # Apply Transforms
             if positive_key in data_transform_funcs:
                 anchors = data_transform_funcs[positive_key](anchors)
                 positives = data_transform_funcs[positive_key](positives)
-
-            for neg_key in negative_keys:
-                 if neg_key in data_transform_funcs:
-                     # This is a simplification; assumes all negatives can be transformed the same way.
-                     # For more complex cases, this logic would need to be more granular.
-                     negatives = data_transform_funcs[neg_key](negatives)
-                     break # Apply only the first available transform for simplicity
             
-            # Create labels for classification loss
-            # Anchor and Positive are 1s, Negative is 0
-            labels_anchor = torch.ones(n_positive_samples, 1)
-            labels_positive = torch.ones(n_positive_samples, 1) # Not used in loss, but kept for consistency
-            labels_negative = torch.zeros(n_positive_samples, 1)
+            transform_key = neg_speech_key if neg_speech_key in data_transform_funcs else pure_noise_key
+            if transform_key and transform_key in data_transform_funcs:
+                negatives = data_transform_funcs[transform_key](negatives)
+
+            # Labels
+            labels_anchor = torch.ones(n_pos, 1)
+            labels_neg = torch.zeros(n_pos, 1)
             
             yield (torch.from_numpy(anchors).float(),
                    torch.from_numpy(positives).float(),
                    torch.from_numpy(negatives).float(),
                    labels_anchor.float(),
-                   labels_negative.float())
+                   labels_neg.float())
 
 
 # Function to remove empty rows from the end of a mmap array
@@ -1065,4 +1030,3 @@ def phoneme_replacement(input_chars, max_replace, replace_char='"(.){1,3}"'):
             results.append(' '.join(chars_copy))
 
     return results
-
