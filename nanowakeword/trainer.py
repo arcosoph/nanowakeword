@@ -1309,10 +1309,8 @@ def train(cli_args=None):
         # Acquire the Target Phrase
         target_phrase = base_config.get("target_phrase")
         if not target_phrase:
-            print("\n" + "=" * 80)
-            print("[CONFIGURATION NOTICE]: 'target_phrase' is not set in your config file.")
-            print("This is required to generate audio samples.")
-            print("=" * 80)
+            # print("\n" + "=" * 80)
+            print("\n[CONFIGURATION NOTICE]: 'target_phrase' is not set in your config file. This is required to generate audio samples.")
             try:
                 user_input = input(">>> Please enter the target phrase to proceed: ").strip()
                 if not user_input:
@@ -1324,76 +1322,111 @@ def train(cli_args=None):
                 print("\n\nOperation cancelled by user.")
                 sys.exit()
 
+        # 1. Retrieve Sample Counts (Handle missing values safely)
+        raw_pos_samples = base_config.get('generate_positive_samples')
+        raw_neg_samples = base_config.get('generate_negative_samples')
 
-        # Define Data Generation Plan 
-        user_pos_samples = base_config.get('generate_positive_samples')
-        user_neg_samples = base_config.get('generate_negative_samples')
-        
-        if user_pos_samples is not None:
-            n_pos_train = int(user_pos_samples)
-        
-        if user_neg_samples is not None:
-            n_neg_train = int(user_neg_samples)
+        # Convert to integers if present, else default to 0
+        n_pos_train = int(raw_pos_samples) if raw_pos_samples is not None else 0
 
-        # USER CONTROLLED CUSTOM NEGATIVES 
+        # 2. Configure Negative Data Generation Strategy
+        enable_auto_adversarial = base_config.get("enable_adversarial_generation", True)
         custom_negatives = base_config.get("custom_negative_phrases", [])
-        
-        target_custom_count = int(base_config.get("custom_negative_count", 200))
-        
+        repeats_per_phrase = int(base_config.get("custom_negative_per_phrase", 50))
+
         final_negative_texts = []
 
-        if custom_negatives:            
-            import math
-            if len(custom_negatives) > 0:
-                repeats = math.ceil(target_custom_count / len(custom_negatives))
-                repeated_customs = (custom_negatives * repeats)[:target_custom_count]
-                final_negative_texts.extend(repeated_customs)
-        
-        remaining_count = max(0, n_neg_train - len(final_negative_texts))
-        if remaining_count > 0:
-            auto_adversarial = generate_adversarial_texts(target_phrase[0], N=remaining_count)
-            final_negative_texts.extend(auto_adversarial)
-        
+        # --- Phase A: Process Custom Negative Phrases ---
+        if custom_negatives:
+            print_info(f"Processing {len(custom_negatives)} custom negative phrases.")
+            print_info(f"Generating {repeats_per_phrase} copies for EACH custom phrase.")
+
+            # Expand the list: Each custom phrase is repeated 'repeats_per_phrase' times
+            for phrase in custom_negatives:
+                final_negative_texts.extend([phrase] * repeats_per_phrase)
+            
+            print_info(f"Total custom samples prepared: {len(final_negative_texts)}")
+
+        # --- Phase B: Gap Filling with Auto-Adversarial Data ---
+        if raw_neg_samples is not None:
+            # Scenario: User provided a specific target total (e.g., 600)
+            target_total_neg = int(raw_neg_samples)
+            current_count = len(final_negative_texts)
+            gap = max(0, target_total_neg - current_count)
+
+            if gap > 0:
+                if enable_auto_adversarial:
+                    print_info(f"Target negative samples: {target_total_neg}. Current custom samples: {current_count}.")
+                    print_info(f"Generating {gap} auto-adversarial phrases to fill the gap.")
+                    
+                    # Generate phonetically similar words to fill the remaining count
+                    auto_adversarial = generate_adversarial_texts(target_phrase[0], N=gap)
+                    final_negative_texts.extend(auto_adversarial)
+                else:
+                    print_info(f"Target is {target_total_neg}, but auto-adversarial generation is DISABLED.")
+                    print_info(f"Proceeding with only {current_count} custom samples.")
+            else:
+                if current_count > target_total_neg:
+                    print_info(f"Note: Custom samples ({current_count}) exceed the target ({target_total_neg}). Keeping all custom samples.")
+        else:
+            # Scenario: User did NOT provide a target total. Use ONLY custom phrases.
+            if custom_negatives:
+                print_info("No 'generate_negative_samples' limit defined. Using ONLY custom phrases.")
+            elif n_pos_train == 0:
+                # Edge case: No positive count, no negative target, no custom phrases.
+                print_info("Notice: No configuration found for data generation. Skipping generation phase.")
+
+        # Update final count
+        final_neg_count = len(final_negative_texts)
+
+        # 3. Dynamic Batch Size Configuration
+        # Positive generation uses static text, so it handles larger batches easily.
         pos_batch_size = base_config.get("tts_batch_size", 256)
-        
+
+        # Negative generation uses dynamic text lengths, requiring smaller batches to prevent OOM.
         if "tts_batch_size_negative" in base_config:
             neg_batch_size = int(base_config["tts_batch_size_negative"])
         else:
             neg_batch_size = max(1, pos_batch_size // 2)
 
-        # A unified structure for all generation tasks
-        generation_plan = {
-            "Positive_Train": {
+        # 4. Construct Unified Generation Plan
+        generation_plan = {}
+
+        if n_pos_train > 0:
+            generation_plan["Positive_Train"] = {
                 "count": n_pos_train,
                 "texts": target_phrase,
                 "output_dir": base_config["positive_data_path"],
                 "batch_size": pos_batch_size
-            },            
-            "Adversarial_Train": {
-                "count": n_neg_train,
+            }
+        
+        if final_neg_count > 0:
+            generation_plan["Adversarial_Train"] = {
+                "count": final_neg_count,
                 "texts": final_negative_texts,
                 "output_dir": base_config["negative_data_path"],
-                "batch_size": neg_batch_size # <--- Now Dynamic
+                "batch_size": neg_batch_size
             }
-        }
 
-
-        # Execute the Generation Plan 
-        print_info(f"Initiating data generation pipeline for phrase: '{target_phrase[0]}'")
-        for task_name, params in generation_plan.items():
-            if params["count"] > 0 and params["texts"]:
-                print_info(f"Executing task '{task_name}': {params['count']} clips -> '{params['output_dir']}'")
-                os.makedirs(params["output_dir"], exist_ok=True)
-                
-                generate_samples(
-                    text=params["texts"],
-                    max_samples=params["count"],
-                    output_dir=params["output_dir"],
-                    batch_size=params["batch_size"]
-                )
-                
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+        # 5. Execute Generation Engine
+        if generation_plan:
+            print_info(f"Initiating data generation pipeline for phrase: '{target_phrase[0]}'")
+            
+            for task_name, params in generation_plan.items():
+                if params["count"] > 0 and params["texts"]:
+                    print_info(f"Executing task '{task_name}': {params['count']} clips -> '{params['output_dir']}'")
+                    os.makedirs(params["output_dir"], exist_ok=True)
+                    
+                    generate_samples(
+                        text=params["texts"],
+                        max_samples=params["count"],
+                        output_dir=params["output_dir"],
+                        batch_size=params["batch_size"]
+                    )
+                    
+                    # Clear GPU cache after each heavy task to prevent fragmentation
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
 
         print_info("Synthetic data generation process finished successfully.\n")
 
@@ -1636,7 +1669,7 @@ def train(cli_args=None):
 
   
             # Compute features and save to disk via memmapped arrays
-            print_step_header(3, "Computing Nanowakeword Features for Training Data")
+            print_step_header(3, "Computing Acoustic Features from Audio Sources")
             n_cpus = os.cpu_count()
 
             cpu_usage_ratio = config.get("feature_gen_cpu_ratio", 0.6) # 0.6 = 60%
@@ -1663,7 +1696,7 @@ def train(cli_args=None):
                 print_info("[CONFIG NOTICE] 'batch_composition' not found. Applying a robust default strategy.")
                 batch_comp_config = {
                     'batch_size': 128,
-                    'source_distribution': {'positive': 35, 'negative_speech': 38, 'pure_noise': 27}
+                    'source_distribution': {'positive': 30, 'negative_speech': 40, 'pure_noise': 30}
                 }
             
             source_dist = batch_comp_config.get('source_distribution', {})
