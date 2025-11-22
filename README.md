@@ -17,9 +17,10 @@
 **Quick Access**
 - [Installation](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#installation)
 - [Usage](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#usage)
-- [Performance](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#performance-and-evaluation)
-- [Using model](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#using-your-trained-model-inference)
 - [Features](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#state-of-the-art-features-and-architecture)
+- [Using model](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#using-your-trained-model-inference)
+- [Performance](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#performance-and-evaluation)
+- [Notis](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#notes-&-status)
 - [FAQ](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#faq)
 
 ## ✨ **Choose Your Architecture, Build Your Pro Model**
@@ -40,7 +41,7 @@ NanoWakeWord is a versatile framework offering a rich library of neural network 
 | **RNN** | Baseline experiments or educational purposes. | Simple & Foundational | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=rnn) |
 
 ---
-### **Release Notes & Status**
+### **Notes & Status**
 
 Nanowakeword is under active development. For important updates, version-specific notes, and the latest stability status of all features, please refer to our official status document.
 

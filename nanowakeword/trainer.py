@@ -1368,13 +1368,13 @@ def train(cli_args=None):
             else:
                 if current_count > target_total_neg:
                     print_info(f"Note: Custom samples ({current_count}) exceed the target ({target_total_neg}). Keeping all custom samples.")
-        else:
-            # Scenario: User did NOT provide a target total. Use ONLY custom phrases.
-            if custom_negatives:
-                print_info("No 'generate_negative_samples' limit defined. Using ONLY custom phrases.")
-            elif n_pos_train == 0:
-                # Edge case: No positive count, no negative target, no custom phrases.
-                print_info("Notice: No configuration found for data generation. Skipping generation phase.")
+        # else:
+        #     # Scenario: User did NOT provide a target total. Use ONLY custom phrases.
+        #     if custom_negatives:
+        #         print_info("No 'generate_negative_samples' limit defined. Using ONLY custom phrases.")
+            # elif n_pos_train == 0:
+            #     # Edge case: No positive count, no negative target, no custom phrases.
+            #     print_info("Notice: No configuration found for data generation. Skipping generation phase.")
 
         # Update final count
         final_neg_count = len(final_negative_texts)

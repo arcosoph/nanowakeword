@@ -8,104 +8,98 @@
 # Any parameter specified here will override the intelligent defaults.
 # ==============================================================================
 
-# -----------------------------------------------------------------
-# 1. Model & Architecture Definition
-# -----------------------------------------------------------------
-# We select tcn for its excellent noise robustness.
-model_type: "tcn"
-model_name: "jarvis_lstm_v1"
+# --- 1. Project Settings ---
+model_name: "arcosoph_nww_rnn"
 output_dir: "./trained_models"
 
-# --- Architecture-specific parameters for 'lstm' ---
-# Number of recurrent layers in the LSTM model.
-n_blocks: 3
-# Number of hidden units in each LSTM layer.
-layer_size: 256
-# The final dimension of the output embedding vector.
-# embedding_dim: 128  # We will use the default lr.
-# Activation function used in some architectures.
-activation_function: "relu"
+# --- 2. Target Phrase & Data Generation ---
+target_phrase: ["arcosoph"]  # Your wake word
 
+# generate_positive_samples: 50000  # Positive data
+# generate_negative_samples: 120000 # Negative data should be much larger (~2.5x)
+generate_positive_samples: 2044
+generate_negative_samples: 4044
 
-# -----------------------------------------------------------------
-# 2. Data Sources & Synthetic Generation
-# -----------------------------------------------------------------
-positive_data_path: "./training_data/positive"
-negative_data_path: "./training_data/negative"
-background_paths:
-  - "./training_data/noise/ambient"
-  - "./training_data/noise/speech_noise"
-rir_paths:
-  - "./training_data/rir"
+# TTS Batch Settings (Safe and Fast)
+tts_batch_size: 256           # For positive samples (Fast)
+tts_batch_size_negative: 64   # For negative samples (Safe, avoids memory crash)
 
-# --- TTS Generation ---
-target_phrase: ["jarvis"]
-generate_positive_samples: 1000
-generate_negative_samples: 3000
-# Add custom phrases to the negative set to handle specific false-positive cases.
-# custom_negative_phrases: ["iss", "just vis", "jaa"] # Optional because Nanowakeword does this very well on its own.
+# --- 3. Hard Negatives (The False Positive Killers) ---
+# Words that sound similar to your wake word, confusing the model.
+# We teach these specifically so the model learns the difference.
+custom_negative_phrases: [
+  "hey arcosoph", "hello arcosoph", 'hi arcosoph', 'he arcosoph',
+  'arccopho', 'amrocoph', 'arsokop', 'arrcokoph', '....','......'
+]
 
+# How many times these words appear in the generator list? (New Feature)
+# Custom nagative words per 
+custom_negative_per_phrase: 20
 
-# -----------------------------------------------------------------
-# 3. Augmentation & Feature Engineering
-# -----------------------------------------------------------------
-# Manually override the augmentation policy for a more aggressive strategy.
+# --- 5. Path Configuration ---
+positive_data_path: "./data/generated_positive"
+negative_data_path: "./data/generated_negative"
+background_paths: ["./data/background_noise"]   # Fan, street noise, etc.
+rir_paths: ["./data/rir"]                       # Echo/reverb files
+
+# --- 6. Augmentation Settings (Per-Example Mode Active) ---
+# Each audio file gets augmented separately.
+augmentation_rounds: 10     # Each file modified 10 different ways
+augmentation_batch_size: 128
+
 augmentation_settings:
-  BackgroundNoise: 0.85  # Increase probability of adding background noise.
-  RIR: 0.70              # Increase probability of adding reverberation.
-  PitchShift: 0.40
+  BackgroundNoise: 0.8      # 80% of files include noise
+  RIR: 0.6                  # 60% of files include echo
+  PitchShift: 0.5           # Pitch altered
+  Gain: 1.0                 # Volume adjusted
+  ColoredNoise: 0.4         # Hissing/mic noise
+  BandStopFilter: 0.2       # Some frequencies removed (for bad mics)
 
-# Define a custom Signal-to-Noise Ratio (SNR) range for noise augmentation.
-min_snr_in_db: -5
-max_snr_in_db: 15
+feature_gen_cpu_ratio: 0.8
 
-# Force regeneration of feature files, overwriting any existing ones.
-# Use with caution.
-# overwrite: true
+# --- 7. Model Architecture ---
+model_type: "rnn"           # DNN or GRU suitable for wake word, DNN is fast and RNN is best and testd
+layer_size: 256             # Number of neurons
+n_blocks: 4                 # Number of layers (depth)
+dropout_prob: 0.5           # 50% dropout to reduce overfitting
+embedding_dim: 64           # Feature size
 
+# --- 8. Training Hyperparameters ---
+steps: 25000                # 20k–25k steps for Beast Mode
+batch_size: 128             # Good for gradient stability
 
-# -----------------------------------------------------------------
-# 4. Training, Optimization & Loss Function
-# -----------------------------------------------------------------
-# Manually set the total number of training steps.
-steps: 25000
+# Optimizer & Scheduler
+optimizer_type: "adamw"
+lr_scheduler_type: "onecycle" # OneCycleLR used
+learning_rate_max: 0.001
+weight_decay: 0.01
 
-# --- Advanced Batch Composition ---
-# Define the exact makeup of each training batch.
+# Loss Function Control (hardcoded in trainer.py, still good to have)
+loss_weight_triplet: 0.4
+loss_weight_class: 1.0
+
+# --- 9. Smart Batch Composition ---
+# Updated logic in data.py
 batch_composition:
   batch_size: 128
   source_distribution:
-    positive: 35
-    negative_speech: 45
-    pure_noise: 20
+    positive: 30         # 30% Hello Moka
+    negative_speech: 40  # 40% human speech (Hey Moku, Hello etc.)
+    pure_noise: 30       # 30% fan/noise
 
-# --- Optimizer & Scheduler ---
-optimizer_type: "adamw"
-# learning_rate_max: 0.0002  # We will use the default lr.
-lr_scheduler_type: "cyclic"
+# --- 10. Checkpointing & Early Stopping ---
+checkpointing:
+  enabled: True
+  interval_steps: 1000
+  limit: 5
 
+# Patience: how long to wait without improvement before stopping (default: true, According to training steps)
+# early_stopping_patience: 0 # or null for trun off 
 
-# -----------------------------------------------------------------
-# 5. Pipeline Control, Fault Tolerance & Export
-# -----------------------------------------------------------------
-# Define which stages of the pipeline to execute.
-generate_clips: true
+# --- 11. Advanced ---
+overwrite: true 
+debug_mode: true          
+generate_clips: true # Keep True first time, set False after data generation
 transform_clips: true
 train_model: true
 
-# --- Fault Tolerance & Checkpointing ---
-# Enable and configure the automatic checkpointing system.
-checkpointing:
-  enabled: true
-  interval_steps: 1500
-  limit: 5
-
-# --- Export Settings ---
-# Specify the ONNX opset version for maximum compatibility.
-onnx_opset_version: 17
-
-# --- Debugging ---
-# Enable debug mode to save detailed logs.
-# debug_mode: true
-
-# and other if you want
