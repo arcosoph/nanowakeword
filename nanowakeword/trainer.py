@@ -1330,7 +1330,7 @@ def train(cli_args=None):
         n_pos_train = int(raw_pos_samples) if raw_pos_samples is not None else 0
 
         # 2. Configure Negative Data Generation Strategy
-        enable_auto_adversarial = base_config.get("enable_adversarial_generation", True)
+        enable_auto_adversarial = base_config.get("adversarial_text_generation", True)
         custom_negatives = base_config.get("custom_negative_phrases", [])
         repeats_per_phrase = int(base_config.get("custom_negative_per_phrase", 50))
 
