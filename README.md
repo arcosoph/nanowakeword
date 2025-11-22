@@ -20,7 +20,7 @@
 - [Features](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#state-of-the-art-features-and-architecture)
 - [Using model](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#using-your-trained-model-inference)
 - [Performance](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#performance-and-evaluation)
-- [Notis](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#notes-&-status)
+- [Notis](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#notes--status)
 - [FAQ](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#faq)
 
 ## ✨ **Choose Your Architecture, Build Your Pro Model**
