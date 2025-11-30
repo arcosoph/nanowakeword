@@ -274,64 +274,12 @@ class Model(nn.Module):
 
 
         triplet_margin = config.get("triplet_loss_margin", 0.2)
-        label_smooth = config.get("label_smoothing", 0.1)
     
         self.classifier = nn.Linear(embedding_dim, n_classes)
         self.triplet_loss = TripletLoss(margin=triplet_margin)
 
         # Define logging dict (in-memory)
         self.history = collections.defaultdict(list)
-
-        # Define optimizer
-        self.optimizer = optim.Adam(self.model.parameters(), lr=0.0001, weight_decay=1e-5) # <-- weight_decay 
-
-        #  Select the classification loss function based on configuration 
-
-        # Get the desired loss type from config.
-        # If not specified at all, it will be None.
-        classification_loss_type = self.config.get("classification_loss", None)
-
-        # Logic to select the loss function 
-        if classification_loss_type == "focalloss":
-            # Option 1: User explicitly chooses 'focalloss'
-            # print_info("Using FocalLoss for the classification task.")
-            print("WARNING: Using FocalLoss for the classification task may impact performance")
-            
-            focal_alpha = self.config.get("focal_loss_alpha", 0.25)
-            focal_gamma = self.config.get("focal_loss_gamma", 2.0)
-            
-            self.classification_loss = FocalLoss(alpha=focal_alpha, gamma=focal_gamma)
-
-        elif classification_loss_type == "bce":
-            # Option 2: User explicitly chooses 'bce' (standard Binary Cross Entropy)
-            # print_info("Using standard BCEWithLogitsLoss for the classification task.")
-            print("WARNING: Using standard BCEWithLogitsLoss for the classification task may impact performance")
-            
-            self.classification_loss = nn.BCEWithLogitsLoss()
-
-        elif classification_loss_type == "labelsmoothing" or classification_loss_type is None:
-            # Option 3 (DEFAULT):
-            # This block runs if the user explicitly chooses 'labelsmoothing'
-            # OR if the user does not specify `classification_loss` at all (it will be None).
-            
-            # We check for None to make the info message more accurate.
-            if classification_loss_type is None:
-                print_info("Using LabelSmoothingBCELoss for the classification task.")
-                # Ensure the default is tracked for the table display
-                self.config['classification_loss'] = "labelsmoothing"
-            else:
-                print_info("Using LabelSmoothingBCELoss for the classification task.")
-
-            label_smooth = self.config.get("label_smoothing", 0.1)
-            
-            self.classification_loss = LabelSmoothingBCELoss(smoothing=label_smooth)
-
-        else:
-            # Handle invalid user input
-            raise ValueError(
-                f"Unsupported classification_loss: '{classification_loss_type}'. "
-                "Supported types are: 'focalloss', 'bce', 'labelsmoothing'."
-            )
 
 
     def setup_optimizer_and_scheduler(self, config):
@@ -630,131 +578,14 @@ class Model(nn.Module):
             print_info(f"   Details: {e}")
 
 
-    def _perform_train_step(self, data, step_ndx, logger): 
-                """
-                Advanced Training Step with Hard Negative Mining & Full Debugging.
-                """
-                # Preparing data
-                anchor, positive, negative, labels_anchor, labels_negative = data
-
-                # ===================== DEBUG BLOCK 1: DATA & LABELS ========================
-                log_interval = int(self.config.get("log_interval", 1000))
-                debug_mode = self.config.get("debug_mode", False)
-                
-                if debug_mode and step_ndx % log_interval == 0:
-                    logger.info(f"\n\n[DEBUG] Step {step_ndx}: Data and Labels Check") 
-                    logger.info(f"Anchor Batch Shape: {anchor.shape}")  
-                    unique_anchors, anchor_counts = torch.unique(labels_anchor, return_counts=True)
-                    unique_negatives, negative_counts = torch.unique(labels_negative, return_counts=True)
-                    logger.info(f"Unique Anchor Labels: {unique_anchors.cpu().numpy()} (Count: {anchor_counts.cpu().numpy()})")  
-                    logger.info(f"Unique Negative Labels: {unique_negatives.cpu().numpy()} (Count: {negative_counts.cpu().numpy()})")  
-                # ========================== END DEBUG BLOCK 1 =====================================
-
-                # Move to Device
-                anchor, positive, negative = anchor.to(self.device), positive.to(self.device), negative.to(self.device)
-                labels_anchor, labels_negative = labels_anchor.to(self.device), labels_negative.to(self.device)
-
-                # Forward Pass
-                self.optimizer.zero_grad()
-                
-                # Get Embeddings
-                emb_anchor = self.model(anchor)
-                emb_positive = self.model(positive)
-                emb_negative = self.model(negative)
-
-                # 1. Triplet Loss (Distance Based)
-                loss_triplet = self.triplet_loss(emb_anchor, emb_positive, emb_negative)
-                
-                # 2. Classification (Logits)
-                logits_anchor = self.classifier(emb_anchor)
-                logits_negative = self.classifier(emb_negative)
- 
-                penalty_loss = torch.tensor(0.0, device=self.device)
-                num_hard_negatives = 0
-
-                with torch.no_grad():
-                    probs_neg = torch.sigmoid(logits_negative).view(-1)
-                    hard_indices = probs_neg > 0.5
-                    num_hard_negatives = hard_indices.sum().item()
-
-                if num_hard_negatives > 0:
-                    hard_logits = logits_negative.view(-1)[hard_indices]
-                    hard_labels = labels_negative.view(-1)[hard_indices]
-                    
-                    bce_penalty_fn = nn.BCEWithLogitsLoss()
-                    hard_loss = bce_penalty_fn(hard_logits, hard_labels)
-                    
-                    penalty_loss = hard_loss * 2.0
-
-                # Standard Classification Loss
-                all_logits = torch.cat([logits_anchor, logits_negative])
-                all_labels = torch.cat([labels_anchor, labels_negative])
-                
-                loss_class = self.classification_loss(all_logits, all_labels)
-
-                # Add the Penalty to the classification loss
-                final_class_loss = loss_class + penalty_loss
-
-                if debug_mode and step_ndx % log_interval == 0:
-                    logger.info(f"\n[DEBUG] Step {step_ndx}: Model Confidence & Hard Negatives")
-                    
-                    # Calculate average confidences
-                    avg_pos_conf = torch.sigmoid(logits_anchor).mean().item()
-                    avg_neg_conf = torch.sigmoid(logits_negative).mean().item()
-                    
-                    logger.info(f"Avg. Positive Confidence: {avg_pos_conf:.4f}")  
-                    logger.info(f"Avg. Negative Confidence: {avg_neg_conf:.4f}")
-                    
-                    if num_hard_negatives > 0:
-                        logger.info(f"ALERT: Found {num_hard_negatives} Hard Negatives in this batch!")
-                        logger.info(f"  -> Penalty Loss added: {penalty_loss.item():.6f}")
-                    else:
-                        logger.info("No Hard Negatives found (Good job!)")
-                # ========================== END DEBUG BLOCK 2 ==================================
-
-                # Total Loss Weights (Adjusted for better stability)
-                loss_weight_triplet = self.config.get("loss_weight_triplet", 0.4) 
-                loss_weight_class = self.config.get("loss_weight_class", 1.0)
-                
-                total_loss = (loss_triplet * loss_weight_triplet) + (final_class_loss * loss_weight_class)
-
-                # ========================== DEBUG BLOCK 3: LOSS VALUES ==========================
-                if debug_mode and step_ndx % log_interval == 0:
-                    logger.info(f"\n[DEBUG] Step {step_ndx}: Final Loss Components")  
-                    logger.info(f"Triplet Loss (raw):      {loss_triplet.item():.6f}")  
-                    logger.info(f"Class Loss (raw):        {loss_class.item():.6f}")
-                    logger.info(f"Penalty Loss (added):    {penalty_loss.item():.6f}")
-                    logger.info(f"TOTAL WEIGHTED LOSS:     {total_loss.item():.6f}")  
-                # ========================== END DEBUG BLOCK 3 ===================================
-
-                # Backward Pass
-                total_loss.backward()
-
-                # ========================== DEBUG BLOCK 4: GRADIENTS ===========================
-                if debug_mode and  step_ndx % log_interval == 0:
-                    first_param_grad = next(self.model.parameters()).grad
-                    first_layer_grad = first_param_grad.mean().item() if first_param_grad is not None else 0.0
-                    classifier_grad = self.classifier.weight.grad.mean().item() if self.classifier.weight.grad is not None else 0.0
-
-                    logger.info(f"\n[DEBUG] Step {step_ndx}: Gradient Health")  
-                    logger.info(f"First Layer Grad Mean: {first_layer_grad:.8f}")  
-                    logger.info(f"Classifier Grad Mean:  {classifier_grad:.8f}")                
-                # ========================== END DEBUG BLOCK 4 ==================================
-
-                default_max_norm = self.config.get("max_norm", 1.0)
-                torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=default_max_norm)
-                
-                self.optimizer.step()            
-                self.scheduler.step()
-                
-                return total_loss.detach().cpu().item()
 
     def train_model(self, X, max_steps, log_path, table_updater, resume_from_dir=None):
                 
+                import re 
+                import os
                 import logging
                 from logging.handlers import RotatingFileHandler
-                import os
-                import re # Regular expressions for parsing filenames
+                from nanowakeword.modules import TripletMetricLoss
 
                 # 1. INITIAL SETUP 
                 # This section remains the same, preparing logging.
@@ -881,7 +712,7 @@ class Model(nn.Module):
                 if start_step == 0:
                     try:
                         first_batch = next(data_iterator)
-                        initial_loss = self._perform_train_step(first_batch, step_ndx=0, logger=logger)
+                        initial_loss = TripletMetricLoss(self, first_batch, step_ndx=0, logger=logger)
                         self.history["loss"].append(initial_loss)
                         ema_loss = initial_loss
                         start_step = 1 # The main loop will now correctly start from step 1
@@ -895,7 +726,7 @@ class Model(nn.Module):
                 training_loop = tqdm(data_iterator, total=max_steps, desc="Training", initial=start_step)
                 for step_ndx, data in enumerate(training_loop, start=start_step):
                     
-                    current_loss = self._perform_train_step(data, step_ndx=step_ndx, logger=logger)
+                    current_loss = TripletMetricLoss(self, data, step_ndx=step_ndx, logger=logger)
                     self.history["loss"].append(current_loss)
                     
                     if ema_loss is None: ema_loss = current_loss

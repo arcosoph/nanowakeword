@@ -91,7 +91,56 @@ batch_composition:
 checkpointing:
   enabled: True
   interval_steps: 1000
-  limit: 5
+  limit: 3
+
+
+
+# --- Hard Training Focused
+training_refinement:
+  triplet_settings:
+    base_margin: 0.6           # Increased margin for stronger separation
+    curriculum_steps: 15000
+    hard_mining_ratio: 0.8     # More hard examples
+    negative_push_margin: 1.0  # Push negatives farther
+
+  loss_settings:
+    false_accept_penalty: 50.0  # Very high to minimize FA
+    miss_penalty: 5.0
+    focal_gamma: 3.0
+    temperature: 2.0
+
+  margin_settings:
+    safety_threshold: 0.02        # Stricter threshold
+    exponential_scale: 5.0        # Sharper exponential scaling
+    confidence_penalty_weight: 100.0  # Penalize overconfident negatives aggressively
+
+  regularization:
+    spectral_weight: 0.02
+    enable_spectral: true
+    confidence_regularization: 0.2   # Stronger confidence regularization
+
+  loss_weights:
+    triplet: 0.7
+    bce: 0.2
+    focal: 0.3
+    margin: 150.0                    # High margin weight
+    replay: 30.0
+    negative_push: 50.0              # Aggressive negative push
+    confidence_reg: 20.0             # Strong confidence regulation
+
+  optimization:
+    max_grad_norm: 1.5
+    adaptive_clipping: true
+    aggressive_clip_factor: 0.5
+
+  hard_negative_mining:
+    enable: true
+    bank_size: 1000                  # Bigger bank
+    mining_threshold: 0.4
+    replay_batch_size: 32
+    min_bank_size: 100
+    focus_on_confusing: true         # Focus on hardest confusing negatives
+
 
 # Patience: how long to wait without improvement before stopping (default: true, According to training steps)
 # early_stopping_patience: 0 # or null for trun off 

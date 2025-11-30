@@ -1,5 +1,8 @@
 # Nanowakeword: Project Status & Release Notes
 
+**Upcoming Update: Coming soon**
+
+
 *Last Updated: November 18, 2025*
 
 This document provides timely updates, performance notes, stability reports, and important recommendations regarding the Nanowakeword framework. We advise reviewing this file for the latest information on specific versions and features.
