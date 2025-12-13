@@ -100,8 +100,8 @@ augmentation_settings:
 
 ## Synthetic Data Generation
 # Parameters for generating audio clips using Text-to-Speech (TTS).
-generate_positive_samples: 4500
-generate_negative_samples: 2050
+generate_positive_samples: 2050
+generate_negative_samples: 4500
 # List sensitive words or common false-alarm triggers to generate as negative data.
 custom_negative_phrases: ['hello', 'ark', 'arcos', 'arfo', 'ar']
 custom_negative_per_phrase: 23
