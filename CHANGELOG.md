@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## 1.3.4 (unreleased)
 
 - **Full information coming soon**
+- **New update coming within 72 hours**
 
 
 ## [1.3.3] - 2025-11-14

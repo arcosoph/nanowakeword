@@ -20,7 +20,7 @@
 - [Features](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#state-of-the-art-features-and-architecture)
 - [Using model](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#using-your-trained-model-inference)
 - [Performance](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#performance-and-evaluation)
-- [Notis](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#notes--status)
+- [NOTIS](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#notes--status)
 - [FAQ](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#faq)
 
 ## ✨ **Choose Your Architecture, Build Your Pro Model**
@@ -192,7 +192,7 @@ The primary method for controlling the NanoWakeWord framework is through a `.yam
     # For example, to apply a specific set of parameters:
     n_blocks: 3
     # ...
-    classification_loss: labelsmoothing
+    steps: 20000
     # ...
     checkpointing:
       enabled: true
@@ -263,7 +263,7 @@ Below is a typical training performance graph for a model trained on a standard 
 
 The outstanding performance shown above is a direct result of the data-driven decisions made automatically by the Intelligent Configuration Engine. For the dataset used in this example, the engine made the following critical choices:
 
-*   **Adaptive Model Complexity:** It analyzed the 2.6 hours of effective data volume (after augmentation) and determined that an **3 blocks and a layer size of 256** (`model_complexity_score: 2.64`) would be optimal. This provided enough capacity to learn complex temporal patterns without being excessive for the dataset size.
+*   **Adaptive Model Complexity:** It analyzed the 2.6 hours of effective data volume (after augmentation) and determined that an **3 blocks and a layer size of 256** would be optimal. This provided enough capacity to learn complex temporal patterns without being excessive for the dataset size.
 *   **Data-Driven Augmentation Strategy:** Based on the high amount of noise and reverberation data provided (`H_noise: 5.06`, `N_rir: 1668`), it set aggressive augmentation probabilities (`RIR: 0.8`, `background_noise_probability: 0.9`) to ensure the model would be robust in challenging real-world environments.
 *   **Balanced Batch Composition:** It intelligently adjusted the training batch to include **27% `pure_noise`**. This decision was based on its analysis of the user-provided data, allowing the model to focus more on differentiating the wake word from both ambient noise and other human speech (`negative_speech: 44%`).
 
@@ -285,7 +285,7 @@ import time
 from nanowakeword.nanointerpreter import NanoInterpreter 
 # --- Simple Configuration ---
 MODEL_PATH = r"model/path/your.onnx"
-THRESHOLD = 0.9  # A simple threshold for detection
+THRESHOLD = 0.9  # A simple threshold for detection | ⚠️ This may need to be changed (eg, 0.999, 0.80) 
 COOLDOWN = 2     # A simple cooldown managed outside the interpreter
 # If you want, you can use more advanced methods like VAD or PATIENCE_FRAMES.
 

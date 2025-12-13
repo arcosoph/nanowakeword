@@ -194,7 +194,6 @@ class CRNNModel(nn.Module):
                     cnn_channels, embedding_dim, dropout_prob, activation_fn):
         super().__init__()
 
-        # --- 1. CNN Frontend ---
         # Dynamically builds CNN layers based on the config.
         cnn_layers = []
         in_channels = 1 # Input is a single-channel spectrogram
@@ -206,7 +205,7 @@ class CRNNModel(nn.Module):
             in_channels = out_channels
         self.cnn = nn.Sequential(*cnn_layers)
 
-        # --- 2. Determine RNN input size ---
+        # Determine RNN input size
         # We run a dummy tensor through the CNN to find its output shape.
         with torch.no_grad():
             dummy_input = torch.zeros(1, 1, *input_shape)
@@ -214,7 +213,7 @@ class CRNNModel(nn.Module):
             batch_size, channels, height, width = conv_output.shape
             rnn_input_size = channels * height
 
-        # --- 3. RNN Backend ---
+        # RNN Backend 
         # User can choose between LSTM or GRU.
         if rnn_type.lower() == 'gru':
             self.rnn = nn.GRU(
@@ -237,7 +236,7 @@ class CRNNModel(nn.Module):
         
         self.dropout = nn.Dropout(dropout_prob)
         
-        # --- 4. Final Classifier ---
+        # Final Classifier 
         # Projects the RNN output to the final embedding dimension.
         self.fc = nn.Linear(rnn_hidden_size * 2, embedding_dim) # *2 for bidirectional
 
@@ -540,20 +539,19 @@ class MergingModule(nn.Module):
 class EBranchformerBlock(nn.Module):
     def __init__(self, d_model, n_head, dropout=0.1):
         super().__init__()
-        # --- Main Branches ---
-        # 1. Attention Branch
+
+        # Attention Branch
         self.attn_branch_norm = nn.LayerNorm(d_model)
         self.attention = nn.MultiheadAttention(d_model, n_head, dropout=dropout, batch_first=True)
-        # 2. Convolution Branch
+        # Convolution Branch
         self.conv_branch = ConvolutionModule(d_model) # Reusing from Conformer
 
-        # --- Merging and Final Layer ---
+        # Merging and Final Layer 
         self.merger = MergingModule(d_model)
         self.final_norm = nn.LayerNorm(d_model)
         self.ffn = FeedForwardModule(d_model, dropout) # Reusing from Conformer
 
     def forward(self, x):
-        # --- Parallel Execution ---
         # Attention Branch
         attn_input = self.attn_branch_norm(x)
         attn_out, _ = self.attention(attn_input, attn_input, attn_input)
@@ -591,5 +589,4 @@ class EBranchformerModel(nn.Module):
         pooled_out = x.mean(dim=1)
         out = self.output_proj(pooled_out)
         return out
-
 

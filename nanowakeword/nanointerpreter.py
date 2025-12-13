@@ -26,7 +26,7 @@ import nanowakeword # Required for VAD
 from functools import partial
 from collections import deque, defaultdict
 from typing import List, Union, Dict, TYPE_CHECKING
-from nanowakeword.utils.audio_processing import AudioFeatures
+from nanowakeword.modules.audio_processing import AudioFeatures
 
 # Conditionally import noisereduce to avoid a hard dependency.
 try:
@@ -59,21 +59,21 @@ class NanoInterpreter:
         """
         self._ort = self._import_onnx_runtime()
 
-        # --- Setup core attributes ---
+        # Setup core attributes 
         self.models: Dict[str, "onnxruntime.InferenceSession"] = {}
         self.model_input_names: Dict[str, List[str]] = {}
         self.model_feature_length: Dict[str, int] = {}
         self.class_mapping: Dict[str, Dict[str, str]] = {}
 
-        # --- State Management (for RNN/LSTM/GRU) ---
+        # State Management (for RNN/LSTM/GRU) -
         self.is_stateful: Dict[str, bool] = {}
         self.hidden_states: Dict[str, HiddenState] = {}
 
-        # --- Transparent Scoring Attributes ---
+        #  Transparent Scoring Attributes 
         self.raw_scores: Dict[str, float] = {}
         self.post_processed_scores: Dict[str, float] = {}
         
-        # --- Model Loading Loop ---
+        # Model Loading Loop 
         for mdl_path in wakeword_models:
             mdl_name = os.path.splitext(os.path.basename(mdl_path))[0]
             if mdl_name in self.models:
@@ -94,7 +94,7 @@ class NanoInterpreter:
             self.raw_scores[mdl_name] = 0.0
             self.post_processed_scores[mdl_name] = 0.0
 
-        # --- Buffer, Preprocessor, and Optional Components Setup ---
+        # Buffer, Preprocessor, and Optional Components Setup
         self._setup_components(**kwargs)
 
     @classmethod
@@ -124,14 +124,14 @@ class NanoInterpreter:
         if not isinstance(x, np.ndarray):
             raise ValueError("Input audio `x` must be a Numpy array.")
 
-        # --- 1. Noise Reduction ---
+        # Noise Reduction 
         if self.noise_reducer_enabled:
             x = self._reduce_noise(x)
 
-        # --- 2. Pre-process Audio & Get Features ---
+        # Pre-process Audio & Get Features 
         n_prepared_samples = self.preprocessor(x)
         
-        # --- 3. Run Inference ---
+        # Run Inference 
         # If not enough new audio, don't run the model, just return the last known state.
         if n_prepared_samples < 1280:
              return self.post_processed_scores
@@ -154,7 +154,7 @@ class NanoInterpreter:
 
             score = prediction_scores.item()
             
-            # --- Store the RAW score before any filtering ---
+            # Store the RAW score before any filtering
             self.raw_scores[mdl_name] = score 
             
             # Zero out initial predictions to prevent instability
@@ -163,7 +163,7 @@ class NanoInterpreter:
             
             current_raw_preds[mdl_name] = score
 
-        # --- 4. Apply Filters (VAD, Patience, etc.) ---
+        # Apply Filters (VAD, Patience, etc.) 
         final_predictions = current_raw_preds.copy()
 
         # VAD Filter
@@ -178,7 +178,7 @@ class NanoInterpreter:
         # Patience & Debounce Filter
         self._apply_post_processing(final_predictions, patience, threshold, debounce_time, n_prepared_samples)
 
-        # --- 5. Update Buffers and Final State ---
+        # Update Buffers and Final State 
         for mdl_name, score in final_predictions.items():
             self.prediction_buffer[mdl_name].append(score)
             self.post_processed_scores[mdl_name] = score
@@ -210,8 +210,6 @@ class NanoInterpreter:
 
         predictions = [self.predict(data[i:i+chunk_size], **kwargs) for i in range(0, len(data), chunk_size)]
         return predictions
-
-    # --- Private Methods ---
 
     def _import_onnx_runtime(self):
         try:

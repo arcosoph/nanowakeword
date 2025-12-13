@@ -40,7 +40,7 @@ from tqdm import tqdm
 from pathlib import Path
 from torch import optim, nn
 import matplotlib.pyplot as plt
-from nanowakeword.utils.audio_processing import compute_features_from_generator
+from nanowakeword.modules.audio_processing import compute_features_from_generator
 from nanowakeword.data import augment_clips, mmap_batch_generator, generate_adversarial_texts
 from nanowakeword.utils.logger import print_banner, print_step_header, print_info, print_key_value, print_final_report_header, print_table
 # All Architectures
@@ -291,7 +291,7 @@ class Model(nn.Module):
 
             all_params = chain(self.model.parameters(), self.classifier.parameters())
             
-            optimizer_type = config.get("optimizer_type", "adamw").lower()
+            optimizer_type = config.get("optimizer_type", "adamw").lower() 
             learning_rate = config.get('learning_rate_max', 1e-4)
             weight_decay = config.get("weight_decay", 1e-2)
             momentum = config.get("momentum", 0.9)
@@ -546,7 +546,10 @@ class Model(nn.Module):
         exportable_model.eval()
 
         # Define a dummy input for tracing the model graph
-        dummy_input = torch.rand(1, *self.input_shape)
+        # dummy_input = torch.rand(1, *self.input_shape)
+        # New line (Ensures float32 and correct device)
+        dummy_input = torch.randn(1, *self.input_shape, device='cpu', dtype=torch.float32)
+        
         onnx_path = os.path.join(output_dir, model_name + '.onnx')
         
         print_info(f"Saving inference-ready ONNX model to '{onnx_path}'")
@@ -1007,7 +1010,7 @@ def train(cli_args=None):
 
 
     import json
-    from nanowakeword.data_utils.preprocess import verify_and_process_directory
+    from nanowakeword.modules.preprocess import verify_and_process_directory
 
     # 1. Define a stable cache directory based on the user's output_dir
     #    This ensures the path is known and available from the very beginning.
@@ -1167,7 +1170,7 @@ def train(cli_args=None):
 
         final_negative_texts = []
 
-        # --- Phase A: Process Custom Negative Phrases ---
+        # Custom Negative Phrases 
         if custom_negatives:
             print_info(f"Processing {len(custom_negatives)} custom negative phrases.")
             print_info(f"Generating {repeats_per_phrase} copies for EACH custom phrase.")
@@ -1178,7 +1181,7 @@ def train(cli_args=None):
             
             print_info(f"Total custom samples prepared: {len(final_negative_texts)}")
 
-        # --- Phase B: Gap Filling with Auto-Adversarial Data ---
+        # Gap Filling with Auto-Adversarial Data 
         if raw_neg_samples is not None:
             # Scenario: User provided a specific target total (e.g., 600)
             target_total_neg = int(raw_neg_samples)
@@ -1199,13 +1202,6 @@ def train(cli_args=None):
             else:
                 if current_count > target_total_neg:
                     print_info(f"Note: Custom samples ({current_count}) exceed the target ({target_total_neg}). Keeping all custom samples.")
-        # else:
-        #     # Scenario: User did NOT provide a target total. Use ONLY custom phrases.
-        #     if custom_negatives:
-        #         print_info("No 'generate_negative_samples' limit defined. Using ONLY custom phrases.")
-            # elif n_pos_train == 0:
-            #     # Edge case: No positive count, no negative target, no custom phrases.
-            #     print_info("Notice: No configuration found for data generation. Skipping generation phase.")
 
         # Update final count
         final_neg_count = len(final_negative_texts)
@@ -1338,14 +1334,14 @@ def train(cli_args=None):
         os.path.abspath(base_config["output_dir"]),
         base_config.get(
             "model_name",
-            GNMV(model_type=config.get("model_type", "rnn"))
+            GNMV(model_type=config.get("model_type", "dnn"))
         )
     )
 
 
-    feature_save_dir = os.path.join(project_dir, "1_features")
-    artifacts_dir = os.path.join(project_dir, "2_training_artifacts")
-    model_save_dir = os.path.join(project_dir, "3_model")
+    feature_save_dir = os.path.join(project_dir, "features")
+    artifacts_dir = os.path.join(project_dir, "training_artifacts")
+    model_save_dir = os.path.join(project_dir, "model")
 
     for path in [project_dir, feature_save_dir, artifacts_dir, model_save_dir]:
         os.makedirs(path, exist_ok=True)
@@ -1391,7 +1387,7 @@ def train(cli_args=None):
             min_length = autotune_cfg.get("min_allowable_length", 32000)
             snap_tolerance = autotune_cfg.get("snap_to_min_tolerance", 4000)
             
-            # --- Sample clips and calculate median duration (robust version) ---
+            # Sample clips and calculate median duration 
             positive_clips_path = Path(config["positive_data_path"])
             positive_clips = [str(p) for p in positive_clips_path.glob("*.wav")]
             
@@ -1521,16 +1517,6 @@ def train(cli_args=None):
                                             ncpu=n_cpus if not torch.cuda.is_available() else 1)
 
             
-            batch_comp_config = config.get('batch_composition')
-            
-            if not batch_comp_config:
-                print_info("[CONFIG NOTICE] 'batch_composition' not found. Applying a robust default strategy.")
-                batch_comp_config = {
-                    'batch_size': 128,
-                    'source_distribution': {'positive': 30, 'negative_speech': 40, 'pure_noise': 30}
-                }
-            
-            source_dist = batch_comp_config.get('source_distribution', {})
 
             # Generate pure noise features if the strategy requires it and they don't already exist.
             # if source_dist.get('pure_noise', 0) > 0:
@@ -1566,105 +1552,132 @@ def train(cli_args=None):
             logging.warning("Nanowakeword features already exist, skipping augmentation and feature generation. Verify existing files.")
 
 
-    # Create nanowakeword model
     should_train = config.get("train_model", False)
     if args.train_model is True or should_train:
 
-        # 1. Verify Feature Files and Load Configuration 
-        # This block ensures all necessary .npy files exist before proceeding.
+        print_step_header(4, "Preparing Training Data and Compositor")
+
+        # Load user-defined data sources from config.yaml
+        manifest = config.get("feature_manifest", {})
         
-        required_files = {
-            "Positive Features": os.path.join(feature_save_dir, "positive_features_train.npy"),
-            "Negative Features": os.path.join(feature_save_dir, "negative_features_train.npy"),
-            "Pure Noise Features": os.path.join(feature_save_dir, "pure_noise_features.npy")
-        }
+        # We categorize sources into three buckets
+        targets = manifest.get("targets", {})        # Label 1 (Wakewords)
+        negatives = manifest.get("negatives", {})    # Label 0 (Confusing Speech)
+        backgrounds = manifest.get("backgrounds", {}) # Label 0 (Pure Noise)
 
-        missing_files = [desc for desc, path in required_files.items() if not os.path.exists(path)]
+      
+        if not targets:    
+            # Legacy Positive -> Targets
+            pos_path = os.path.join(feature_save_dir, "positive_features_train.npy")
+            if os.path.exists(pos_path):
+                targets["legacy_pos"] = pos_path
+      
+        if not negatives:  
+            # Legacy Negative -> Negatives (Speech)
+            neg_path = os.path.join(feature_save_dir, "negative_features_train.npy")
+            if os.path.exists(neg_path):
+                negatives["legacy_neg"] = neg_path
+       
+        if not backgrounds:    
+            # Legacy Pure Noise -> Backgrounds
+            noise_path = os.path.join(feature_save_dir, "pure_noise_features.npy")
+            if os.path.exists(noise_path):
+                backgrounds["legacy_noise"] = noise_path
 
-        if missing_files:
-            print_info("\n[ERROR] Cannot start training. Required feature files are missing:")
-            for desc in missing_files:
-                print_info(f"- {desc}")
-            print_info("\nPlease run with the '--transform_clips' flag or `transform_clips: true` to generate these files.")
+        # Registry format: { 'alias': {'path': '...', 'type': 'target'/'negative'/'background'} }
+        source_registry = {}
+        
+        print_info("Loading Data Sources from Registry:")
+
+        # 1. Register Targets
+        for alias, path in targets.items():
+            if os.path.exists(path):
+                source_registry[alias] = {'path': path, 'type': 'target'}
+                print_info(f"  [Target] Registered '{alias}'")
+            else:
+                print_info(f"  [Error] Target file missing: {path}")
+
+        # 2. Register Negatives (Human Speech)
+        for alias, path in negatives.items():
+            if os.path.exists(path):
+                source_registry[alias] = {'path': path, 'type': 'negative'}
+                print_info(f"  [Negative] Registered '{alias}'")
+            else:
+                print_info(f"  [Warning] Negative file missing: {path}")
+
+        # 3. Register Backgrounds (Pure Noise)
+        for alias, path in backgrounds.items():
+            if os.path.exists(path):
+                source_registry[alias] = {'path': path, 'type': 'background'}
+                print_info(f"  [Background] Registered '{alias}'")
+            else:
+                print_info(f"  [Warning] Background file missing: {path}")
+
+        # Validation
+        if not source_registry:
+            print_info("\n[CRITICAL FAILURE] No valid data sources found. Training aborted.")
             sys.exit(1)
+
+        has_target = any(v['type'] == 'target' for v in source_registry.values())
+        if not has_target:
+            print_info("\n[CRITICAL FAILURE] No Target (Positive) data found. Training aborted.")
+            sys.exit(1)
+
+        # Load user blueprints for data mixing
+        compositor_cfg = config.get("acoustic_compositor", {})
+        use_defaults = compositor_cfg.get("use_defaults", True)
+        custom_blueprints = compositor_cfg.get("blueprints", [])
+        
+        final_blueprints = []
+
+        # 1. Add Custom Blueprints
+        if custom_blueprints:
+            print_info(f"Loading {len(custom_blueprints)} custom mixing scenarios.")
+            final_blueprints.extend(custom_blueprints)
+
+        # 2. Add Default Blueprint (If needed)
+        # Default Logic: [Any Background] -> [Any Target] -> [Any Background]
+        if use_defaults or not final_blueprints:
+            final_blueprints.append({
+                "composition": ["backgrounds", "targets", "backgrounds"],
+                "weight": 1.0
+            })
+            print_info("Loaded default scenario: [backgrounds -> targets -> backgrounds]")
 
         try:
-            # Safely load the input shape from the primary feature file
-            input_shape = np.load(required_files["Positive Features"]).shape[1:]
-            seconds_per_example = 1280 * input_shape[0] / 16000
+            # Load the first available file to detect input shape
+            first_path = list(source_registry.values())[0]['path']
+            sample_data = np.load(first_path, mmap_mode='r')
+            input_shape = sample_data.shape[1:] 
+            seconds_per_example = 1280 * input_shape[0] 
+
+            print_info(f" Input Shape Detected: {input_shape} ({seconds_per_example:.2f}s context)")
         except Exception as e:
-            print_info(f"\n[ERROR] Failed to read 'positive_features_train.npy'. The file may be corrupted: {e}")
+            print_info(f"[ERROR] Data integrity check failed: {e}")
             sys.exit(1)
-        
-        # If we reach here, all files are present and valid.
 
-        # 2. Setup Data Transformation and Batch Generation 
-
-        # Data transform function to handle variable clip lengths
-        def f(x, n=input_shape[0]):
-            if x.shape[1] != n:
-                x = np.vstack(x)
-                return np.array([x[i:i+n, :] for i in range(0, x.shape[0]-n, n)])
-            return x
-
-        
-        # Get batch composition settings
-        batch_comp_config = config.get('batch_composition', {})
-        total_batch_size = batch_comp_config.get('batch_size', 128)
-        
-        source_dist = batch_comp_config.get('source_distribution', 
-            {'positive': 30, 'negative_speech': 40, 'pure_noise': 30})
-        
-        batch_n_per_class = {
-            'positive': int(round(total_batch_size * (source_dist.get('positive', 0) / 100))),
-            
-            'adversarial_negative': int(round(total_batch_size * (source_dist.get('negative_speech', 0) / 100))),
-            
-            'pure_noise': int(round(total_batch_size * (source_dist.get('pure_noise', 0) / 100)))
-        }
-
-        # Define data sources 
-        data_sources = {
-            'positive': required_files["Positive Features"],
-            'adversarial_negative': required_files["Negative Features"],
-            'pure_noise': required_files["Pure Noise Features"]
-        }
-        
-
-        # Filter out sources that are not requested in the batch composition
-        final_data_files = {
-            name: path for name, path in data_sources.items() 
-            if batch_n_per_class.get(name) and batch_n_per_class[name] > 0
-        }
-
-        final_label_transforms = {
-            key: (lambda x, k=key: [1] * len(x)) if key == 'positive' else (lambda x, k=key: [0] * len(x))
-            for key in final_data_files
-        }
-        data_transforms = {key: f for key in final_data_files}
-
-        # Create the memory-efficient batch generator
+        # Initialize the Advanced Batch Generator
+        # This will handle the simplified keywords ('targets', 'backgrounds') internally
         batch_generator = mmap_batch_generator(
-            data_files=final_data_files,
-            n_per_class={k: v for k, v in batch_n_per_class.items() if k in final_data_files},
-            data_transform_funcs=data_transforms,
-            label_transform_funcs=final_label_transforms,
-            triplet_mode=True 
+            source_registry=source_registry,
+            blueprints=final_blueprints,
+            batch_size=config.get('batch_size', 128),
+            input_shape=input_shape
         )
 
         class IterDataset(torch.utils.data.IterableDataset):
             def __init__(self, generator): self.generator = generator
             def __iter__(self): return self.generator
 
-        # 3. Initialize Model, Optimizer, and DataLoader 
-        print_info("Initializing Model and Training Components...")
+        # MODEL INITIALIZATION
+        print_info("Initializing Neural Architecture...")
         
         nww = Model(
             n_classes=1, 
             input_shape=input_shape,
             config=config,
-            model_name=config.get("model_name", GNMV(config.get("model_type", "rnn"))),
-            model_type=config.get("model_type", "rnn"),
+            model_name=config.get("model_name", GNMV(config.get("model_type", "dnn"))),
+            model_type=config.get("model_type", "dnn"),
             layer_dim=config["layer_size"],
             n_blocks=config["n_blocks"],
             dropout_prob=config.get("dropout_prob", 0.5),
@@ -1673,19 +1686,17 @@ def train(cli_args=None):
       
         nww.setup_optimizer_and_scheduler(config=config)
         
-        # The DataLoader wraps our iterable dataset
+        num_workers= config.get("num_workers", 0)
+
         X_train = torch.utils.data.DataLoader(
             IterDataset(batch_generator),
-            batch_size=None, # Required for iterable datasets
-            num_workers=0    # Recommended for this type of generator
+            batch_size=None, 
+            num_workers=num_workers 
         )
 
-        # 4. Execute the Training Process 
-        print_step_header(4, "Starting Training Process")
+        # EXECUTE TRAINING
+        print_step_header(5, "Training is progress")
         
-        model_type_str = config.get('model_type', "rnn").upper()
-        print_info(f"Using model architecture: 🤍 {model_type_str}")
-
         best_model = nww.auto_train(
             X_train=X_train,
             steps=config.get("steps", 15000),
@@ -1694,12 +1705,11 @@ def train(cli_args=None):
             resume_from_dir=args.resume 
         )
 
-        # 5. Post-Training Steps: Plotting and Exporting 
         nww.plot_history(artifacts_dir)
         
         nww.export_model(
             model=best_model, 
-            model_name=config.get("model_name", GNMV(config.get("model_type", "rnn"))), 
+            model_name=config.get("model_name", GNMV(config.get("model_type", "dnn"))), 
             output_dir=model_save_dir
         )
 

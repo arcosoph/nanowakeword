@@ -1,154 +1,134 @@
-# ==============================================================================
-# Nanowakeword: Advanced Training Configuration Template
-#
-# This file demonstrates a production-ready configuration for training a robust
-# wake word model. It showcases how to fine-tune various aspects of the
-# data pipeline, model architecture, and training process.
-#
-# Any parameter specified here will override the intelligent defaults.
-# ==============================================================================
+# ==========================================================
+#       NanoWakeWord Training Configuration
+# ==========================================================
+# This file controls the entire training pipeline.
+# Parameters are grouped logically for clarity and ease of use.
+# ==========================================================
 
-# --- 1. Project Settings ---
-model_name: "arcosoph_nww_rnn"
+
+## Project & Data Paths
+# Define the project name and the locations of all data assets.
+model_name: "arcosoph_dnn_v1"
 output_dir: "./trained_models"
 
-# --- 2. Target Phrase & Data Generation ---
-target_phrase: ["arcosoph"]  # Your wake word
-
-# generate_positive_samples: 50000  # Positive data
-# generate_negative_samples: 120000 # Negative data should be much larger (~2.5x)
-generate_positive_samples: 2044
-generate_negative_samples: 4044
-
-# TTS Batch Settings (Safe and Fast)
-tts_batch_size: 256           # For positive samples (Fast)
-tts_batch_size_negative: 64   # For negative samples (Safe, avoids memory crash)
-
-# --- 3. Hard Negatives (The False Positive Killers) ---
-# Words that sound similar to your wake word, confusing the model.
-# We teach these specifically so the model learns the difference.
-custom_negative_phrases: [
-  "hey arcosoph", "hello arcosoph", 'hi arcosoph', 'he arcosoph',
-  'arccopho', 'amrocoph', 'arsokop', 'arrcokoph', '....','......'
-]
-
-# How many times these words appear in the generator list? (New Feature)
-# Custom nagative words per 
-custom_negative_per_phrase: 20
-
-# --- 5. Path Configuration ---
+# Source audio data paths (raw .wav files)
 positive_data_path: "./data/generated_positive"
 negative_data_path: "./data/generated_negative"
-background_paths: ["./data/background_noise"]   # Fan, street noise, etc.
-rir_paths: ["./data/rir"]                       # Echo/reverb files
+background_paths: ["./data/background_noise"]
+rir_paths: ["./data/rir"]
 
-# --- 6. Augmentation Settings (Per-Example Mode Active) ---
-# Each audio file gets augmented separately.
-augmentation_rounds: 10     # Each file modified 10 different ways
+
+## Feature Manifest
+# Paths to the generated .npy feature files. The Acoustic Compositor uses these keys.
+feature_manifest:
+  targets:
+    t: './trained_models/arcosoph_dnn_v1/features/positive_features_train.npy'
+  negatives:
+    n: "./trained_models/arcosoph_dnn_v1/features/negative_features_train.npy"
+    # You can add unlimited additional negative sources with unique keys.
+    # my_other_negatives: "/path/to/other_negatives.npy"
+  backgrounds:
+    b: './trained_models/arcosoph_dnn_v1/features/pure_noise_features.npy'
+    # For example, adding a large external noise dataset:
+    # openwakeword_noise: './openwakeword_features_ACAV100M_2000_hrs_16bit.npy'
+
+
+## Acoustic Compositor
+# Defines how to mix features from the manifest to create training scenes.
+acoustic_compositor:
+  use_defaults: False
+  blueprints:
+    # 'composition' defines the scene. 'weight' defines its relative frequency.
+    # You can use specific keys from the manifest (e.g., "t", "n", "openwakeword_noise", "x")
+    # or general category keywords (e.g., "targets", "negatives", "backgrounds").
+    # Using a category keyword like "backgrounds" will randomly select from ALL sources
+    # registered under that category in the feature_manifest above.
+    - { composition: ["b", "t", "b"], weight: 40 }
+    - { composition: ["n", "t", "n"], weight: 25 }
+    - { composition: ["n", "t", "b"], weight: 10 }
+    - { composition: ["backgrounds", "t", "n"], weight: 10 }
+    - { composition: ["n", "n", "n"], weight: 30 }
+    - { composition: ["b", "b", "b"], weight: 20 }
+    # - { composition: ["x", "my_w", "b", "best-data"], weight: 20 } # You can add more as needed.
+
+
+## Model Architecture
+# Configure the structure and properties of the neural network.
+model_type: "dnn"
+layer_size: 128
+n_blocks: 3
+embedding_dim: 64
+dropout_prob: 0.25
+activation_function: "relu"
+
+
+## Training & Optimizer Settings
+# Hyperparameters that control the training loop and optimization process.
+steps: 20000
+batch_size: 128
+optimizer_type: "adamw"
+learning_rate_max: 0.001
+lr_scheduler_type: "onecycle"
+weight_decay: 0.01
+momentum: 0.9
+
+
+## Audio Processing & Augmentation
+# Control how audio is processed and augmented to create diverse training data.
+audio_processing:
+  clip_length_samples: null
+  autotune_length:
+    enabled: true
+    num_samples_to_inspect: 100
+    duration_buffer_ms: 750
+    min_allowable_length: 22000
+    snap_to_min_tolerance: 4000
+
+augmentation_rounds: 5
 augmentation_batch_size: 128
+min_snr_in_db: 5.0
+max_snr_in_db: 20.0
 
 augmentation_settings:
-  BackgroundNoise: 0.8      # 80% of files include noise
-  RIR: 0.6                  # 60% of files include echo
-  PitchShift: 0.5           # Pitch altered
-  Gain: 1.0                 # Volume adjusted
-  ColoredNoise: 0.4         # Hissing/mic noise
-  BandStopFilter: 0.2       # Some frequencies removed (for bad mics)
+    BackgroundNoise: 0.75
+    RIR: 0.4
+    PitchShift: 0.3
+    ColoredNoise: 0.25
+    Gain: 1.0
+    BandStopFilter: 0.1
 
-feature_gen_cpu_ratio: 0.8
 
-# --- 7. Model Architecture ---
-model_type: "rnn"           # DNN or GRU suitable for wake word, DNN is fast and RNN is best and testd
-layer_size: 256             # Number of neurons
-n_blocks: 4                 # Number of layers (depth)
-dropout_prob: 0.5           # 50% dropout to reduce overfitting
-embedding_dim: 64           # Feature size
+## Synthetic Data Generation
+# Parameters for generating audio clips using Text-to-Speech (TTS).
+generate_positive_samples: 4500
+generate_negative_samples: 2050
+# List sensitive words or common false-alarm triggers to generate as negative data.
+custom_negative_phrases: ['hello', 'ark', 'arcos', 'arfo', 'ar']
+custom_negative_per_phrase: 23
 
-# --- 8. Training Hyperparameters ---
-steps: 25000                # 20k–25k steps for Beast Mode
-batch_size: 128             # Good for gradient stability
 
-# Optimizer & Scheduler
-optimizer_type: "adamw"
-lr_scheduler_type: "onecycle" # OneCycleLR used
-learning_rate_max: 0.001
-weight_decay: 0.01
-
-# Loss Function Control (hardcoded in trainer.py, still good to have)
-loss_weight_triplet: 0.4
-loss_weight_class: 1.0
-
-# --- 9. Smart Batch Composition ---
-# Updated logic in data.py
-batch_composition:
-  batch_size: 128
-  source_distribution:
-    positive: 30         # 30% Hello Moka
-    negative_speech: 40  # 40% human speech (Hey Moku, Hello etc.)
-    pure_noise: 30       # 30% fan/noise
-
-# --- 10. Checkpointing & Early Stopping ---
+## Advanced & Miscellaneous Settings
+# Checkpointing, logging, and other fine-tuning parameters.
+checkpoint_averaging_top_k: 5
 checkpointing:
   enabled: True
   interval_steps: 1000
-  limit: 3
+  limit: 2
+
+early_stopping_patience: 0
+main_delta: 0.0001
+WARMUP_STEPS: 1500
+
+onnx_opset_version: 17
+show_training_summary: True
+debug_mode: true
+feature_gen_cpu_ratio: 1.0
+ema_alpha: 0.01
 
 
-
-# --- Hard Training Focused
-training_refinement:
-  triplet_settings:
-    base_margin: 0.6           # Increased margin for stronger separation
-    curriculum_steps: 15000
-    hard_mining_ratio: 0.8     # More hard examples
-    negative_push_margin: 1.0  # Push negatives farther
-
-  loss_settings:
-    false_accept_penalty: 50.0  # Very high to minimize FA
-    miss_penalty: 5.0
-    focal_gamma: 3.0
-    temperature: 2.0
-
-  margin_settings:
-    safety_threshold: 0.02        # Stricter threshold
-    exponential_scale: 5.0        # Sharper exponential scaling
-    confidence_penalty_weight: 100.0  # Penalize overconfident negatives aggressively
-
-  regularization:
-    spectral_weight: 0.02
-    enable_spectral: true
-    confidence_regularization: 0.2   # Stronger confidence regularization
-
-  loss_weights:
-    triplet: 0.7
-    bce: 0.2
-    focal: 0.3
-    margin: 150.0                    # High margin weight
-    replay: 30.0
-    negative_push: 50.0              # Aggressive negative push
-    confidence_reg: 20.0             # Strong confidence regulation
-
-  optimization:
-    max_grad_norm: 1.5
-    adaptive_clipping: true
-    aggressive_clip_factor: 0.5
-
-  hard_negative_mining:
-    enable: true
-    bank_size: 1000                  # Bigger bank
-    mining_threshold: 0.4
-    replay_batch_size: 32
-    min_bank_size: 100
-    focus_on_confusing: true         # Focus on hardest confusing negatives
-
-
-# Patience: how long to wait without improvement before stopping (default: true, According to training steps)
-# early_stopping_patience: 0 # or null for trun off 
-
-# --- 11. Advanced ---
-overwrite: true 
-debug_mode: true          
-generate_clips: true # Keep True first time, set False after data generation
-transform_clips: true
+## Pipeline Control Switches
+# Master switches to enable or disable major stages of the pipeline.
+generate_clips: true
+transform_clips: true # Don't forget to turn it off after finished.
 train_model: true
-
+overwrite: false

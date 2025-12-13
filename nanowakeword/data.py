@@ -23,6 +23,7 @@ import os
 import re
 import torch
 import random
+import time
 import logging
 import mutagen
 import acoustics
@@ -649,7 +650,7 @@ def augment_clips(
         end_jitter_ms: int = 200
         ):
     """
-    UPDATED: Uses 'per_example' mode for diverse augmentation within batches.
+    Uses 'per_example' mode for diverse augmentation within batches.
     """
     if augmentation_settings is None:
         augmentation_settings = {}
@@ -759,101 +760,149 @@ def create_fixed_size_clip(x, n_samples, sr=16000, start=None, end_jitter=.200):
     return dat
 
 
-def mmap_batch_generator(data_files, n_per_class, data_transform_funcs, label_transform_funcs, triplet_mode=True):
+def mmap_batch_generator(source_registry, blueprints, batch_size, input_shape):
     """
-    SMART BATCH GENERATOR: Prioritizes 'negative_speech' in Triplet Mode.
+    ULTIMATE BATCH COMPOSITOR
+    - Uses simplified keywords: 'targets', 'negatives', 'backgrounds'.
+    - Stitches complex acoustic scenes dynamically.
+    - Prioritizes hard speech negatives for Triplet Loss.
     """
-    memmaps = {name: np.load(path, mmap_mode='r') for name, path in data_files.items()}
-    class_indices = {name: np.arange(len(arr)) for name, arr in memmaps.items()}
-    
-    positive_key = 'positive'
-    
-    neg_speech_key = 'adversarial_negative' 
+    import numpy as np
+    import torch
 
-    if neg_speech_key not in data_files:
-        possible_keys = [k for k in data_files.keys() if 'negative' in k and k != 'pure_noise']
-        neg_speech_key = possible_keys[0] if possible_keys else None
-
-    pure_noise_key = 'pure_noise'
+    memmaps = {}
+    indices = {}
     
-    all_negative_keys = [k for k in data_files.keys() if k != positive_key]
+    # Categorized Lists
+    target_keys = []
+    negative_keys = []    # Speech
+    background_keys = []  # Noise
+
+    # Load Sources
+    for alias, meta in source_registry.items():
+        try:
+            path = meta['path']
+            memmaps[alias] = np.load(path, mmap_mode='r')
+            indices[alias] = np.arange(len(memmaps[alias]))
+            
+            t = meta['type']
+            if t == 'target': target_keys.append(alias)
+            elif t == 'negative': negative_keys.append(alias)
+            elif t == 'background': background_keys.append(alias)
+                
+        except Exception as e:
+            print(f"[Data Warning] Could not load source '{alias}': {e}")
+
+    if not target_keys:
+        raise ValueError("[CRITICAL] No Target sources found! Cannot train.")
+
+    # Fallback Logic 
+    if not negative_keys and background_keys: negative_keys = background_keys
+
+    if not background_keys and negative_keys: background_keys = negative_keys
+
+    # Keyword Mapping 
+    category_map = {
+        "targets": target_keys,
+        "negatives": negative_keys,
+        "backgrounds": background_keys
+    }
+
+    # Blueprint Weights
+    bp_list = [b['composition'] for b in blueprints]
+    bp_weights = [b.get('weight', 1.0) for b in blueprints]
+    total_w = sum(bp_weights)
+    bp_probs = [w/total_w for w in bp_weights]
+    
+    required_samples = input_shape[0]
 
     while True:
-        if not triplet_mode:
-            # Standard Classification Mode (No changes needed mostly)
-            batch_x, batch_y = [], []
-            for name, n_samples in n_per_class.items():
-                if n_samples > 0 and name in memmaps:
-                    indices = np.random.choice(class_indices[name], n_samples, replace=True)
-                    data = memmaps[name][indices]
-                    if name in data_transform_funcs: data = data_transform_funcs[name](data)
-                    batch_x.append(data)
-                    if name in label_transform_funcs: batch_y.extend(label_transform_funcs[name](data))
-            
-            if batch_x:
-                yield torch.from_numpy(np.vstack(batch_x)).float(), torch.from_numpy(np.array(batch_y)).float()
+        batch_anchor = []
+        batch_positive = []
+        batch_negative = []
+        batch_labels = []
+        batch_labels_neg = []
 
-        else:
-            # SMART TRIPLET MODE 
-            n_pos = n_per_class.get(positive_key, 32) # Default 32 if missing
+        for _ in range(batch_size):
             
-            # 1. Anchor & Positive (From Positive Class)
-            anchor_idxs = np.random.choice(class_indices[positive_key], n_pos, replace=True)
-            pos_idxs = np.random.choice(class_indices[positive_key], n_pos, replace=True)
+            # ANCHOR GENERATION (The Mixed Scene) 
+            template_idx = np.random.choice(len(bp_list), p=bp_probs)
+            template = bp_list[template_idx]
             
-            anchors = memmaps[positive_key][anchor_idxs]
-            positives = memmaps[positive_key][pos_idxs]
-
-            # 2. Smart Negative Selection (Hard Negative Priority)
-            negatives = []
+            stitched_clips = []
+            has_target = False
             
-            n_hard_neg = int(n_pos * 0.7) 
-            n_easy_neg = n_pos - n_hard_neg
+            for item in template:
+                key = None
+                
+                # 1. Check if item is a Category Keyword ('targets', etc.)
+                if item in category_map:
+                    pool = category_map[item]
+                    if pool: key = np.random.choice(pool)
+                
+                # 2. Check if item is a specific Alias ('my_noise')
+                elif item in memmaps:
+                    key = item
+                
+                # Fetch Data
+                if key:
+                    idx = np.random.choice(indices[key])
+                    clip = memmaps[key][idx]
+                    stitched_clips.append(clip)
+                    
+                    if key in target_keys: has_target = True
             
-            # Hard Negatives (Speech)
-            if neg_speech_key and neg_speech_key in memmaps:
-                hard_idxs = np.random.choice(class_indices[neg_speech_key], n_hard_neg, replace=True)
-                negatives.append(memmaps[neg_speech_key][hard_idxs])
+            if not stitched_clips: continue
+            
+            # Combine
+            full_audio = np.vstack(stitched_clips)
+            
+            # Crop/Pad to correct size
+            curr_len = full_audio.shape[0]
+            if curr_len > required_samples:
+                start = np.random.randint(0, curr_len - required_samples)
+                anchor_clip = full_audio[start : start + required_samples]
+            elif curr_len < required_samples:
+                padding = np.zeros((required_samples - curr_len, full_audio.shape[1]))
+                anchor_clip = np.vstack([full_audio, padding])
             else:
-                # If there is no specific speech negative, take a random negative
-                n_easy_neg += n_hard_neg 
+                anchor_clip = full_audio
 
-            # Easy Negatives (Noise)
-            if pure_noise_key in memmaps:
-                easy_idxs = np.random.choice(class_indices[pure_noise_key], n_easy_neg, replace=True)
-                negatives.append(memmaps[pure_noise_key][easy_idxs])
-            elif all_negative_keys:
-                # If there is no noise, then any other negative
-                rnd_key = np.random.choice(all_negative_keys)
-                easy_idxs = np.random.choice(class_indices[rnd_key], n_easy_neg, replace=True)
-                negatives.append(memmaps[rnd_key][easy_idxs])
-
-            if not negatives: continue # Safety
+            # POSITIVE SAMPLE (For Triplet) 
+            p_key = np.random.choice(target_keys)
+            pos_clip = memmaps[p_key][np.random.choice(indices[p_key])]
             
-            negatives = np.vstack(negatives)
+            # NEGATIVE SAMPLE (For Triplet - Prioritize Speech) 
+            if negative_keys:
+                n_key = np.random.choice(negative_keys)
+            elif background_keys:
+                n_key = np.random.choice(background_keys)
+            else:
+                n_key = None
             
-            # Shuffle negatives to mix hard and easy
-            np.random.shuffle(negatives)
+            if n_key:
+                neg_clip = memmaps[n_key][np.random.choice(indices[n_key])]
+            else:
+                # Absolute fallback (Silence)
+                neg_clip = np.zeros_like(anchor_clip)
 
-            # Apply Transforms
-            if positive_key in data_transform_funcs:
-                anchors = data_transform_funcs[positive_key](anchors)
-                positives = data_transform_funcs[positive_key](positives)
+            # Add to Batch
+            batch_anchor.append(anchor_clip)
+            batch_positive.append(pos_clip)
+            batch_negative.append(neg_clip)
             
-            transform_key = neg_speech_key if neg_speech_key in data_transform_funcs else pure_noise_key
-            if transform_key and transform_key in data_transform_funcs:
-                negatives = data_transform_funcs[transform_key](negatives)
+            label = 1.0 if has_target else 0.0
+            batch_labels.append(label)
+            batch_labels_neg.append(0.0)
 
-            # Labels
-            labels_anchor = torch.ones(n_pos, 1)
-            labels_neg = torch.zeros(n_pos, 1)
-            
-            yield (torch.from_numpy(anchors).float(),
-                   torch.from_numpy(positives).float(),
-                   torch.from_numpy(negatives).float(),
-                   labels_anchor.float(),
-                   labels_neg.float())
-
+        if batch_anchor:
+            yield (
+                torch.from_numpy(np.array(batch_anchor)).float(),
+                torch.from_numpy(np.array(batch_positive)).float(),
+                torch.from_numpy(np.array(batch_negative)).float(),
+                torch.tensor(batch_labels).float().unsqueeze(1),
+                torch.tensor(batch_labels_neg).float().unsqueeze(1)
+            )
 
 # Function to remove empty rows from the end of a mmap array
 def trim_mmap(mmap_path):
@@ -888,6 +937,8 @@ def trim_mmap(mmap_path):
             mmap_file2[i:i+1024] = mmap_file1[i:i+1024].copy()
             mmap_file2.flush()
 
+    del mmap_file1
+    del mmap_file2
     # Remove old mmaped file
     os.remove(mmap_path)
 

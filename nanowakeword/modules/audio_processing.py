@@ -581,7 +581,6 @@ def compute_features_from_generator(generator, n_total, clip_duration, output_fi
     row_counter = 0
     audio_data = next(generator)
     batch_size = audio_data.shape[0]
-    mmap_array = None 
 
     if batch_size > n_total:
         raise ValueError(f"The value of 'n_total' ({n_total}) is less than the batch size ({batch_size})."
@@ -605,9 +604,9 @@ def compute_features_from_generator(generator, n_total, clip_duration, output_fi
         row_counter += features.shape[0]
         fp.flush()
 
-    if mmap_array is not None:
-        del mmap_array
-        trim_mmap(output_file)
+    del fp
+    trim_mmap(output_file)
+
 
 # Function to download files from a URL with a progress bar
 def download_file(url, target_directory, file_size=None):
@@ -698,4 +697,3 @@ def re_arg(kwarg_map):
             return func(*args, **new_kwargs)
         return wrapped
     return decorator
-

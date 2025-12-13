@@ -20,7 +20,6 @@ import wave
 import traceback
 import random
 from pathlib import Path
-from typing import Optional
 from tqdm import tqdm
 import numpy as np
 import scipy.signal as sps

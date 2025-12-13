@@ -1,3 +1,6 @@
+# **NOTE**: Most of the information here is invalid until new updates are released.
+ - **You can view the example/training_config.yaml file for quick reference.**
+
 # Nanowakeword: The Complete Configuration Guide
 
 Welcome to the comprehensive guide for all configurable parameters in Nanowakeword. This document serves as the ultimate reference for advanced users, researchers, and developers who wish to fine-tune every aspect of the training pipeline.
