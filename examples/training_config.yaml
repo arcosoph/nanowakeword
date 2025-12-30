@@ -5,10 +5,9 @@
 # Parameters are grouped logically for clarity and ease of use.
 # ==========================================================
 
-
 ## Project & Data Paths
 # Define the project name and the locations of all data assets.
-model_name: "arcosoph_dnn_v1"
+model_name: "arcosoph_A_v1"
 output_dir: "./trained_models"
 
 # Source audio data paths (raw .wav files)
@@ -17,50 +16,12 @@ negative_data_path: "./data/generated_negative"
 background_paths: ["./data/background_noise"]
 rir_paths: ["./data/rir"]
 
-
-## Feature Manifest
-# Paths to the generated .npy feature files. The Acoustic Compositor uses these keys.
-feature_manifest:
-  targets:
-    t: './trained_models/arcosoph_dnn_v1/features/positive_features_train.npy'
-  negatives:
-    n: "./trained_models/arcosoph_dnn_v1/features/negative_features_train.npy"
-    # You can add unlimited additional negative sources with unique keys.
-    # my_other_negatives: "/path/to/other_negatives.npy"
-  backgrounds:
-    b: './trained_models/arcosoph_dnn_v1/features/pure_noise_features.npy'
-    # For example, adding a large external noise dataset:
-    # openwakeword_noise: './openwakeword_features_ACAV100M_2000_hrs_16bit.npy'
-
-
-## Acoustic Compositor
-# Defines how to mix features from the manifest to create training scenes.
-acoustic_compositor:
-  use_defaults: False
-  blueprints:
-    # 'composition' defines the scene. 'weight' defines its relative frequency.
-    # You can use specific keys from the manifest (e.g., "t", "n", "openwakeword_noise", "x")
-    # or general category keywords (e.g., "targets", "negatives", "backgrounds").
-    # Using a category keyword like "backgrounds" will randomly select from ALL sources
-    # registered under that category in the feature_manifest above.
-    - { composition: ["b", "t", "b"], weight: 40 }
-    - { composition: ["n", "t", "n"], weight: 25 }
-    - { composition: ["n", "t", "b"], weight: 10 }
-    - { composition: ["backgrounds", "t", "n"], weight: 10 }
-    - { composition: ["n", "n", "n"], weight: 30 }
-    - { composition: ["b", "b", "b"], weight: 20 }
-    # - { composition: ["x", "my_w", "b", "best-data"], weight: 20 } # You can add more as needed.
-
-
-## Model Architecture
+# Model Architecture
 # Configure the structure and properties of the neural network.
 model_type: "dnn"
 layer_size: 128
 n_blocks: 3
-embedding_dim: 64
-dropout_prob: 0.25
-activation_function: "relu"
-
+dropout_prob: 0.2     # To reduce overfitting
 
 ## Training & Optimizer Settings
 # Hyperparameters that control the training loop and optimization process.
@@ -71,41 +32,63 @@ learning_rate_max: 0.001
 lr_scheduler_type: "onecycle"
 weight_decay: 0.01
 momentum: 0.9
+num_workers: 3
 
-
-## Audio Processing & Augmentation
-# Control how audio is processed and augmented to create diverse training data.
-audio_processing:
-  clip_length_samples: null
-  autotune_length:
-    enabled: true
-    num_samples_to_inspect: 100
-    duration_buffer_ms: 750
-    min_allowable_length: 22000
-    snap_to_min_tolerance: 4000
-
-augmentation_rounds: 5
-augmentation_batch_size: 128
-min_snr_in_db: 5.0
-max_snr_in_db: 20.0
-
-augmentation_settings:
-    BackgroundNoise: 0.75
-    RIR: 0.4
-    PitchShift: 0.3
-    ColoredNoise: 0.25
-    Gain: 1.0
-    BandStopFilter: 0.1
-
+## Feature Manifest
+# Paths to the generated .npy feature files. The Acoustic Compositor uses these keys.
+# You can add unlimited additional negative sources with unique keys
+feature_manifest:
+  targets:
+    t: './trained_models/arcosoph_A_v1/features/positive_features_train.npy'
+  negatives:
+    n: "./trained_models/arcosoph_A_v1/features/hard_negative_features.npy"
+    # my_other_negatives: "/path/to/other_negatives.npy"
+  backgrounds:
+    b: './trained_models/arcosoph_A_v1/features/pure_noise_features.npy'
+    # For example, adding a large external noise dataset:
+    # openwakeword_noise: './openwakeword_features_ACAV100M_2000_hrs_16bit.npy'
 
 ## Synthetic Data Generation
 # Parameters for generating audio clips using Text-to-Speech (TTS).
-generate_positive_samples: 2050
-generate_negative_samples: 4500
-# List sensitive words or common false-alarm triggers to generate as negative data.
-custom_negative_phrases: ['hello', 'ark', 'arcos', 'arfo', 'ar']
-custom_negative_per_phrase: 23
+generate_positive_samples: 10
+generate_negative_samples: 10
 
+include_input_words: 0.7
+include_partial_phrase: 0.5
+
+augmentation_batch_size: 16
+feature_gen_cpu_ratio: 1.0
+
+feature_generation_manifest:
+
+  positive_wakeword:
+    input_audio_dirs: ["./data/generated_positive"]
+    output_filename: "positive_features_train.npy"
+    use_background_noise: true
+    use_rir: true
+    
+    augmentation_rounds: 11
+    # augmentation_settings: (we will use default)
+
+  hard_negatives:
+    input_audio_dirs: ["./data/generated_negative"]
+    output_filename: "hard_negative_features.npy"
+    use_background_noise: true
+    use_rir: true
+
+    augmentation_rounds: 11 
+  
+  pure_ambient_noise:
+    input_audio_dirs: ["./data/background_noise"]
+    output_filename: "pure_noise_features.npy"
+    use_background_noise: false
+
+    augmentation_rounds: 3
+    augmentation_settings: 
+        PitchShift: 0.6
+        AddBackgroundNoise: 0.0
+        Gain: 1.0
+        RIR: 0.5
 
 ## Advanced & Miscellaneous Settings
 # Checkpointing, logging, and other fine-tuning parameters.
@@ -120,15 +103,13 @@ main_delta: 0.0001
 WARMUP_STEPS: 1500
 
 onnx_opset_version: 17
-show_training_summary: True
+show_training_summary: true
 debug_mode: true
-feature_gen_cpu_ratio: 1.0
 ema_alpha: 0.01
-
 
 ## Pipeline Control Switches
 # Master switches to enable or disable major stages of the pipeline.
 generate_clips: true
 transform_clips: true # Don't forget to turn it off after finished.
 train_model: true
-overwrite: false
+overwrite: true

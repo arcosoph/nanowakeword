@@ -16,7 +16,6 @@
 #      https://github.com/arcosoph/nanowakeword
 # ==============================================================================
 
-
 import numpy as np
 import yaml
 import logging
@@ -139,7 +138,7 @@ class ConfigGenerator:
 
         self.config['augmentation_settings'] = {
             'RIR': rir,
-            'BackgroundNoise': backgroundnoise
+            'AddBackgroundNoise': backgroundnoise
          }
 
         # Determine the SNR range       

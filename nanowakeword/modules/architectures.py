@@ -1,4 +1,21 @@
-# architectures.py
+# ==============================================================================
+#  NanoWakeWord: Lightweight, Intelligent Wake Word Detection
+#  Copyright 2025 Arcosoph. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+#  Project: https://github.com/arcosoph/nanowakeword
+# ==============================================================================
 
 import torch
 import torch.nn as nn
@@ -80,7 +97,7 @@ class LSTMModel(nn.Module):
         out = self.fc(out)
         return out
 
-# DNN architecture
+# # # DNN architecture
 class FCNBlock(nn.Module):
     def __init__(self, layer_dim, activation_fn):
         super().__init__()
@@ -92,7 +109,7 @@ class FCNBlock(nn.Module):
 class Net(nn.Module):
     def __init__(self, input_shape, layer_dim, n_blocks, embedding_dim, dropout_prob, activation_fn):
         super().__init__()
-        self.flatten = nn.Flatten()
+        self.flatten = nn.Flatten() # It has been used and proven in many places.
         self.layer1 = nn.Linear(input_shape[0]*input_shape[1], layer_dim)
         self.relu1 = activation_fn
         self.layernorm1 = nn.LayerNorm(layer_dim)
@@ -106,7 +123,7 @@ class Net(nn.Module):
             x = block(x)
         x = self.last_layer(x) 
         return x
-        
+
 # GRU architecture
 class GRUModel(nn.Module):
     def __init__(self, input_dim, hidden_dim, n_layers, embedding_dim, bidirectional, dropout_prob):
@@ -126,6 +143,8 @@ class GRUModel(nn.Module):
         out = self.fc(out)
         return out
            
+
+
 # RNN architecture
 class RNNModel(nn.Module):
     def __init__(self, input_shape, embedding_dim, n_blocks, dropout_prob):
@@ -267,7 +286,6 @@ class CRNNModel(nn.Module):
         out = self.fc(out)
         return out
 
-
 # TCN architecture
 class TemporalBlock(nn.Module):
     def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation, padding, dropout=0.2):
@@ -308,6 +326,9 @@ class TemporalBlock(nn.Module):
         res = x if self.downsample is None else self.downsample(x)
         return self.relu(out + res)
 
+
+
+
 # Now, we define the main TCN model that stacks these blocks.
 class TCNModel(nn.Module):
     def __init__(self, input_dim, num_channels, embedding_dim, kernel_size, dropout_prob):
@@ -339,6 +360,10 @@ class TCNModel(nn.Module):
         # Final projection to embedding space
         out = self.fc(last_step_out)
         return out
+
+
+
+
 
 
 # QuartzNet architecture

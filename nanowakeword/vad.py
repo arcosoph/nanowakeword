@@ -31,14 +31,12 @@ class VAD():
                  ):
         """Initialize the VAD model object."""
         
-        # --- Truly Lazy Imports ---
         # All imports are moved inside to completely break any import cycle.
         import onnxruntime as ort
         import numpy as np
         from collections import deque
         import os
 
-        # --- The Core Fix: A fully self-contained model loading logic ---
         if model_path is None:
             # To break the cycle, we avoid top-level imports and get the path dynamically.
             # This is a robust way to find the models directory.

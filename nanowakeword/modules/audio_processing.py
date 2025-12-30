@@ -29,6 +29,11 @@ import logging
 import nanowakeword
 from numpy.lib.format import open_memmap
 from typing import Union, List, Callable, Deque
+import matplotlib.pyplot as plt
+from nanowakeword.resources.models import models
+import scipy.io.wavfile
+
+
 
 # Base class for computing audio features using Google's speech_embedding
 # model (https://tfhub.dev/google/speech_embedding/1)
@@ -42,7 +47,7 @@ class AudioFeatures():
                  embedding_model_path: str = "",
                  sr: int = 16000,
                  ncpu: int = 1,
-                 inference_framework: str = "onnx",
+                 inference_framework: str = "onnx", # currently only onnx  suport
                  device: str = 'cpu'
                  ):
         """
@@ -63,16 +68,24 @@ class AudioFeatures():
                           framework the appropriate onnxruntime package must be installed.
         """
         # Initialize the models with the appropriate framework
+        self.inference_framework = inference_framework
+        self.device = device
+
+        self.debug_mode = False
+        self.debug_count = 0
+        self.debug_limit = 30
+        self.debug_dir = "debug_pipeline_visuals"
+        if self.debug_mode:
+            os.makedirs(self.debug_dir, exist_ok=True)
+            for f in os.listdir(self.debug_dir):
+                os.remove(os.path.join(self.debug_dir, f))
+        self.sr = sr 
+        
         if inference_framework == "onnx":
             try:
                 import onnxruntime as ort
             except ImportError:
                 raise ValueError("Tried to import onnxruntime, but it was not found. Please install it using `pip install onnxruntime`")
-
-
-            import os
-            from nanowakeword import PROJECT_ROOT
-            from nanowakeword.resources.models import models
 
             melspec_model_path = models.melspectrogram_onnx
             embedding_model_path = models.embedding_model_onnx
@@ -100,10 +113,15 @@ class AudioFeatures():
 
         elif inference_framework == "tflite":
             try:
-                import tflite_runtime.interpreter as tflite
-            except ImportError:
-                raise ValueError("Tried to import the TFLite runtime, but it was not found."
-                                 "Please install it using `pip install tflite-runtime`")
+                import tensorflow.lite as tflite
+            except Exception:
+                # Fallback to standalone tflite-runtime (Linux / Raspberry Pi)
+                try:
+                    import tflite_runtime.interpreter as tflite
+                except Exception:
+                    raise ImportError(
+            "TFLite backend unavailable. Install TensorFlow on Windows/macOS or tflite-runtime on Linux/Raspberry Pi."
+        )
 
             if melspec_model_path == "":
                 melspec_model_path = os.path.join(pathlib.Path(__file__).parent.resolve(),
@@ -175,6 +193,8 @@ class AudioFeatures():
         self.feature_buffer = self._get_embeddings(np.random.randint(-1000, 1000, 16000*4).astype(np.int16))
         self.feature_buffer_max_len = 120  # ~10 seconds of feature buffer history
 
+
+
     def reset(self):
         """Reset the internal buffers"""
         self.raw_data_buffer.clear()
@@ -211,7 +231,9 @@ class AudioFeatures():
         # Arbitrary transform of melspectrogram
         spec = melspec_transform(spec)
 
+
         return spec
+
 
     def _get_embeddings_from_melspec(self, melspec):
         """
@@ -228,6 +250,7 @@ class AudioFeatures():
         embedding = self.embedding_model_predict(melspec)
         return embedding
 
+
     def _get_embeddings(self, x: np.ndarray, window_size: int = 76, step_size: int = 8, **kwargs):
         """Function to compute the embeddings of the provide audio samples."""
         spec = self._get_melspectrogram(x, **kwargs)
@@ -241,59 +264,55 @@ class AudioFeatures():
         embedding = self.embedding_model_predict(batch)
         return embedding
 
+
     def get_embedding_shape(self, audio_length: float, sr: int = 16000):
         """Function that determines the size of the output embedding array for a given audio clip length (in seconds)"""
         x = (np.random.uniform(-1, 1, int(audio_length*sr))*32767).astype(np.int16)
         return self._get_embeddings(x).shape
 
+
     def _get_melspectrogram_batch(self, x, batch_size=128, ncpu=1):
         """
         Compute the melspectrogram of the input audio samples in batches.
-
-        Note that the optimal performance will depend in the interaction between the device,
-        batch size, and ncpu (if a CPU device is used). The user is encouraged
-        to experiment with different values of these parameters to identify
-        which combination is best for their data, as often differences of 1-4x are seen.
-
-        Args:
-            x (ndarray): A numpy array of 16 khz input audio data in shape (N, samples).
-                        Assumes that all of the audio data is the same length (same number of samples).
-            batch_size (int): The batch size to use when computing the melspectrogram
-            ncpu (int): The number of CPUs to use when computing the melspectrogram. This argument has
-                        no effect if the underlying model is executing on a GPU.
-
-        Returns:
-            ndarray: A numpy array of shape (N, frames, melbins) containing the melspectrogram of
-                    all N input audio examples
         """
-
         # Prepare ThreadPool object, if needed for multithreading
         pool = None
-        if "CPU" in self.onnx_execution_provider:
+        if hasattr(self, 'onnx_execution_provider') and "CPU" in self.onnx_execution_provider:
             pool = ThreadPool(processes=ncpu)
 
-        # Make batches
-        n_frames = int(np.ceil(x.shape[1]/160-3))
-        mel_bins = 32  # fixed by melspectrogram model
-        melspecs = np.empty((x.shape[0], n_frames, mel_bins), dtype=np.float32)
-        for i in range(0, max(batch_size, x.shape[0]), batch_size):
+        all_melspecs = []
+        
+        for i in range(0, x.shape[0], batch_size):
             batch = x[i:i+batch_size]
 
-            if "CUDA" in self.onnx_execution_provider:
-                result = self._get_melspectrogram(batch)
-
+            if hasattr(self, 'onnx_execution_provider') and "CUDA" in self.onnx_execution_provider:
+                results = self._get_melspectrogram(batch).squeeze(1) # Squeeze the channel dimension if present
+            
             elif pool:
-                chunksize = batch.shape[0]//ncpu if batch.shape[0] >= ncpu else 1
-                result = np.array(pool.map(self._get_melspectrogram,
-                                           batch, chunksize=chunksize))
+                chunksize = max(1, batch.shape[0] // ncpu)
+                results = pool.map(self._get_melspectrogram, batch, chunksize=chunksize)
+            else:
+                results = [self._get_melspectrogram(sample) for sample in batch]
 
-            melspecs[i:i+batch_size, :, :] = result.squeeze()
+            all_melspecs.extend([np.squeeze(res) for res in results])
 
         # Cleanup ThreadPool
         if pool:
             pool.close()
+            pool.join() 
 
-        return melspecs
+        max_frames = max(spec.shape[0] for spec in all_melspecs)
+        mel_bins = all_melspecs[0].shape[1] 
+        
+        final_melspecs_array = np.full((len(all_melspecs), max_frames, mel_bins), -80.0, dtype=np.float32) # -80dB with Padding
+
+        for i, spec in enumerate(all_melspecs):
+            current_frames = spec.shape[0]
+            final_melspecs_array[i, :current_frames, :] = spec
+            
+        return final_melspecs_array
+
+
 
     def _get_embeddings_batch(self, x, batch_size=128, ncpu=1):
         """
@@ -388,7 +407,63 @@ class AudioFeatures():
         # Compute embeddings from melspectrograms
         embeddings = self._get_embeddings_batch(melspecs[:, :, :, None], batch_size=batch_size, ncpu=ncpu)
 
+        if self.debug_mode and self.debug_count < self.debug_limit:
+            
+            samples_to_save = min(batch_size, len(x))
+            
+            for i in range(samples_to_save):
+                if self.debug_count >= self.debug_limit: break
+                
+                # Data Extraction
+                audio_sample = x[i] if isinstance(x, list) else x[i]
+                mel_sample = melspecs[i]
+                emb_sample = embeddings[i]
+
+                # SAVE AUDIO (.wav) 
+                wav_filename = f"debug_sample_{self.debug_count}_augmented.wav"
+                wav_path = os.path.join(self.debug_dir, wav_filename)
+                
+                try:
+                    scipy.io.wavfile.write(wav_path, self.sr, audio_sample)
+                    print(f"[DEBUG] Saved Audio: {wav_path}")
+                except Exception as e:
+                    print(f"Could not save wav: {e}")
+
+                # SAVE VISUALS (.png) 
+                fig, axes = plt.subplots(3, 1, figsize=(10, 12))
+                
+                # A. Raw Waveform
+                axes[0].plot(audio_sample)
+                axes[0].set_title(f"Sample {self.debug_count}: Augmented Audio Input", fontweight='bold')
+                axes[0].set_ylabel("Amplitude")
+                
+                # B. Mel Spectrogram
+                im1 = axes[1].imshow(mel_sample.T, aspect='auto', origin='lower', cmap='viridis')
+                axes[1].set_title("Step 1: Mel-Spectrogram", fontweight='bold')
+                axes[1].set_ylabel("Freq Bins")
+                fig.colorbar(im1, ax=axes[1])
+
+                # C. Embeddings
+                im2 = axes[2].imshow(emb_sample.T, aspect='auto', origin='lower', cmap='magma')
+                axes[2].set_title("Step 2: Final Embeddings", fontweight='bold')
+                axes[2].set_ylabel("Feature Dim")
+                axes[2].set_xlabel("Time Frames")
+                fig.colorbar(im2, ax=axes[2])
+
+                plt.tight_layout()
+                
+                img_filename = f"debug_sample_{self.debug_count}_visuals.png"
+                img_path = os.path.join(self.debug_dir, img_filename)
+                plt.savefig(img_path)
+                plt.close()
+                
+                print(f"[DEBUG] Saved Visuals: {img_path}")
+                
+                self.debug_count += 1
+
         return embeddings
+
+
 
     def _streaming_melspectrogram(self, n_samples):
         """Note! There seem to be some slight numerical issues depending on the underlying audio data

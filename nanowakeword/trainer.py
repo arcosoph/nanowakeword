@@ -17,17 +17,18 @@
 #  Project: https://github.com/arcosoph/nanowakeword
 # ==============================================================================
 
-
-
 # (✿◕‿◕✿)
 import os
+import re 
 import sys
-import math
+import time
 import yaml
+import json
 import copy
 import scipy
 import torch
 import random
+import hashlib
 import logging
 import warnings
 import argparse
@@ -38,16 +39,27 @@ import numpy as np
 matplotlib.use('Agg')
 from tqdm import tqdm
 from pathlib import Path
-from torch import optim, nn
+from torch import nn
 import matplotlib.pyplot as plt
-from nanowakeword.modules.audio_processing import compute_features_from_generator
-from nanowakeword.data import augment_clips, mmap_batch_generator, generate_adversarial_texts
-from nanowakeword.utils.logger import print_banner, print_step_header, print_info, print_key_value, print_final_report_header, print_table
-# All Architectures
-from .architectures import (
+from logging.handlers import RotatingFileHandler
+from .data import WakeWordDataset
+from nanowakeword.config_generator import ConfigGenerator
+from nanowakeword.data import augment_clips, generate_adversarial_texts
+
+from nanowakeword.modules import BiasWeightedLoss
+from nanowakeword.modules.audio_processing import AudioFeatures
+from nanowakeword.modules.preprocess import verify_and_process_directory
+from .modules.architectures import (
     CNNModel, LSTMModel, Net, GRUModel, RNNModel, TransformerModel, 
     CRNNModel, TCNModel, QuartzNetModel, ConformerModel, EBranchformerModel
 )
+from nanowakeword.utils.GNMV import GNMV
+from nanowakeword.utils.ConfigProxy import ConfigProxy
+from nanowakeword.utils.analyzer import DatasetAnalyzer
+from nanowakeword.utils.DynamicTable import DynamicTable
+from torch.utils.data import DataLoader, WeightedRandomSampler
+from nanowakeword.utils.journal import update_training_journal
+from nanowakeword.utils.logger import print_banner, print_step_header, print_info, print_key_value, print_final_report_header, print_table
 
 # To make the terminal look clean
 warnings.filterwarnings("ignore")
@@ -69,7 +81,6 @@ def set_seed(seed):
 
 set_seed(SEED)
 
-
 import collections.abc
 
 def deep_merge(d1, d2):
@@ -85,92 +96,7 @@ def deep_merge(d1, d2):
             d1[k] = v
     return d1
 
-
-class TripletLoss(nn.Module):
-    """
-    Triplet loss function.
-    """
-    def __init__(self, margin=1.0):
-        super(TripletLoss, self).__init__()
-        self.margin = margin
-
-    def forward(self, anchor, positive, negative):
-        distance_positive = (anchor - positive).pow(2).sum(1)
-        distance_negative = (anchor - negative).pow(2).sum(1)
-        losses = torch.relu(distance_positive - distance_negative + self.margin)
-        return losses.mean()
-
-
-class FocalLoss(nn.Module):
-    """
-    Focal Loss, as described in https://arxiv.org/abs/1708.02002.
-
-    It is essentially an enhancement to cross entropy loss and is
-    useful for classification tasks when there is a large class imbalance.
-    """
-    def __init__(self, alpha=0.25, gamma=2.0, reduction='mean'):
-        """
-        Args:
-            alpha (float): Weighting factor for the rare class.
-            gamma (float): Focusing parameter to down-weight easy examples.
-            reduction (str): 'mean', 'sum' or 'none'.
-        """
-        super(FocalLoss, self).__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.reduction = reduction
-
-    def forward(self, inputs, targets):
-        """
-        Forward pass.
-
-        Args:
-            inputs (torch.Tensor): The model's raw logits.
-            targets (torch.Tensor): The ground truth labels.
-        """
-        # Ensure inputs and targets are flattened to handle any shape
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
-
-        # Calculate BCE Loss without reduction
-        BCE_loss = nn.functional.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
-        
-        # Calculate pt (the probability of the correct class)
-        pt = torch.exp(-BCE_loss)
-        
-        # Calculate Focal Loss
-        F_loss = self.alpha * (1 - pt)**self.gamma * BCE_loss
-
-        # Apply reduction
-        if self.reduction == 'mean':
-            return torch.mean(F_loss)
-        elif self.reduction == 'sum':
-            return torch.sum(F_loss)
-        else: # 'none'
-            return F_loss
-
-
-class LabelSmoothingBCELoss(nn.Module):
-    """
-    Binary Cross Entropy with Label Smoothing.
-    Handles potential shape mismatches between inputs and targets.
-    """
-    def __init__(self, smoothing=0.1):
-        super(LabelSmoothingBCELoss, self).__init__()
-        self.smoothing = smoothing
-    
-    def forward(self, inputs, targets):
-
-        inputs = inputs.view(-1)
-        targets = targets.view(-1)
-        
-        smoothed_targets = targets * (1 - self.smoothing) + 0.5 * self.smoothing
-        
-        return nn.functional.binary_cross_entropy_with_logits(inputs, smoothed_targets)
-
-
 class Model(nn.Module):
-
     def __init__(self, config, model_name: str, n_classes=1, input_shape=(16, 96), model_type="dnn",
                 layer_dim=128, n_blocks=1, seconds_per_example=None, dropout_prob=0.5):
         super().__init__()
@@ -181,10 +107,7 @@ class Model(nn.Module):
         self.seconds_per_example = seconds_per_example
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.config = config
-
-        # Training progress tracking attributes 
         self.history = collections.defaultdict(list)
-
         self.model_name = model_name
 
         act_fn_type = config.get("activation_function", "relu").lower()
@@ -197,26 +120,21 @@ class Model(nn.Module):
 
         embedding_dim = config.get("embedding_dim", 64)
 
-        # ================= STABILITY WARNING =================
+        self.debug_save_dir = None
+
         if model_type.lower() in {"quartznet", "conformer", "e_branchformer", "crnn"}:
-            print(f"\n[WARNING] The '{model_type.upper()}' architecture is highly sensitive to hyperparameters and may exhibit convergence instability.\n")
-        # =====================================================
+            print_info(f"\n[WARNING] The '{model_type.upper()}' architecture is highly sensitive to hyperparameters and may exhibit convergence instability.\n")
 
         if model_type == "cnn":
             self.model = CNNModel(input_shape, embedding_dim, dropout_prob=dropout_prob, activation_fn=self.activation_fn)
-       
         elif model_type == "lstm":
             self.model = LSTMModel(input_shape[1], layer_dim, n_blocks, embedding_dim, bidirectional=True, dropout_prob=dropout_prob)
-
         elif model_type == "dnn":
             self.model = Net(input_shape, layer_dim, n_blocks, embedding_dim, dropout_prob=dropout_prob, activation_fn=self.activation_fn)
-            
         elif model_type == "gru":
             self.model = GRUModel(input_shape[1], layer_dim, n_blocks, embedding_dim, bidirectional=True, dropout_prob=dropout_prob)
-            
         elif model_type == "rnn":
             self.model = RNNModel(input_shape, embedding_dim, n_blocks, dropout_prob=dropout_prob)
-        
         elif model_type == "transformer":
             d_model = config.get("transformer_d_model", 128)
             n_head = config.get("transformer_n_head", 4)
@@ -224,7 +142,6 @@ class Model(nn.Module):
                 input_dim=input_shape[1], d_model=d_model, n_head=n_head, 
                 n_layers=n_blocks, embedding_dim=embedding_dim, dropout_prob=dropout_prob
             )
-
         elif model_type == "crnn":
             cnn_channels = config.get("crnn_cnn_channels", [16, 32, 32])
             rnn_type = config.get("crnn_rnn_type", "lstm")
@@ -233,7 +150,6 @@ class Model(nn.Module):
                 n_rnn_layers=n_blocks, cnn_channels=cnn_channels, embedding_dim=embedding_dim,
                 dropout_prob=dropout_prob, activation_fn=self.activation_fn
             )
-
         elif model_type == "tcn":
             tcn_channels = config.get("tcn_channels", [64, 64, 128])
             tcn_kernel_size = config.get("tcn_kernel_size", 3)
@@ -241,7 +157,6 @@ class Model(nn.Module):
                 input_dim=input_shape[1], num_channels=tcn_channels, embedding_dim=embedding_dim,
                 kernel_size=tcn_kernel_size, dropout_prob=dropout_prob
             )
-
         elif model_type == "quartznet":
             default_quartznet_config = [[256, 33, 1], [256, 33, 1], [512, 39, 1]]
             quartznet_config = config.get("quartznet_config", default_quartznet_config)
@@ -249,7 +164,6 @@ class Model(nn.Module):
                 input_dim=input_shape[1], quartznet_config=quartznet_config,
                 embedding_dim=embedding_dim, dropout_prob=dropout_prob
             )
-
         elif model_type == "conformer":
             conformer_d_model = config.get("conformer_d_model", 144)
             conformer_n_head = config.get("conformer_n_head", 4)
@@ -257,7 +171,6 @@ class Model(nn.Module):
                 input_dim=input_shape[1], d_model=conformer_d_model, n_head=conformer_n_head,
                 n_layers=n_blocks, embedding_dim=embedding_dim, dropout_prob=dropout_prob
             )
-
         elif model_type == "e_branchformer":
             branchformer_d_model = config.get("branchformer_d_model", 144)
             branchformer_n_head = config.get("branchformer_n_head", 4)
@@ -265,18 +178,10 @@ class Model(nn.Module):
                 input_dim=input_shape[1], d_model=branchformer_d_model, n_head=branchformer_n_head,
                 n_layers=n_blocks, embedding_dim=embedding_dim, dropout_prob=dropout_prob
             )
-        
         else:
-            raise ValueError(
-                f"Unsupported model_type: '{model_type}'. "
-                "Supported types are: dnn, lstm, gru, rnn, cnn, transformer, crnn, tcn, quartznet, conformer, e_branchformer."
-            )
+            raise ValueError(f"Unsupported model_type: '{model_type}'.")
 
-
-        triplet_margin = config.get("triplet_loss_margin", 0.2)
-    
         self.classifier = nn.Linear(embedding_dim, n_classes)
-        self.triplet_loss = TripletLoss(margin=triplet_margin)
 
         # Define logging dict (in-memory)
         self.history = collections.defaultdict(list)
@@ -352,7 +257,7 @@ class Model(nn.Module):
             """
             Creates a meaningful graph of training loss and its stable form (EMA).
             """
-            print("\nGenerating training performance graph...")
+            print_info("Generating training performance graph...")
             graph_output_dir = os.path.join(output_dir, "graphs")
             os.makedirs(graph_output_dir, exist_ok=True)
 
@@ -389,10 +294,8 @@ class Model(nn.Module):
             plt.tight_layout()
             plt.savefig(save_path)
             plt.close()
-            
-            print(f"Performance graph saved to: {save_path}")
 
-
+            print_info(f"Performance graph saved to: {save_path}")
 
     def forward(self, x):
             """
@@ -487,24 +390,19 @@ class Model(nn.Module):
 
             try:
                 with torch.no_grad():
-                    # Unpacking data from a triplet batch
-                    anchor_batch, _, negative_batch, anchor_labels, negative_labels = next(iter(X_train))
                     
-                    # Setting up the device properly
-                    final_model.to(self.device)
-                    confidence_batch_x = torch.cat([anchor_batch, negative_batch]).to(self.device)
-                    confidence_batch_y = torch.cat([anchor_labels, negative_labels]).to(self.device)
+                    x_batch, y_batch = next(iter(X_train))
+                    confidence_batch_x = x_batch.to(self.device)
+                    confidence_batch_y = y_batch.to(self.device)
 
                     predictions = final_model(confidence_batch_x).squeeze()
                     
                     pos_preds = predictions[confidence_batch_y.squeeze() == 1]
                     neg_preds = predictions[confidence_batch_y.squeeze() == 0]
 
-                    avg_pos_confidence = pos_preds.mean().item() if pos_preds.numel() > 0 else -99.0
-                    avg_neg_confidence = neg_preds.mean().item() if neg_preds.numel() > 0 else 99.0
+                    final_results["Avg. Positive Score (Logit)"] = f"{pos_preds.mean().item():.3f}"
+                    final_results["Avg. Negative Score (Logit)"] = f"{neg_preds.mean().item():.3f}"
 
-                    final_results["Avg. Positive Confidence (Logit)"] = f"{avg_pos_confidence:.3f}"
-                    final_results["Avg. Negative Confidence (Logit)"] = f"{avg_neg_confidence:.3f}"
             except (StopIteration, RuntimeError) as e:
                 final_results["Confidence Score"] = f"N/A (Error: {e})"
 
@@ -514,6 +412,8 @@ class Model(nn.Module):
             for key, value in final_results.items():
                 print_key_value(key, value)
     
+            self.history["final_report"] = final_results
+
             # Returning the completed and averaged model
             return final_model
     
@@ -525,11 +425,6 @@ class Model(nn.Module):
         dummy input to the CPU before export. It also guarantees a standardized
         output shape of [batch_size, 1, 1] for maximum compatibility.
         """
-        # Ensure the model is in a sequential format for export
-        if not isinstance(model, nn.Sequential):
-            print_info("Reconstructing model into a sequential format for export.")
-            model = nn.Sequential(self.model, self.classifier)
-
         # A robust wrapper to apply sigmoid and ensure the final output shape
         class InferenceWrapper(nn.Module):
             def __init__(self, trained_model):
@@ -583,366 +478,177 @@ class Model(nn.Module):
 
 
     def train_model(self, X, max_steps, log_path, table_updater, resume_from_dir=None):
-                
-                import re 
-                import os
-                import logging
-                from logging.handlers import RotatingFileHandler
-                from nanowakeword.modules import TripletMetricLoss
+        
+        import itertools 
 
-                # 1. INITIAL SETUP 
-                # This section remains the same, preparing logging.
-                debug_mode = self.config.get("debug_mode", False)
-                log_dir = os.path.join(log_path, "training_debug")
-                os.makedirs(log_dir, exist_ok=True)
-                debug_log_file = os.path.join(log_dir, "training_debug.log")
-                if debug_mode:
-                    logger = logging.getLogger("NanoTrainerDebug")
-                    logger.setLevel(logging.INFO)
-                    if not logger.handlers:
-                        handler = RotatingFileHandler(debug_log_file, maxBytes=5_000_000, backupCount=30)
-                        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
-                        handler.setFormatter(formatter)
-                        logger.addHandler(handler)
-                    logger.propagate = False
-                    print_info(f"Debug mode ON. Logs will be saved to:\n{debug_log_file}")
-                else:
-                    logger = logging.getLogger("NanoTrainerDebug")
-                    logger.disabled = True
-                    # print_info("Debug mode OFF. Logging disabled.")
+        debug_mode = self.config.get("debug_mode", False)
+        log_dir = os.path.join(log_path, "training_debug")
+        os.makedirs(log_dir, exist_ok=True)
+        debug_log_file = os.path.join(log_dir, "training_debug.log")
+        if debug_mode:
+            logger = logging.getLogger("NanoTrainerDebug")
+            logger.setLevel(logging.INFO)
+            if not logger.handlers:
+                handler = RotatingFileHandler(
+                    debug_log_file, 
+                    maxBytes=5_000_000, 
+                    backupCount=30,
+                    encoding='utf-8'  
+                )
+                formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
+                handler.setFormatter(formatter)
+                logger.addHandler(handler)
+            logger.propagate = False
+            print_info(f"Debug mode ON. Logs will be saved to:\n{debug_log_file}")
+        else:
+            logger = logging.getLogger("NanoTrainerDebug")
+            logger.disabled = True
 
-                # CHECKPOINTING CONFIGURATION 
-                # Reads the 'checkpointing' section from config.yaml.
-                # If the section doesn't exist, it defaults to being disabled.
-                checkpoint_cfg = self.config.get("checkpointing", {})
-                checkpointing_enabled = checkpoint_cfg.get("enabled", False)
-                checkpoint_interval = checkpoint_cfg.get("interval_steps", 1000)
-                checkpoint_limit = checkpoint_cfg.get("limit", 3)
-                checkpoint_dir = os.path.join(log_path, "checkpoints")
-                if checkpointing_enabled:
-                    os.makedirs(checkpoint_dir, exist_ok=True)
-                    print_info(f"Checkpointing is ENABLED. A checkpoint will be saved every {checkpoint_interval} steps.")
-                
 
-                # Training parameter setup -
-                # This section also remains the same.
-                ema_loss = None
-                self.best_training_checkpoints = [] 
-                self.best_training_scores = []
-                checkpoint_averaging_top_k= self.config.get("checkpoint_averaging_top_k", 5)
-                default_warmup_steps = int(max_steps * 0.15)
-                WARMUP_STEPS = self.config.get("WARMUP_STEPS", default_warmup_steps)
-                min_delta = self.config.get("main_delta", 0.0001)
-                best_ema_loss_for_stopping = float('inf')
-                steps_without_improvement = 0
-                ema_alpha = self.config.get("ema_alpha", 0.01)
+        checkpoint_cfg = self.config.get("checkpointing", {})
+        checkpointing_enabled = checkpoint_cfg.get("enabled", False)
+        checkpoint_interval = checkpoint_cfg.get("interval_steps", 1000)
+        checkpoint_limit = checkpoint_cfg.get("limit", 3)
+        checkpoint_dir = os.path.join(log_path, "checkpoints")
+        if checkpointing_enabled:
+            os.makedirs(checkpoint_dir, exist_ok=True)
+            print_info(f"Checkpointing is ENABLED. A checkpoint will be saved every {checkpoint_interval} steps.")
 
-                # Default patience value
-                default_patience_steps = int(max_steps * 0.15)
+        ema_loss = None
+        self.best_training_checkpoints = [] 
+        self.best_training_scores = []
+        checkpoint_averaging_top_k= self.config.get("checkpoint_averaging_top_k", 5)
+        default_warmup_steps = int(max_steps * 0.15)
+        WARMUP_STEPS = self.config.get("WARMUP_STEPS", default_warmup_steps)
+        min_delta = self.config.get("min_delta", 0.0001)
+        best_ema_loss_for_stopping = float('inf')
+        steps_without_improvement = 0
+        ema_alpha = self.config.get("ema_alpha", 0.01)
 
-                # Check if user has explicitly provided early_stopping_patience
-                user_patience = self.config.get("early_stopping_patience", None)
+        default_patience_steps = int(max_steps * 0.15)
+        user_patience = self.config.get("early_stopping_patience", None)
+        if user_patience is not None:
+            patience = user_patience
+        elif self.config.get("steps", max_steps) < 3000:
+            patience = 0
+        else:
+            patience = default_patience_steps
 
-                if user_patience is not None:
-                    patience = user_patience  # user override
-                elif self.config["steps"] < 3000:
-                    patience = 0  # auto disable for short trainings
-                else:
-                    patience = default_patience_steps
+        if patience == 0:
+            print_info("Early stopping is DISABLED. Training will run for the full duration of 'steps'.")
+        else:
+            print_info(f"Training for {max_steps} steps. Model checkpointing and early stopping will activate after {WARMUP_STEPS} warm-up steps.")
 
-                if patience == 0:
-                    print_info("Early stopping is DISABLED. Training will run for the full duration of 'steps'.")
-                else:
-                    print_info(f"Training for {max_steps} steps. Model checkpointing and early stopping will activate after {WARMUP_STEPS} warm-up steps.")
+        self.to(self.device)
+        self.model.train() 
+        self.classifier.train() 
 
-                self.to(self.device)
-                self.model.train() 
-                self.classifier.train()
+        start_step = 0
+        data_iterator = iter(itertools.cycle(X))
 
-                start_step = 0
-                data_iterator = iter(X)
-
-                if resume_from_dir:
-                    # Construct the path to the checkpoints folder within the specified resume directory
-                    resume_checkpoint_dir = os.path.join(resume_from_dir, "2_training_artifacts", "checkpoints")
-                    print_info(f"Attempting to resume training from: {resume_checkpoint_dir}")
+        if resume_from_dir:
+            resume_checkpoint_dir = os.path.join(resume_from_dir, "2_training_artifacts", "checkpoints")
+            print_info(f"Attempting to resume training from: {resume_checkpoint_dir}")
+            if os.path.exists(resume_checkpoint_dir):
+                checkpoints = [f for f in os.listdir(resume_checkpoint_dir) if f.startswith("checkpoint_step_") and f.endswith(".pth")]
+                if checkpoints:
+                    latest_step = -1
+                    latest_checkpoint_file = None
+                    for cp_file in checkpoints:
+                        match = re.search(r"checkpoint_step_(\d+).pth", cp_file)
+                        if match:
+                            step = int(match.group(1))
+                            if step > latest_step:
+                                latest_step = step
+                                latest_checkpoint_file = cp_file
                     
-                    if os.path.exists(resume_checkpoint_dir):
-                        # Find all checkpoint files in the directory
-                        checkpoints = [f for f in os.listdir(resume_checkpoint_dir) if f.startswith("checkpoint_step_") and f.endswith(".pth")]
-                        if checkpoints:
-                            # Robustly find the latest checkpoint by parsing the step number from the filename
-                            latest_step = -1
-                            latest_checkpoint_file = None
-                            for cp_file in checkpoints:
-                                match = re.search(r"checkpoint_step_(\d+).pth", cp_file)
-                                if match:
-                                    step = int(match.group(1))
-                                    if step > latest_step:
-                                        latest_step = step
-                                        latest_checkpoint_file = cp_file
-                            
-                            if latest_checkpoint_file:
-                                checkpoint_path = os.path.join(resume_checkpoint_dir, latest_checkpoint_file)
-                                print_info(f"Loading latest checkpoint: {checkpoint_path}")
-                                checkpoint = torch.load(checkpoint_path, map_location=self.device)
-                                
-                                # Restore the complete state
-                                self.load_state_dict(checkpoint['model_state_dict'])
-                                self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-                                
-                                start_step = checkpoint.get('step', 0)
-                                ema_loss = checkpoint.get('ema_loss', None)
-                                steps_without_improvement = checkpoint.get('steps_without_improvement', 0)
-                                best_ema_loss_for_stopping = checkpoint.get('best_ema_loss_for_stopping', float('inf'))
-                                self.history['loss'] = checkpoint.get('loss_history', [])
-
-                                print_info(f"Successfully restored state. Resuming training from step {start_step + 1}.")
-                                
-                                # CRITICAL: Fast-forward the data iterator to the correct position
-                                print_info("Synchronizing data stream to the restored step...")
-                                for _ in tqdm(range(start_step + 1), desc="Fast-forwarding data", unit="steps", leave=False):
-                                    next(data_iterator, None)
-                            else:
-                                print_info("WARNING: Checkpoint files found, but their names are not in the expected format. Starting fresh.")
-                        else:
-                            print_info("WARNING: No valid checkpoint files found in the directory. Starting fresh.")
+                    if latest_checkpoint_file:
+                        checkpoint_path = os.path.join(resume_checkpoint_dir, latest_checkpoint_file)
+                        print_info(f"Loading latest checkpoint: {checkpoint_path}")
+                        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+                        
+                        self.load_state_dict(checkpoint['model_state_dict'])
+                        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                        self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+                        
+                        start_step = checkpoint.get('step', 0)
+                        ema_loss = checkpoint.get('ema_loss', None)
+                        steps_without_improvement = checkpoint.get('steps_without_improvement', 0)
+                        best_ema_loss_for_stopping = checkpoint.get('best_ema_loss_for_stopping', float('inf'))
+                        self.history['loss'] = checkpoint.get('loss_history', [])
+                        print_info(f"Successfully restored state. Resuming training from step {start_step + 1}.")
+                        
+                        print_info("Synchronizing data stream to the restored step...")
+                        for _ in tqdm(range(start_step + 1), desc="Fast-forwarding data", unit="steps", leave=False):
+                            next(data_iterator, None)
                     else:
-                        print_info(f"WARNING: Checkpoint directory not found at '{resume_checkpoint_dir}'. Starting fresh.")
-                
-                # The "dry run" for the first step ONLY happens if we are NOT resuming.
-                if start_step == 0:
-                    try:
-                        first_batch = next(data_iterator)
-                        initial_loss = TripletMetricLoss(self, first_batch, step_ndx=0, logger=logger)
-                        self.history["loss"].append(initial_loss)
-                        ema_loss = initial_loss
-                        start_step = 1 # The main loop will now correctly start from step 1
-                    except StopIteration:
-                        print("\n[ERROR] Data source is empty. Cannot start training.")
-                        return
-                
-                table_updater.update(force_print=True)
-
-                # The main training loop now correctly starts from `start_step`.
-                training_loop = tqdm(data_iterator, total=max_steps, desc="Training", initial=start_step)
-                for step_ndx, data in enumerate(training_loop, start=start_step):
-                    
-                    current_loss = TripletMetricLoss(self, data, step_ndx=step_ndx, logger=logger)
-                    self.history["loss"].append(current_loss)
-                    
-                    if ema_loss is None: ema_loss = current_loss
-                    ema_loss = ema_alpha * current_loss + (1 - ema_alpha) * ema_loss
-
-                    # The logic for checkpoint averaging (best models) remains the same
-                    if step_ndx > WARMUP_STEPS:
-                        current_score = ema_loss
-                        if len(self.best_training_checkpoints) < checkpoint_averaging_top_k:
-                            self.best_training_checkpoints.append(copy.deepcopy(self.state_dict()))
-                            self.best_training_scores.append({"step": step_ndx, "stable_loss": current_score})
-                        else:
-                            worst_score = max(s['stable_loss'] for s in self.best_training_scores)
-                            if current_score < worst_score:
-                                worst_idx = [i for i, s in enumerate(self.best_training_scores) if s['stable_loss'] == worst_score][0]
-                                self.best_training_checkpoints[worst_idx] = copy.deepcopy(self.state_dict())
-                                self.best_training_scores[worst_idx] = {"step": step_ndx, "stable_loss": current_score}
-
-                    # Early stopping logic remains the same
-                    if patience > 0:
-                        if ema_loss < best_ema_loss_for_stopping - min_delta:
-                            best_ema_loss_for_stopping = ema_loss
-                            steps_without_improvement = 0
-                        else:
-                            steps_without_improvement += 1
-                        
-                        if step_ndx > WARMUP_STEPS and steps_without_improvement >= patience:
-                            print(f"\nINFO: Early stopping triggered at step {step_ndx}. No improvement in stable loss for {patience} steps.")
-                            break
-
-                    if checkpointing_enabled and step_ndx > 0 and step_ndx % checkpoint_interval == 0:
-                        # Gather all necessary data to save a complete checkpoint
-                        checkpoint_data = {
-                            'step': step_ndx,
-                            'model_state_dict': self.state_dict(),
-                            'optimizer_state_dict': self.optimizer.state_dict(),
-                            'scheduler_state_dict': self.scheduler.state_dict(),
-                            'ema_loss': ema_loss,
-                            'best_ema_loss_for_stopping': best_ema_loss_for_stopping,
-                            'steps_without_improvement': steps_without_improvement,
-                            'loss_history': self.history['loss']
-                        }
-                        checkpoint_name = f"checkpoint_step_{step_ndx}.pth"
-                        torch.save(checkpoint_data, os.path.join(checkpoint_dir, checkpoint_name))
-                        
-                        # Manage checkpoint limit: Keep only the latest N checkpoints
-                        all_checkpoints = sorted(
-                            [f for f in os.listdir(checkpoint_dir) if f.startswith("checkpoint_step_")],
-                            # Sort numerically, not alphabetically (so step_10000 comes after step_2000)
-                            key=lambda f: int(re.search(r"(\d+)", f).group(1))
-                        )
-                        if len(all_checkpoints) > checkpoint_limit:
-                            os.remove(os.path.join(checkpoint_dir, all_checkpoints[0]))
-                        
-                    if step_ndx >= max_steps - 1:
-                        break
-
-
-class ConfigProxy:
-    def __init__(self, data: dict, root_proxy=None, prefix=""):
-        self._data = data
-        self._root = root_proxy if root_proxy is not None else self
-        self._prefix = prefix
-        
-        if self._root is self:
-            self.used_params = {}
-            self._accessed_keys = set()
-
-    def _track_access(self, key, value):
-        full_key = self._prefix + key
-        # Do not track whole dictionaries, only their final scalar values
-        if not isinstance(value, (dict, ConfigProxy)):
-            if full_key not in self._root._accessed_keys:
-                self._root.used_params[full_key] = value
-                self._root._accessed_keys.add(full_key)
-
-    def get(self, key: str, default=None):
-        """
-        Gets a value. 
-        - If the value is a dictionary, returns a new ConfigProxy for it.
-        - If a default dictionary is provided and the key is not found,
-          it uses the default dictionary and tracks all its items.
-        """
-        # The Ultimate Solution is here 
-        if key in self._data:
-            value = self._data[key]
-            # Track the access, even for dicts, to know the section was requested
-            self._track_access(key, value)
-            
-            if isinstance(value, dict):
-                new_prefix = f"{self._prefix}{key}."
-                return ConfigProxy(value, root_proxy=self._root, prefix=new_prefix)
+                        print_info("WARNING: Checkpoint files found, but their names are not in the expected format. Starting fresh.")
+                else:
+                    print_info("WARNING: No valid checkpoint files found in the directory. Starting fresh.")
             else:
-                return value
+                print_info(f"WARNING: Checkpoint directory not found at '{resume_checkpoint_dir}'. Starting fresh.")
         
-        # If key is not in the data, handle defaults
-        elif isinstance(default, dict):
-            # This is the magic for merging defaults automatically
-            new_prefix = f"{self._prefix}{key}."
-            # Create a proxy for the default dict and track all its items
-            default_proxy = ConfigProxy(default, root_proxy=self._root, prefix=new_prefix)
-            for k, v in default_proxy.items(): # .items() will trigger tracking
-                pass
-            return default_proxy
-        else:
-            self._track_access(key, default)
-            return default
+        table_updater.update(force_print=True)
 
-    def get_merged_dict(self, key: str, defaults: dict) -> dict:
-        """
-        Gets a dictionary section, merges it over a default dictionary,
-        and tracks every key from the final result.
-        This is the definitive way to handle partial user overrides.
-        """
-        final_dict = defaults.copy()
-        
-        user_proxy = self.get(key, {}) 
-        
-        if user_proxy and isinstance(user_proxy, ConfigProxy):
-            final_dict.update(user_proxy._data)
-        
-        for sub_key in final_dict.keys():
-            self.get(key, {}).get(sub_key, final_dict[sub_key])
+        training_loop = tqdm(data_iterator, total=max_steps, desc="Training", initial=start_step)
+        for step_ndx, data in enumerate(training_loop, start=start_step):
             
-        return final_dict
+            # current_loss = MetricLoss(self, data, step_ndx=step_ndx, logger=logger)
+            current_loss = BiasWeightedLoss(self, data, step_ndx=step_ndx, logger=logger)
 
-    def __getitem__(self, key):
-        if key not in self._data:
-            raise KeyError(f"Key '{self._prefix}{key}' not found in configuration.")
-        value = self._data[key]
-        if isinstance(value, dict):
-            new_prefix = f"{self._prefix}{key}."
-            return ConfigProxy(value, root_proxy=self._root, prefix=new_prefix)
-        else:
-            self._track_access(key, value)
-            return value
+            if current_loss is not None:
+                self.history["loss"].append(current_loss)
+                
+                if ema_loss is None: 
+                    ema_loss = current_loss
+                ema_loss = ema_alpha * current_loss + (1 - ema_alpha) * ema_loss
 
-    def __setitem__(self, key, value):
-        self._data[key] = value
-        self._track_access(key, value)
+                if step_ndx > WARMUP_STEPS:
+                    current_score = ema_loss
+                    if len(self.best_training_checkpoints) < checkpoint_averaging_top_k:
+                        self.best_training_checkpoints.append(copy.deepcopy(self.state_dict()))
+                        self.best_training_scores.append({"step": step_ndx, "stable_loss": current_score})
+                    else:
+                        worst_score = max(s['stable_loss'] for s in self.best_training_scores)
+                        if current_score < worst_score:
+                            worst_idx = [i for i, s in enumerate(self.best_training_scores) if s['stable_loss'] == worst_score][0]
+                            self.best_training_checkpoints[worst_idx] = copy.deepcopy(self.state_dict())
+                            self.best_training_scores[worst_idx] = {"step": step_ndx, "stable_loss": current_score}
 
-    def report(self) -> dict:
-        return self._root.used_params
+            if patience > 0 and ema_loss is not None:
+                if ema_loss < best_ema_loss_for_stopping - min_delta:
+                    best_ema_loss_for_stopping = ema_loss
+                    steps_without_improvement = 0
+                else:
+                    steps_without_improvement += 1
+                
+                if step_ndx > WARMUP_STEPS and steps_without_improvement >= patience:
+                    print_info(f"\nEarly stopping triggered at step {step_ndx}. No improvement in stable loss for {patience} steps.")
+                    break
 
-    def __contains__(self, key):
-        return key in self._data
-
-    def items(self):
-        for key in self._data.keys():
-            yield key, self[key]
-
-
-
-import sys
-from io import StringIO
-
-class DynamicTable:
-    def __init__(self, config_proxy, title="Training Configuration", enabled: bool = True):
-        self._proxy = config_proxy
-        self._title = title
-        self._print_func = print_table 
-        self._last_state = {}
-        self._last_table_height = 0
-
-        self._is_enabled = enabled
-
-
-    def _move_cursor_up(self, lines):
-        """Moves the terminal cursor up by a specified number of lines."""
-        if lines > 0:
-            sys.stdout.write(f'\x1b[{lines}A')
-            sys.stdout.flush()
-
-    def _clear_from_cursor(self):
-        """Clears the screen from the current cursor position to the end."""
-        sys.stdout.write('\x1b[J')
-        sys.stdout.flush()
-
-    def update(self, force_print=False):
-        """
-        Updates the table in-place, but only if it's enabled.
-        """
-        if not self._is_enabled:
-            return 
-
-        current_state = self._proxy.report()
-        
-        if current_state != self._last_state or force_print:
-            self._move_cursor_up(self._last_table_height)
-            self._clear_from_cursor()
-
-            display_config = {}
-            keys_to_exclude = {
-                "positive_data_path", "negative_data_path", "background_paths",
-                "rir_paths", "output_dir", "force_verify"
-            }
-            sorted_keys = sorted(current_state.keys())
-            for key in sorted_keys:
-                if key not in keys_to_exclude and current_state[key] is not None:
-                    display_config[key] = str(current_state[key])
-            
-            old_stdout = sys.stdout
-            sys.stdout = string_io = StringIO()
-            self._print_func(display_config, self._title)
-            table_string = string_io.getvalue()
-            sys.stdout = old_stdout 
-            
-            self._last_table_height = table_string.count('\n') + 1
-
-            print(table_string, end='')
-            
-            self._last_state = current_state.copy()
-
+            if checkpointing_enabled and step_ndx > 0 and step_ndx % checkpoint_interval == 0:
+                checkpoint_data = {
+                    'step': step_ndx,
+                    'model_state_dict': self.state_dict(),
+                    'optimizer_state_dict': self.optimizer.state_dict(),
+                    'scheduler_state_dict': self.scheduler.state_dict(),
+                    'ema_loss': ema_loss,
+                    'best_ema_loss_for_stopping': best_ema_loss_for_stopping,
+                    'steps_without_improvement': steps_without_improvement,
+                    'loss_history': self.history['loss']
+                }
+                checkpoint_name = f"checkpoint_step_{step_ndx}.pth"
+                torch.save(checkpoint_data, os.path.join(checkpoint_dir, checkpoint_name))
+                
+                all_checkpoints = sorted(
+                    [f for f in os.listdir(checkpoint_dir) if f.startswith("checkpoint_step_")],
+                    key=lambda f: int(re.search(r"(\d+)", f).group(1))
+                )
+                if len(all_checkpoints) > checkpoint_limit:
+                    os.remove(os.path.join(checkpoint_dir, all_checkpoints[0]))
+                    
+            if step_ndx >= max_steps - 1:
+                break
 
 
 def train(cli_args=None):
@@ -952,7 +658,7 @@ def train(cli_args=None):
         formatter_class=argparse.RawTextHelpFormatter # For better help message formatting
     )
 
-    # --- Configuration ---
+    # Configuration 
     parser.add_argument(
             "-c", "--config_path",
             help="Path to the training configuration YAML file. (Required)",
@@ -961,7 +667,7 @@ def train(cli_args=None):
             metavar="PATH"
         )
 
-    # --- Pipeline Stages (Primary Actions) ---
+    # Pipeline Stages (Primary Actions)
     parser.add_argument(
         "-G", "--generate_clips",
         help="Activates the 'Generation' stage to synthesize audio clips.",
@@ -978,7 +684,7 @@ def train(cli_args=None):
         action="store_true"
     )
 
-    # --- Modifiers ---
+    # Modifiers 
     parser.add_argument(
         "-f", "--force-verify",
         help="Forces re-verification of all data directories, ignoring the cache.",
@@ -990,7 +696,6 @@ def train(cli_args=None):
         action="store_true"
     )
 
-    # NEW 
     parser.add_argument(
         "--resume",
         help="Path to the project directory to resume training from. (e.g., --resume ./trained_models/my_wakeword_v1)",
@@ -1008,11 +713,7 @@ def train(cli_args=None):
     user_config = yaml.load(open(args.config_path, 'r', encoding='utf-8').read(), yaml.Loader)
 # #=====
 
-
-    import json
-    from nanowakeword.modules.preprocess import verify_and_process_directory
-
-    # 1. Define a stable cache directory based on the user's output_dir
+    # Define a stable cache directory based on the user's output_dir
     #    This ensures the path is known and available from the very beginning.
     output_dir_from_config = user_config.get("output_dir", "./trained_models")
     VERIFICATION_CACHE_DIR = os.path.join(output_dir_from_config, ".cache", "verification_receipts")
@@ -1020,11 +721,6 @@ def train(cli_args=None):
 
     # Define these file names here to avoid magic strings
     VERIFICATION_RECEIPT_FILENAME_TEMPLATE = "{hash}.json" # We'll use a hash now
-
-
-    import base64
-    import hashlib
-    import json
 
     def get_directory_state(path):
         """Returns the current state of a directory (number of files and total size)."""
@@ -1092,8 +788,7 @@ def train(cli_args=None):
             print_info(f"Warning: An unexpected error occurred for '{os.path.basename(path)}'. Error: {e}")
 
 
-
-    print_step_header( 1,"Verifying and Preprocessing Data Directories")
+    print_step_header("Verifying and Preprocessing Data Directories")
     
     data_paths_to_process = [
         user_config.get("positive_data_path"),
@@ -1115,11 +810,6 @@ def train(cli_args=None):
         
     print_info("Data verification and preprocessing complete.\n")
    
-
-    from nanowakeword.analyzer import DatasetAnalyzer
-    from nanowakeword.config_generator import ConfigGenerator
-
-
     # Hardware-Only Configuration (Express Pass) 
     print_info("Determining hardware-specific configurations...")
     try:
@@ -1132,33 +822,34 @@ def train(cli_args=None):
         base_config = final_config1
 
     except Exception as e:
-        print(f"Could not generate intelligent hardware config due to an error: {e}. Proceeding with user config only.")
+        print_info(f"Could not generate intelligent hardware config due to an error: {e}. Proceeding with user config only.")
         base_config = user_config.copy() 
 
     ISgenaret_data = base_config.get("generate_clips", False)
     if args.generate_clips or ISgenaret_data:
         from nanowakeword.generate_samples import generate_samples
-        print_step_header(2, "Activating Synthetic Data Generation Engine")
+        print_step_header("Activating Synthetic Data Generation Engine")
 
         # Acquire the Target Phrase
         target_phrase = base_config.get("target_phrase")
         if not target_phrase:
-            # print("\n" + "=" * 80)
-            print("\n[CONFIGURATION NOTICE]: 'target_phrase' is not set in your config file. This is required to generate audio samples.")
+            print_info("\n[CONFIGURATION NOTICE]: 'target_phrase' is not set in your config file. This is required to generate audio samples.")
             try:
                 user_input = input(">>> Please enter the target phrase to proceed: ").strip()
                 if not user_input:
-                    print("\n[ABORT] A target phrase is mandatory for generation. Exiting.")
+                    print_info("\n[ABORT] A target phrase is mandatory for generation. Exiting.")
                     sys.exit(1)
                 target_phrase = [user_input]
                 print_info(f"Using runtime target phrase: '{user_input}'")
             except (KeyboardInterrupt, EOFError):
-                print("\n\nOperation cancelled by user.")
+                print_info("\n\nOperation cancelled by user.")
                 sys.exit()
 
         # 1. Retrieve Sample Counts (Handle missing values safely)
         raw_pos_samples = base_config.get('generate_positive_samples')
         raw_neg_samples = base_config.get('generate_negative_samples')
+
+        tts_settings = base_config.get("tts_settings", {})
 
         # Convert to integers if present, else default to 0
         n_pos_train = int(raw_pos_samples) if raw_pos_samples is not None else 0
@@ -1167,6 +858,9 @@ def train(cli_args=None):
         enable_auto_adversarial = base_config.get("adversarial_text_generation", True)
         custom_negatives = base_config.get("custom_negative_phrases", [])
         repeats_per_phrase = int(base_config.get("custom_negative_per_phrase", 50))
+
+        include_partial_phrase= base_config.get("include_partial_phrase", 0.5)
+        include_input_words= base_config.get("include_input_words", 0.7)
 
         final_negative_texts = []
 
@@ -1194,7 +888,7 @@ def train(cli_args=None):
                     print_info(f"Generating {gap} auto-adversarial phrases to fill the gap.")
                     
                     # Generate phonetically similar words to fill the remaining count
-                    auto_adversarial = generate_adversarial_texts(target_phrase[0], N=gap)
+                    auto_adversarial = generate_adversarial_texts(target_phrase[0], N=gap, include_partial_phrase=include_partial_phrase, include_input_words=include_input_words)
                     final_negative_texts.extend(auto_adversarial)
                 else:
                     print_info(f"Target is {target_total_neg}, but auto-adversarial generation is DISABLED.")
@@ -1206,17 +900,7 @@ def train(cli_args=None):
         # Update final count
         final_neg_count = len(final_negative_texts)
 
-        # 3. Dynamic Batch Size Configuration
-        # Positive generation uses static text, so it handles larger batches easily.
-        pos_batch_size = base_config.get("tts_batch_size", 256)
-
-        # Negative generation uses dynamic text lengths, requiring smaller batches to prevent OOM.
-        if "tts_batch_size_negative" in base_config:
-            neg_batch_size = int(base_config["tts_batch_size_negative"])
-        else:
-            neg_batch_size = max(1, pos_batch_size // 2)
-
-        # 4. Construct Unified Generation Plan
+        # Construct Unified Generation Plan
         generation_plan = {}
 
         if n_pos_train > 0:
@@ -1224,7 +908,7 @@ def train(cli_args=None):
                 "count": n_pos_train,
                 "texts": target_phrase,
                 "output_dir": base_config["positive_data_path"],
-                "batch_size": pos_batch_size
+                "prefix": "pos" 
             }
         
         if final_neg_count > 0:
@@ -1232,10 +916,10 @@ def train(cli_args=None):
                 "count": final_neg_count,
                 "texts": final_negative_texts,
                 "output_dir": base_config["negative_data_path"],
-                "batch_size": neg_batch_size
+                "prefix": "neg" 
             }
 
-        # 5. Execute Generation Engine
+        # Execute Generation Engine
         if generation_plan:
             print_info(f"Initiating data generation pipeline for phrase: '{target_phrase[0]}'")
             
@@ -1248,7 +932,8 @@ def train(cli_args=None):
                         text=params["texts"],
                         max_samples=params["count"],
                         output_dir=params["output_dir"],
-                        batch_size=params["batch_size"]
+                        file_prefix=params.get("prefix", "sample"),
+                        **tts_settings
                     )
                     
                     # Clear GPU cache after each heavy task to prevent fragmentation
@@ -1258,7 +943,7 @@ def train(cli_args=None):
         print_info("Synthetic data generation process finished successfully.\n")
 
 
-    print_step_header(2.5, "Activating Intelligent Configuration Engine")
+    print_step_header("Activating Intelligent Configuration Engine")
     try:
         analyzer = DatasetAnalyzer(
             positive_path=user_config["positive_data_path"],
@@ -1273,17 +958,16 @@ def train(cli_args=None):
         intelligent_config = generator.generate()
 
     except KeyError as e:
-        print(f"ERROR: Missing essential path in config file for auto-config: {e}")
+        print_info(f"ERROR: Missing essential path in config file for auto-config: {e}")
         exit()
     except Exception as e:
-        print(f"Could not generate intelligent config due to an error: {e}. Proceeding with user config only.")
+        print_info(f"Could not generate intelligent config due to an error: {e}. Proceeding with user config only.")
         intelligent_config = {} 
-
 
     final_config = intelligent_config.copy()
     
-    # 2. Deep merge the user's configuration on top of it.
-    #    This will correctly merge nested dictionaries like 'augmentation_settings'.
+    # Deep merge the user's configuration on top of it.
+    # This will correctly merge nested dictionaries like 'augmentation_settings'.
     final_config = deep_merge(final_config, user_config)
     
     # Now, `final_config` contains the correct, merged values.
@@ -1292,41 +976,6 @@ def train(cli_args=None):
 
     show_table_flag = config.get("show_training_summary", True)
     dynamic_table = DynamicTable(config_proxy, title="Effective Training Configuration", enabled=show_table_flag)
-
-
-    def GNMV(model_type: str, base_dir: str = ".", prefix: str = "nww"):
-        """
-        Automatically generate model name including type and maintain version professionally
-        The version option will be kept the same, meaning if there is an older model, it will be overwritten.
-        
-        Example:
-            nww_dnn_model_v1  → nww_dnn_model_v2  (if v1 already exists)
-        Args:
-            model_type (str): Type of the model (e.g. 'dnn', 'cnn', 'lstm').
-            base_dir (str): Directory where model files are stored.
-            prefix (str): Prefix used before model name (default 'nww').
-        
-        Returns:
-            str: A unique, versioned model name.
-        """
-        import os
-        import re
-        # Normalize
-        model_type = model_type.lower().strip()
-        pattern = re.compile(rf"^{prefix}_{model_type}_model_v(\d+)$")
-
-        # Find existing models in the directory
-        existing = []
-        for name in os.listdir(base_dir):
-            match = pattern.match(name)
-            if match:
-                existing.append(int(match.group(1)))
-
-        # Determine next version
-        next_version = max(existing, default=0) + 1
-        return f"{prefix}_{model_type}_model_v{next_version}"
-
-
 
     # Define and Create Professional Output Directory Structure  
     # project_dir = os.path.join(os.path.abspath(base_config["output_dir"]), base_config.get("model_name", AGMINTVP))
@@ -1338,7 +987,6 @@ def train(cli_args=None):
         )
     )
 
-
     feature_save_dir = os.path.join(project_dir, "features")
     artifacts_dir = os.path.join(project_dir, "training_artifacts")
     model_save_dir = os.path.join(project_dir, "model")
@@ -1347,7 +995,6 @@ def train(cli_args=None):
         os.makedirs(path, exist_ok=True)
 
     print_info(f"Project assets will be saved in: {project_dir}")
-
 
     # Get paths for impulse response and background audio files
     rir_paths = [i.path for j in config["rir_paths"] for i in os.scandir(j)]
@@ -1396,7 +1043,7 @@ def train(cli_args=None):
             
             num_to_sample = min(num_to_inspect, len(positive_clips))
             sampled_clips = np.random.choice(positive_clips, num_to_sample, replace=False)
-            
+
             duration_in_samples = []
             for clip_path in sampled_clips:
                 try:
@@ -1435,239 +1082,171 @@ def train(cli_args=None):
             config["total_length"] = fallback_length
             print_info(f"Autotuning is disabled. Using fallback clip duration: {fallback_length} samples.")
 
-
-    # Do Data Augmentation
-    ISoverwrite= config.get("overwrite", False)
+    ISoverwrite = config.get("overwrite", False)
     transform_data = config.get("transform_clips", False)
+
     if args.transform_clips is True or transform_data:
-        if not os.path.exists(os.path.join(feature_save_dir, "positive_features_train.npy")) or args.overwrite is True or ISoverwrite:
 
-            # Define the default probabilities.
-            default_aug_probs = {
-                "ParametricEQ": 0.25,
-                "Distortion": 0.25,
-                "PitchShift": 0.25,
-                "BandStopFilter": 0.25,
-                "ColoredNoise": 0.25,
-                "BackgroundNoise": 0.75,
-                "Gain": 1.0,
-                "RIR": 0.5
-            }
+        generation_manifest = config.get("feature_generation_manifest")
 
-            # The Magic Happens Here 
-            # 1. Get the user's settings as a proxy. The proxy handles missing keys gracefully.
-            user_aug_proxy = config.get("augmentation_settings", {})
-
-            # 2. Iterate through the complete list of default keys.
-            #    For each key, get the value. The proxy will automatically provide the
-            #    user's value if it exists, otherwise it will return the default.
-            #    This ensures every single parameter is "touched" and tracked.
-            final_aug_probs = {
-                key: user_aug_proxy.get(key, default_value)
-                for key, default_value in default_aug_probs.items()
-            }
-
-            # `final_aug_probs` is now a standard dictionary with correctly merged values,
-            # and every augmentation parameter has been tracked by the ConfigProxy.
-            # We will use this dictionary for the `augment_clips` function.
-
-            # Let's rename the variable for clarity before passing it to the function.
-            aug_probs = final_aug_probs
-
-
-            positive_clips_train = [str(i) for i in Path(config["positive_data_path"]).glob("*.wav")]*config["augmentation_rounds"]
-            positive_clips_train_generator = augment_clips(positive_clips_train, total_length=config["total_length"],
-                                                           batch_size=config["augmentation_batch_size"],
-                                                           min_snr_in_db=config['min_snr_in_db'],
-                                                           max_snr_in_db=config['max_snr_in_db'],                                                           
-                                                           background_clip_paths=background_paths,
-                                                           RIR_paths=rir_paths,
-                                                           augmentation_settings=aug_probs)
-
-
-            negative_clips_train = [str(i) for i in Path(config["negative_data_path"]).glob("*.wav")]*config["augmentation_rounds"]
-            negative_clips_train_generator = augment_clips(negative_clips_train, total_length=config["total_length"],
-                                                           batch_size=config["augmentation_batch_size"],
-                                                           min_snr_in_db=config['min_snr_in_db'],
-                                                           max_snr_in_db=config['max_snr_in_db'],                                                           
-                                                           background_clip_paths=background_paths,
-                                                           RIR_paths=rir_paths,
-                                                           augmentation_settings=aug_probs)
-
-  
-            # Compute features and save to disk via memmapped arrays
-            print_step_header(3, "Computing Acoustic Features from Audio Sources")
-            n_cpus = os.cpu_count()
-
-            cpu_usage_ratio = config.get("feature_gen_cpu_ratio", 0.6) # 0.6 = 60%
-            n_cpus = max(1, int(n_cpus * cpu_usage_ratio))
-
-            # Generate positive feature
-            compute_features_from_generator(positive_clips_train_generator, output_file=os.path.join(feature_save_dir, "positive_features_train.npy"),
-                                            n_total=len(positive_clips_train), 
-                                            clip_duration=config["total_length"],
-                                            device="gpu" if torch.cuda.is_available() else "cpu",
-                                            ncpu=n_cpus if not torch.cuda.is_available() else 1)
-
-            # Generate negative feature
-            compute_features_from_generator(negative_clips_train_generator, output_file=os.path.join(feature_save_dir, "negative_features_train.npy"),                                                                                        
-                                            n_total=len(negative_clips_train),
-                                            clip_duration=config["total_length"],
-                                            device="gpu" if torch.cuda.is_available() else "cpu",
-                                            ncpu=n_cpus if not torch.cuda.is_available() else 1)
-
-            
-
-            # Generate pure noise features if the strategy requires it and they don't already exist.
-            # if source_dist.get('pure_noise', 0) > 0:
-            pure_noise_output_path = os.path.join(feature_save_dir, "pure_noise_features.npy")
-            
-            if not os.path.exists(pure_noise_output_path) or args.overwrite or ISoverwrite:
-                noise_source_paths = config.get("background_paths", [])
-                pure_noise_clips = [str(i) for j in noise_source_paths for i in Path(j).glob("*.wav")]
-                
-                if pure_noise_clips:
-                    noise_aug_rounds = max(1, config.get("augmentation_rounds", 5) // 2)
-                    
-
-                    pure_noise_generator = augment_clips(pure_noise_clips * noise_aug_rounds, total_length=config["total_length"], 
-                                                            batch_size=config["augmentation_batch_size"],
-                                                            background_clip_paths=background_paths,
-                                                            RIR_paths=rir_paths,
-                                                            augmentation_settings=aug_probs)
-                    
-
-                    compute_features_from_generator(pure_noise_generator, n_total=len(pure_noise_clips) * noise_aug_rounds,
-                                                    clip_duration=config["total_length"],
-                                                    output_file=pure_noise_output_path,
-                                                    device="gpu" if torch.cuda.is_available() else "cpu",
-                                                    ncpu=n_cpus if not torch.cuda.is_available() else 1)
-                    
-
-                else:
-                    print_info("[WARNING] 'pure_noise' is configured, but no audio files were found in 'background_paths'.")
-        
-
+        if not generation_manifest:
+            print_info("[INFO] 'feature_generation_manifest' not found in config.yaml. Skipping custom feature generation.")
         else:
-            logging.warning("Nanowakeword features already exist, skipping augmentation and feature generation. Verify existing files.")
+            # print_step_header("Activating Flexible Feature Generation Engine")
+            print_step_header("Computing Acoustic Features from Audio Sources")
+
+            for job_name, recipe in generation_manifest.items():
+                print_info(f"Running Generation: {job_name}")
+
+                output_filename = recipe.get("output_filename")
+                if not output_filename:
+                    print_info(f"[WARNING] Skipping job '{job_name}' because 'output_filename' is missing.")
+                    continue
+
+                output_filepath = os.path.join(feature_save_dir, output_filename)
+
+                if os.path.exists(output_filepath) and not (args.overwrite or ISoverwrite):
+                    print_info(f"[INFO] Feature file '{output_filename}' already exists. Skipping generation. (Use --overwrite to force regeneration)")
+                    continue
+
+                input_audio_dirs = recipe.get("input_audio_dirs", [])
+                if not input_audio_dirs:
+                    print_info(f"[WARNING] Skipping job '{job_name}' because 'input_audio_dirs' is empty or missing.")
+                    continue
+
+                input_clips = []
+                for d in input_audio_dirs:
+                    input_clips.extend([str(p) for p in Path(d).rglob("*.wav")])
+                
+                if not input_clips:
+                    print_info(f"[WARNING] Skipping job '{job_name}' as no .wav files were found in the specified directories.")
+                    continue
+                
+                print_info(f"Found {len(input_clips)} source audio files.")
+
+                
+                global_aug_proxy = config.get("augmentation_settings", {})
+                recipe_aug_proxy = recipe.get("augmentation_settings", {})
+
+                # Converting ConfigProxy objects to plain dictionaries
+                # The .to_dict attribute holds the actual dictionary inside the ConfigProxy.
+                global_aug_dict = global_aug_proxy.to_dict() if global_aug_proxy else {}
+                recipe_aug_dict = recipe_aug_proxy.to_dict() if recipe_aug_proxy else {}
+
+                final_aug_settings = {**global_aug_dict, **recipe_aug_dict}          
+                
+                use_bg = recipe.get("use_background_noise", True)
+                use_rir = recipe.get("use_rir", True)
+
+                bg_paths_for_job = background_paths if use_bg else []
+                rir_paths_for_job = rir_paths if use_rir else []
+
+                aug_rounds = recipe.get("augmentation_rounds", 1)
+                clips_to_generate = input_clips * aug_rounds
+                total_clips_to_generate = len(clips_to_generate)
+                
+                print_info(f"Augmentation rounds: {aug_rounds}. Total clips to generate: {total_clips_to_generate}")
+
+                audio_generator = augment_clips(
+                    clip_paths=clips_to_generate,
+                    total_length=config["total_length"],
+                    batch_size=config["augmentation_batch_size"],
+                    background_clip_paths=bg_paths_for_job,
+                    RIR_paths=rir_paths_for_job,
+                    augmentation_settings=final_aug_settings
+                )
+                
+                # print(f"Computing features'{output_filename}'...")
+                n_cpus = os.cpu_count()
+                cpu_usage_ratio = config.get("feature_gen_cpu_ratio", 0.6)
+                n_cpus = max(1, int(n_cpus * cpu_usage_ratio))
+                 
+                feature_extractor = AudioFeatures(device="gpu" if torch.cuda.is_available() else "cpu")
+                sample_embedding_shape = feature_extractor.get_embedding_shape(config["total_length"] / 16000)
+                output_shape = (total_clips_to_generate, sample_embedding_shape[0], sample_embedding_shape[1])
+                
+                fp = np.lib.format.open_memmap(output_filepath, mode='w+', dtype=np.float32, shape=output_shape)
+                
+                row_counter = 0
+                batch_size = config.get('augmentation_batch_size', 128)
+                pbar = tqdm(audio_generator, total=-(total_clips_to_generate // -batch_size), desc=f"{job_name}")
+
+                for audio_batch in pbar:
+                    if row_counter >= total_clips_to_generate: break
+                    features = feature_extractor.embed_clips(audio_batch, batch_size=len(audio_batch), ncpu=n_cpus)
+                    end_index = min(row_counter + features.shape[0], total_clips_to_generate)
+                    fp[row_counter:end_index, :, :] = features[:end_index - row_counter]
+                    row_counter = end_index
+                    fp.flush()
+                
+                del fp
+                from nanowakeword.data import trim_mmap
+                trim_mmap(output_filepath)
+                
+                print_info(f"{job_name} Completed Successfully!")
+            
+            print_info("Flexible Feature Generation Finished")
+
+    else:
+        print_info("Feature generation is disabled as 'transform_clips' is false and '--transform_clips' flag is not set.")
 
 
     should_train = config.get("train_model", False)
     if args.train_model is True or should_train:
+        training_start_time = time.time()
 
-        print_step_header(4, "Preparing Training Data and Compositor")
-
-        # Load user-defined data sources from config.yaml
+        # Get all positive and negative file paths from .yaml
         manifest = config.get("feature_manifest", {})
-        
-        # We categorize sources into three buckets
-        targets = manifest.get("targets", {})        # Label 1 (Wakewords)
-        negatives = manifest.get("negatives", {})    # Label 0 (Confusing Speech)
-        backgrounds = manifest.get("backgrounds", {}) # Label 0 (Pure Noise)
+        positive_paths = list(manifest.get("targets", {}).values())
 
-      
-        if not targets:    
-            # Legacy Positive -> Targets
-            pos_path = os.path.join(feature_save_dir, "positive_features_train.npy")
-            if os.path.exists(pos_path):
-                targets["legacy_pos"] = pos_path
-      
-        if not negatives:  
-            # Legacy Negative -> Negatives (Speech)
-            neg_path = os.path.join(feature_save_dir, "negative_features_train.npy")
-            if os.path.exists(neg_path):
-                negatives["legacy_neg"] = neg_path
-       
-        if not backgrounds:    
-            # Legacy Pure Noise -> Backgrounds
-            noise_path = os.path.join(feature_save_dir, "pure_noise_features.npy")
-            if os.path.exists(noise_path):
-                backgrounds["legacy_noise"] = noise_path
+        negative_paths = list(manifest.get("negatives", {}).values())
+        negative_paths.extend(list(manifest.get("backgrounds", {}).values()))
 
-        # Registry format: { 'alias': {'path': '...', 'type': 'target'/'negative'/'background'} }
-        source_registry = {}
-        
-        print_info("Loading Data Sources from Registry:")
+        positive_paths = [p for p in positive_paths if p]
+        negative_paths = [p for p in negative_paths if p]
 
-        # 1. Register Targets
-        for alias, path in targets.items():
-            if os.path.exists(path):
-                source_registry[alias] = {'path': path, 'type': 'target'}
-                print_info(f"  [Target] Registered '{alias}'")
-            else:
-                print_info(f"  [Error] Target file missing: {path}")
+        if not positive_paths or not negative_paths:
+            raise ValueError("CRITICAL: 'targets' and at least one of 'negatives' or 'backgrounds' must be defined in the feature_manifest.")
 
-        # 2. Register Negatives (Human Speech)
-        for alias, path in negatives.items():
-            if os.path.exists(path):
-                source_registry[alias] = {'path': path, 'type': 'negative'}
-                print_info(f"  [Negative] Registered '{alias}'")
-            else:
-                print_info(f"  [Warning] Negative file missing: {path}")
+        dataset = WakeWordDataset(
+            positive_feature_paths=positive_paths,
+            negative_feature_paths=negative_paths
+        )
 
-        # 3. Register Backgrounds (Pure Noise)
-        for alias, path in backgrounds.items():
-            if os.path.exists(path):
-                source_registry[alias] = {'path': path, 'type': 'background'}
-                print_info(f"  [Background] Registered '{alias}'")
-            else:
-                print_info(f"  [Warning] Background file missing: {path}")
+        if len(dataset) == 0:
+            raise ValueError("CRITICAL: Dataset is empty. Check your feature file paths in the manifest.")
 
-        # Validation
-        if not source_registry:
-            print_info("\n[CRITICAL FAILURE] No valid data sources found. Training aborted.")
-            sys.exit(1)
+        # Get sample weights for WeightedRandomSampler
+        sample_weights = dataset.get_sample_weights()
+                
+        sampler = WeightedRandomSampler(
+            weights=sample_weights,
+            num_samples=len(dataset), 
+            replacement=True
+        )
 
-        has_target = any(v['type'] == 'target' for v in source_registry.values())
-        if not has_target:
-            print_info("\n[CRITICAL FAILURE] No Target (Positive) data found. Training aborted.")
-            sys.exit(1)
+        # DataLoader
+        num_workers = config.get("num_workers", 2)
+        X_train = DataLoader(
+            dataset,
+            batch_size=config.get('batch_size', 128),
+            sampler=sampler,
+            num_workers=num_workers,
+            pin_memory=True if num_workers > 0 else False,
+            persistent_workers=True if num_workers > 0 else False,
+            # drop_last=True 
+        )
 
-        # Load user blueprints for data mixing
-        compositor_cfg = config.get("acoustic_compositor", {})
-        use_defaults = compositor_cfg.get("use_defaults", True)
-        custom_blueprints = compositor_cfg.get("blueprints", [])
-        
-        final_blueprints = []
-
-        # 1. Add Custom Blueprints
-        if custom_blueprints:
-            print_info(f"Loading {len(custom_blueprints)} custom mixing scenarios.")
-            final_blueprints.extend(custom_blueprints)
-
-        # 2. Add Default Blueprint (If needed)
-        # Default Logic: [Any Background] -> [Any Target] -> [Any Background]
-        if use_defaults or not final_blueprints:
-            final_blueprints.append({
-                "composition": ["backgrounds", "targets", "backgrounds"],
-                "weight": 1.0
-            })
-            print_info("Loaded default scenario: [backgrounds -> targets -> backgrounds]")
-
+        # Shape deteced
         try:
-            # Load the first available file to detect input shape
-            first_path = list(source_registry.values())[0]['path']
-            sample_data = np.load(first_path, mmap_mode='r')
-            input_shape = sample_data.shape[1:] 
-            seconds_per_example = 1280 * input_shape[0] 
-
-            print_info(f" Input Shape Detected: {input_shape} ({seconds_per_example:.2f}s context)")
+            sample_feature, _ = dataset[0]
+            input_shape = sample_feature.shape
+            seconds_per_example = (1280 * input_shape[0]) / 16000 
+            print_info(f"Input Shape Detected: {input_shape} ({seconds_per_example:.2f}s context)")
         except Exception as e:
             print_info(f"[ERROR] Data integrity check failed: {e}")
             sys.exit(1)
-
-        # Initialize the Advanced Batch Generator
-        # This will handle the simplified keywords ('targets', 'backgrounds') internally
-        batch_generator = mmap_batch_generator(
-            source_registry=source_registry,
-            blueprints=final_blueprints,
-            batch_size=config.get('batch_size', 128),
-            input_shape=input_shape
-        )
-
-        class IterDataset(torch.utils.data.IterableDataset):
-            def __init__(self, generator): self.generator = generator
-            def __iter__(self): return self.generator
+        
 
         # MODEL INITIALIZATION
         print_info("Initializing Neural Architecture...")
@@ -1686,16 +1265,8 @@ def train(cli_args=None):
       
         nww.setup_optimizer_and_scheduler(config=config)
         
-        num_workers= config.get("num_workers", 0)
-
-        X_train = torch.utils.data.DataLoader(
-            IterDataset(batch_generator),
-            batch_size=None, 
-            num_workers=num_workers 
-        )
-
         # EXECUTE TRAINING
-        print_step_header(5, "Training is progress")
+        print_step_header("Training is progress")
         
         best_model = nww.auto_train(
             X_train=X_train,
@@ -1707,11 +1278,33 @@ def train(cli_args=None):
 
         nww.plot_history(artifacts_dir)
         
+        training_end_time = time.time()
+        training_duration_minutes = (training_end_time - training_start_time) / 60
+
         nww.export_model(
             model=best_model, 
             model_name=config.get("model_name", GNMV(config.get("model_type", "dnn"))), 
             output_dir=model_save_dir
         )
+
+
+        if config.get("enable_journaling", True):
+            final_metrics = {}
+            if nww.history.get("final_report"):
+                report = nww.history["final_report"]
+                final_metrics["Stable Loss"] = report.get("Average Stable Loss", "N/A")
+                final_metrics["Avg. Pos Conf"] = report.get("Avg. Positive Score (Logit)", "N/A")
+                final_metrics["Avg. Neg Conf"] = report.get("Avg. Negative Score (Logit)", "N/A")
+
+            final_metrics["Train Time"] = f"{training_duration_minutes:.1f}"
+            base_output_directory = os.path.abspath(base_config["output_dir"])
+
+            update_training_journal(
+                base_output_dir=base_output_directory,
+                model_name=config.get("model_name", GNMV(config.get("model_type", "dnn"))),
+                metrics=final_metrics,
+                current_config=config.report()
+            )
 
 if __name__ == '__main__':
     train()

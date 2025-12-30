@@ -139,6 +139,7 @@ class NanoInterpreter:
         current_raw_preds = {}
         for mdl_name, session in self.models.items():
             features = self.preprocessor.get_features(self.model_feature_length[mdl_name])
+            
             input_feed = {'input': features}
 
             if self.is_stateful[mdl_name]:

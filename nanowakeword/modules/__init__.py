@@ -1,1 +1,1 @@
-from .triplet_loss import TripletMetricLoss
+from .BiasWeightedLoss import BiasWeightedLoss

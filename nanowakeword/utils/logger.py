@@ -14,7 +14,6 @@
 
 from rich.console import Console
 from rich.table import Table
-from rich.text import Text
 from rich import box
 
 
@@ -35,13 +34,20 @@ def print_banner():
  
     
     console.print(f"\n[bold cyan]{banner_art}[/bold cyan]")
-    # console.print("-" * 40)
 
 
-def print_step_header(step_num, title):
-    """Prints a clean step header."""
-    console.print(f"\n[bold]STEP {step_num}: {title}[/bold]")
-    console.print("=" * (len(title) + 8))
+
+# global step counter
+_STEP_COUNTER = 0
+
+def print_step_header(title: str) -> None:
+    global _STEP_COUNTER
+    _STEP_COUNTER += 1
+
+    console.print(f"\n[bold]STEP {_STEP_COUNTER}: {title}[/bold]")
+    console.print("=" * (len(title) + len(str(_STEP_COUNTER)) + 7))
+
+
 
 
 def print_info(message, indent=0):
@@ -99,4 +105,4 @@ def print_table(data_dict, title):
 #   M     YMM 8M   MM    MM    MM YA.   ,A9  :MM;    :MM;  8M   MM    MM `Mb.YM.    ,  :MM;    :MM;  YA.   ,A9 MM    `Mb    MM  
 # .JML.    YM `Moo9^Yo..JMML  JMML.`Ybmd9'    VF      VF   `Moo9^Yo..JMML. YA.`Mbmmd'   VF      VF    `Ybmd9'.JMML.   `Wbmd"MML.
                                                                                                                               
-                                                                                                                              
+                                                                                                                            

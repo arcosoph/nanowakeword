@@ -1,4 +1,3 @@
-import os
 from nanowakeword.nanointerpreter import NanoInterpreter
 from nanowakeword.vad import VAD
 
