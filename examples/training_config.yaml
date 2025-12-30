@@ -50,8 +50,8 @@ feature_manifest:
 
 ## Synthetic Data Generation
 # Parameters for generating audio clips using Text-to-Speech (TTS).
-generate_positive_samples: 10
-generate_negative_samples: 10
+generate_positive_samples: 2500
+generate_negative_samples: 5000
 
 include_input_words: 0.7
 include_partial_phrase: 0.5
