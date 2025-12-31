@@ -2,7 +2,7 @@
  - **You can view the example/training_config.yaml file for quick reference.**
 
 <div style="font-size:20px; font-weight:bold; color:#f59e0b;">
-NOTE: The information in this document will be updated tomorrow.
+NOTE: The information in this document will be updated.
 </div>
 
 

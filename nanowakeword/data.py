@@ -395,49 +395,7 @@ class WakeWordDataset(Dataset):
         return sample_weights
 
 
-# # Function to remove empty rows from the end of a mmap array
-# def trim_mmap(mmap_path):
-#     """
-#     Trims blank rows from the end of a mmaped numpy array by creates new mmap array without the blank rows.
-#     Note that a copy is created and disk usage will briefly double as the function runs.
-
-#     Args:
-#         mmap_path (str): The path to mmap array file to trim
-
-#     Returns:
-#         None
-#     """
-#     # Identify the last full row in the mmaped file
-#     mmap_file1 = np.load(mmap_path, mmap_mode='r')
-#     i = -1
-#     while np.all(mmap_file1[i, :, :] == 0):
-#         i -= 1
-
-#     N_new = mmap_file1.shape[0] + i + 1
-
-#     # Create new mmap_file and copy over data in batches
-#     output_file2 = mmap_path.strip(".npy") + "2.npy"
-#     mmap_file2 = open_memmap(output_file2, mode='w+', dtype=np.float32,
-#                              shape=(N_new, mmap_file1.shape[1], mmap_file1.shape[2]))
-
-#     for i in tqdm(range(0, mmap_file1.shape[0], 1024), total=mmap_file1.shape[0]//1024, desc="Trimming empty rows"):
-#         if i + 1024 > N_new:
-#             mmap_file2[i:N_new] = mmap_file1[i:N_new].copy()
-#             mmap_file2.flush()
-#         else:
-#             mmap_file2[i:i+1024] = mmap_file1[i:i+1024].copy()
-#             mmap_file2.flush()
-
-#     del mmap_file1
-#     del mmap_file2
-#     # Remove old mmaped file
-#     os.remove(mmap_path)
-
-#     # Rename new mmap file to match original
-#     os.rename(output_file2, mmap_path)
-
-
-
+# Function to remove empty rows from the end of a mmap array
 def trim_mmap(target_path):
     """
     Refactored version: Removes trailing zero-filled rows from a .npy mmap file.
@@ -526,7 +484,7 @@ def _require_phonemize():
 
 # Generate words that sound similar ("adversarial") to the input phrase using phoneme overlap
 def _require_phonemize():
-    """Helper to ensure phonemizer is ready (placeholder for existing logic)"""
+    """Helper to ensure phonemize is ready"""
     pass
 
 def clean_input_text(text: str) -> str:
@@ -616,15 +574,15 @@ def generate_adversarial_texts(input_text: str, N: int, include_partial_phrase: 
     word_phones = []
     input_text_phones = [pronouncing.phones_for_word(i) for i in input_words]
 
-    # Phonemizer Model Setup (Same as original)
+    # Phonemize Model Setup 
     if [] in input_text_phones:
         phonemizer_mdl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                        "resources", "phonemizer_model", "phonemize_m1.pt")
+                                        "resources", "phonemize_model", "phonemize_m1.pt")
         os.makedirs(os.path.dirname(phonemizer_mdl_path), exist_ok=True)
 
         if not os.path.exists(phonemizer_mdl_path):
             file_url = "https://github.com/arcosoph/phonemize/releases/download/v0.2.0/phonemize_m1.pt"
-            logging.warning(f"Downloading phonemizer model from {file_url}...")
+            logging.warning(f"Downloading phonemize model from {file_url}...")
             r = requests.get(file_url, stream=True)
             with open(phonemizer_mdl_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=2048):
@@ -638,7 +596,7 @@ def generate_adversarial_texts(input_text: str, N: int, include_partial_phrase: 
         if phones:
             word_phones.extend(phones)
         else:
-            logging.warning(f"Word '{word}' not found in dictionary. Using Phonemizer.")
+            logging.warning(f"Word '{word}' not found in dictionary. Using Phonemize_m1 model.")
             phones_pred = phonemizer(word, lang='en_us')
             logging.warning(f"Phones for '{word}': {phones_pred}")
             word_phones.append(re.sub(r"[\]|\[]", "", re.sub(r"\]\[", " ", phones_pred)))

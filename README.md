@@ -23,7 +23,7 @@
 - [NOTIS](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#notes--status)
 - [FAQ](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#faq)
 
-## ✨ **Choose Your Architecture, Build Your Pro Model**
+## **Choose Your Architecture, Build Your Pro Model**
 NanoWakeWord is a versatile framework offering a rich library of neural network architectures. Each is optimized for different scenarios, allowing you to build the perfect model for your specific needs. This Colab notebook lets you experiment with any of them.
 
 | Architecture | Recommended Use Case | Performance Profile | Start Training |

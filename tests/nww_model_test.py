@@ -9,7 +9,8 @@ import time
 # Import the interpreter class from the library
 from nanowakeword.nanointerpreter import NanoInterpreter 
 #  Simple Configuration 
-MODEL_PATH = r"model/path/your.onnx"
+# MODEL_PATH = r"model/path/your.onnx"
+MODEL_PATH = r"trained_models/arcosoph_A_v1/model/arcosoph_A_v1.onnx"
 THRESHOLD = 0.9  # A simple threshold for detection | ⚠️⚠️ This may need to be changed (eg, 0.999, 0.80) 
 COOLDOWN = 2     # A simple cooldown managed outside the interpreter
 # If you want, you can use more advanced methods like VAD or PATIENCE_FRAMES.
@@ -41,11 +42,11 @@ try:
         # The detection logic is simple and external.
         current_time = time.time()
         if score > THRESHOLD and (current_time - last_detection_time > COOLDOWN):
-            print(f"Detected '{key}'! (Score: {score:.2f})")
+            print(f"Detected '{key}'! (Score: {score:.20f})")
             last_detection_time = current_time
             interpreter.reset()
         else:
-            print(f"Score: {score:.3f}", end='\r', flush=True)
+            print(f"Score: {score:.20f}", end='\r', flush=True)
 
 except KeyboardInterrupt:
     print("")

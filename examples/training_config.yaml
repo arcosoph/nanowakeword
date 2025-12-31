@@ -110,6 +110,6 @@ ema_alpha: 0.01
 ## Pipeline Control Switches
 # Master switches to enable or disable major stages of the pipeline.
 generate_clips: true
-transform_clips: true # Don't forget to turn it off after finished.
+transform_clips: true # ⚠️ Don't forget to turn it off after finished.
 train_model: true
 overwrite: true
