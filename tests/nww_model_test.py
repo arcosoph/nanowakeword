@@ -42,11 +42,11 @@ try:
         # The detection logic is simple and external.
         current_time = time.time()
         if score > THRESHOLD and (current_time - last_detection_time > COOLDOWN):
-            print(f"Detected '{key}'! (Score: {score:.20f})")
+            print(f"Detected '{key}'! (Score: {score:.3f})")
             last_detection_time = current_time
             interpreter.reset()
         else:
-            print(f"Score: {score:.20f}", end='\r', flush=True)
+            print(f"Score: {score:.3f}", end='\r', flush=True)
 
 except KeyboardInterrupt:
     print("")
