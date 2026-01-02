@@ -1162,6 +1162,8 @@ def train(cli_args=None):
                 n_cpus = max(1, int(n_cpus * cpu_usage_ratio))
                  
                 feature_extractor = AudioFeatures(device="gpu" if torch.cuda.is_available() else "cpu")
+
+
                 sample_embedding_shape = feature_extractor.get_embedding_shape(config["total_length"] / 16000)
                 output_shape = (total_clips_to_generate, sample_embedding_shape[0], sample_embedding_shape[1])
                 

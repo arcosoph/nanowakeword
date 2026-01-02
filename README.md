@@ -380,7 +380,7 @@ We welcome feedback and contributions to help shape the future of this project!
 
 Contributions are the lifeblood of open source. We welcome contributions of all forms, from bug reports and documentation improvements to new features.
 
-To get started, please see our **[Contribution Guide](https://github.com/arcosoph/nanowakeword/blob/main/CONTRIBUTING.md)**, which includes information on setting up a development environment, running tests, and our code of conduct.
+To get started, please see our **[Contribution Guide](https://github.com/arcosoph/nanowakeword/blob/main/CONTRIBUTING.md)**, which includes information on setting up a development environment, running trsts(f:/nanowakeword/nanowakeword), and our code of conduct.
 
 ## License
 

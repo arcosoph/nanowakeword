@@ -2,8 +2,8 @@ import torch
 
 def BiasWeightedLoss(self, data, step_ndx, logger):
     
-    LOSS_BIAS = 0.8
-    
+    LOSS_BIAS = self.config.get("LOSS_BIAS", 0.8)
+
     # Data Setup 
     x, y = data
     x = x.to(self.device)

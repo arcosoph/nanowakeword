@@ -395,7 +395,6 @@ class WakeWordDataset(Dataset):
         return sample_weights
 
 
-# Function to remove empty rows from the end of a mmap array
 def trim_mmap(target_path):
     """
     Refactored version: Removes trailing zero-filled rows from a .npy mmap file.
