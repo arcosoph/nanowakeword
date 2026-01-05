@@ -28,7 +28,6 @@ from nanowakeword.resources.models import models
 import scipy.io.wavfile
 
 
-
 # Base class for computing audio features using Google's speech_embedding
 # model (https://tfhub.dev/google/speech_embedding/1)
 class AudioFeatures():
@@ -59,17 +58,14 @@ class AudioFeatures():
                           this setting may not have an effect. For example, to use a GPU with the ONNX
                           framework the appropriate onnxruntime package must be installed.
         """
-
-
-
         # Initialize the models with the appropriate framework
         self.inference_framework = inference_framework
         self.device = device
-
         self.debug_mode = False
         self.debug_count = 0
         self.debug_limit = 30
         self.debug_dir = "debug_pipeline_visuals"
+
         if self.debug_mode:
             os.makedirs(self.debug_dir, exist_ok=True)
             for f in os.listdir(self.debug_dir):

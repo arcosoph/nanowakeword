@@ -34,32 +34,37 @@ import warnings
 import argparse
 import torchinfo
 import matplotlib
-import collections
 import numpy as np
-matplotlib.use('Agg')
-from tqdm import tqdm
-from pathlib import Path
+import collections
 from torch import nn
+from tqdm import tqdm
+import collections.abc
+from pathlib import Path
 import matplotlib.pyplot as plt
 from logging.handlers import RotatingFileHandler
-from .data import WakeWordDataset
 from nanowakeword.config_generator import ConfigGenerator
-from nanowakeword.data import augment_clips, generate_adversarial_texts
+
+from .data import HardSampleFilterSampler
+from torch.utils.data import DataLoader
+from nanowakeword.data import augment_clips, WakeWordDataset, generate_adversarial_texts
 
 from nanowakeword.modules import BiasWeightedLoss
 from nanowakeword.modules.audio_processing import AudioFeatures
 from nanowakeword.modules.preprocess import verify_and_process_directory
-from .modules.architectures import (
-    CNNModel, LSTMModel, Net, GRUModel, RNNModel, TransformerModel, 
-    CRNNModel, TCNModel, QuartzNetModel, ConformerModel, EBranchformerModel
-)
+
 from nanowakeword.utils.GNMV import GNMV
 from nanowakeword.utils.ConfigProxy import ConfigProxy
 from nanowakeword.utils.analyzer import DatasetAnalyzer
 from nanowakeword.utils.DynamicTable import DynamicTable
-from torch.utils.data import DataLoader, WeightedRandomSampler
 from nanowakeword.utils.journal import update_training_journal
 from nanowakeword.utils.logger import print_banner, print_step_header, print_info, print_key_value, print_final_report_header, print_table
+
+from .modules.architectures import (
+    CNNModel, LSTMModel, Net, GRUModel, RNNModel, TransformerModel, 
+    CRNNModel, TCNModel, QuartzNetModel, ConformerModel, EBranchformerModel
+)
+
+matplotlib.use('Agg')
 
 # To make the terminal look clean
 warnings.filterwarnings("ignore")
@@ -80,8 +85,6 @@ def set_seed(seed):
         torch.backends.cudnn.benchmark = False
 
 set_seed(SEED)
-
-import collections.abc
 
 def deep_merge(d1, d2):
     """
@@ -341,7 +344,7 @@ class Model(nn.Module):
                 return avg_state_dict
 
 
-    def auto_train(self, X_train, steps, table_updater, debug_path, resume_from_dir=None):
+    def auto_train(self, X_train, dataset, steps, table_updater, debug_path, resume_from_dir=None):
             """
             A modern, single-sequence training process that combines the best checkpoints to
               create a final and robust model.
@@ -349,6 +352,7 @@ class Model(nn.Module):
 
             self.train_model(
                 X=X_train,
+                dataset=dataset,
                 max_steps=steps,
                 log_path=debug_path,
                 table_updater=table_updater,
@@ -390,8 +394,7 @@ class Model(nn.Module):
 
             try:
                 with torch.no_grad():
-                    
-                    x_batch, y_batch = next(iter(X_train))
+                    _, x_batch, y_batch = next(iter(X_train))
                     confidence_batch_x = x_batch.to(self.device)
                     confidence_batch_y = y_batch.to(self.device)
 
@@ -476,8 +479,30 @@ class Model(nn.Module):
             print_info(f"   Details: {e}")
 
 
+    def export_pytorch_model(self, model, model_name, output_dir):
+        """
+        Saves the final trained PyTorch model's state_dict to a .pt file.
+        This is the recommended way to save PyTorch models for robustness and portability.
 
-    def train_model(self, X, max_steps, log_path, table_updater, resume_from_dir=None):
+        Args:
+            model (torch.nn.Module): The final, trained model object (e.g., best_model).
+            model_name (str): The base name for the output model file.
+            output_dir (str): The directory where the model file will be saved.
+        """
+        model.eval()
+        pytorch_path = os.path.join(output_dir, model_name + '.pt')
+        
+        print_info(f"Saving final PyTorch model (state_dict) to '{pytorch_path}'")
+        
+        try:
+            torch.save(model.state_dict(), pytorch_path)
+            print_info("PyTorch model saved successfully.")
+            
+        except Exception as e:
+            print_info(f"ERROR: PyTorch model save failed. Details: {e}")
+
+
+    def train_model(self, X, dataset, max_steps, log_path, table_updater, resume_from_dir=None):
         
         import itertools 
 
@@ -524,6 +549,9 @@ class Model(nn.Module):
         best_ema_loss_for_stopping = float('inf')
         steps_without_improvement = 0
         ema_alpha = self.config.get("ema_alpha", 0.01)
+
+        FILTER_INTERVAL_STEPS = self.config.get("filter_interval_steps", 10)
+        LOSS_THRESHOLD = self.config.get("loss_threshold_for_easy", 0.01)
 
         default_patience_steps = int(max_steps * 0.15)
         user_patience = self.config.get("early_stopping_patience", None)
@@ -592,9 +620,8 @@ class Model(nn.Module):
 
         training_loop = tqdm(data_iterator, total=max_steps, desc="Training", initial=start_step)
         for step_ndx, data in enumerate(training_loop, start=start_step):
-            
-            # current_loss = MetricLoss(self, data, step_ndx=step_ndx, logger=logger)
-            current_loss = BiasWeightedLoss(self, data, step_ndx=step_ndx, logger=logger)
+
+            current_loss, original_indices, per_sample_losses = BiasWeightedLoss(self, data, step_ndx, logger)
 
             if current_loss is not None:
                 self.history["loss"].append(current_loss)
@@ -614,6 +641,17 @@ class Model(nn.Module):
                             worst_idx = [i for i, s in enumerate(self.best_training_scores) if s['stable_loss'] == worst_score][0]
                             self.best_training_checkpoints[worst_idx] = copy.deepcopy(self.state_dict())
                             self.best_training_scores[worst_idx] = {"step": step_ndx, "stable_loss": current_score}
+
+            if (step_ndx + 1) % FILTER_INTERVAL_STEPS == 0 and step_ndx > 0:
+                easy_mask = per_sample_losses < LOSS_THRESHOLD
+                easy_indices_in_batch = original_indices[easy_mask].tolist()
+                
+                if easy_indices_in_batch:
+                    dataset.mark_as_easy(easy_indices_in_batch)
+                    
+                    training_loop.set_description(
+                        f"Training (Hard samples: {len(dataset)}/{dataset.total_samples})"
+                    )
 
             if patience > 0 and ema_loss is not None:
                 if ema_loss < best_ema_loss_for_stopping - min_delta:
@@ -1162,8 +1200,6 @@ def train(cli_args=None):
                 n_cpus = max(1, int(n_cpus * cpu_usage_ratio))
                  
                 feature_extractor = AudioFeatures(device="gpu" if torch.cuda.is_available() else "cpu")
-
-
                 sample_embedding_shape = feature_extractor.get_embedding_shape(config["total_length"] / 16000)
                 output_shape = (total_clips_to_generate, sample_embedding_shape[0], sample_embedding_shape[1])
                 
@@ -1218,14 +1254,7 @@ def train(cli_args=None):
         if len(dataset) == 0:
             raise ValueError("CRITICAL: Dataset is empty. Check your feature file paths in the manifest.")
 
-        # Get sample weights for WeightedRandomSampler
-        sample_weights = dataset.get_sample_weights()
-                
-        sampler = WeightedRandomSampler(
-            weights=sample_weights,
-            num_samples=len(dataset), 
-            replacement=True
-        )
+        sampler = HardSampleFilterSampler(dataset)
 
         # DataLoader
         num_workers = config.get("num_workers", 2)
@@ -1241,7 +1270,7 @@ def train(cli_args=None):
 
         # Shape deteced
         try:
-            sample_feature, _ = dataset[0]
+            _, sample_feature, _ = dataset[0]
             input_shape = sample_feature.shape
             seconds_per_example = (1280 * input_shape[0]) / 16000 
             print_info(f"Input Shape Detected: {input_shape} ({seconds_per_example:.2f}s context)")
@@ -1272,6 +1301,7 @@ def train(cli_args=None):
         
         best_model = nww.auto_train(
             X_train=X_train,
+            dataset=dataset,
             steps=config.get("steps", 15000),
             debug_path=artifacts_dir,
             table_updater=dynamic_table,
@@ -1289,6 +1319,11 @@ def train(cli_args=None):
             output_dir=model_save_dir
         )
 
+        nww.export_pytorch_model(
+            model=best_model,
+            model_name=config.get("model_name", GNMV(config.get("model_type", "dnn"))),
+            output_dir=model_save_dir
+        )
 
         if config.get("enable_journaling", True):
             final_metrics = {}

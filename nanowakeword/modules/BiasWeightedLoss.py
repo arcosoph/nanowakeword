@@ -5,9 +5,8 @@ def BiasWeightedLoss(self, data, step_ndx, logger):
     LOSS_BIAS = self.config.get("LOSS_BIAS", 0.8)
 
     # Data Setup 
-    x, y = data
+    original_indices, x, y = data
     x = x.to(self.device)
-    
     y = y.to(self.device).float().view(-1) 
 
     self.optimizer.zero_grad()
@@ -22,21 +21,16 @@ def BiasWeightedLoss(self, data, step_ndx, logger):
     
     epsilon = 1e-7
     
-    # Calculate term for Positives
-    # If yt=0, then this entire line will become 0.
-    pos_term = -(yt) * torch.log(yp + epsilon)
+    pos_term_per_sample = -(yt) * torch.log(yp + epsilon)
+    neg_term_per_sample = -(1 - yt) * torch.log(1 - yp + epsilon)
+    per_sample_loss = pos_term_per_sample + neg_term_per_sample
     
-    # Calculate term for Negatives
-    # If yt=1, then (1-yt) = 0, so the entire line becomes 0.
-    neg_term = -(1 - yt) * torch.log(1 - yp + epsilon)
-    
-    neg_loss_mean = neg_term.mean()
-    pos_loss_mean = pos_term.mean()
-    
+    neg_loss_mean = neg_term_per_sample.mean()
+    pos_loss_mean = pos_term_per_sample.mean()
+
     total = (LOSS_BIAS * neg_loss_mean) + ((1.0 - LOSS_BIAS) * pos_loss_mean)
     
-    # Optimization 
-    # History tracking (Optional, for your graph)
+    # History tracking 
     if not hasattr(self, 'state'):
         self.state = {'loss_hist': [], 'fa_ema': 0.0, 'miss_ema': 0.0}
     self.state['loss_hist'].append(total.item())
@@ -50,6 +44,7 @@ def BiasWeightedLoss(self, data, step_ndx, logger):
                 max_norm=1.0
                )
     
+    # Optimization 
     self.optimizer.step()
     self.scheduler.step()
     
@@ -70,8 +65,8 @@ def BiasWeightedLoss(self, data, step_ndx, logger):
             Ms = (yp[is_pos] < 0.5).float().mean().item() if is_pos.sum() > 0 else 0.0
 
             # Positive & Negative Loss
-            PosL = pos_term.mean().item()
-            NegL = neg_term.mean().item()
+            PosL = neg_term_per_sample.mean().item()
+            NegL = neg_term_per_sample.mean().item()
 
             logger.info(
                 f"[{step_ndx:5d}] L:{total.item():.6f} "
@@ -79,4 +74,5 @@ def BiasWeightedLoss(self, data, step_ndx, logger):
                 f"|FA:{FA:.3f} Ms:{Ms:.3f} |η:{current_lr:.2e} gNorm:{grad_norm:.3f}"
             )
 
-    return total.detach().cpu().item()
+    # return total.detach().cpu().item()
+    return total.detach().cpu().item(), original_indices, per_sample_loss.detach()
