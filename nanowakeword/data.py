@@ -622,27 +622,27 @@ def generate_adversarial_texts(input_text: str, N: int, include_partial_phrase: 
         Parameters
         ----------
         input_text : str
-            The target text for which to generate adversarial examples.
+                     The target text for which to generate adversarial examples.
         N : int
             The total number of unique adversarial texts to return.
         include_partial_phrase : float, optional
-                                Probability (0.0–1.0) of creating a base adversarial phrase with
-                                fewer words than the original `input_text`. Default is 0.0.
+                                 Probability (0.0–1.0) of creating a base adversarial phrase with
+                                 fewer words than the original `input_text`. Default is 0.0.
         include_input_words : float, optional
-                            Probability (0.0–1.0) of keeping an original word from `input_text`
-                            in the base adversarial phrase instead of replacing it with a
-                            phonetically similar word. Default is 0.0.
-                                
-            Example for "ok google":
-                                A value > 0.0 allows outputs like "ok noodle", preserving "ok".
+                              Probability (0.0–1.0) of keeping an original word from `input_text`
+                              in the base adversarial phrase instead of replacing it with a
+                              phonetically similar word. Default is 0.0.
+                                   
+                Example for "ok google":
+                                        A value > 0.0 allows outputs like "ok module", preserving "ok".
         multi_word_prob : float, optional
-                        Probability (0.0–1.0) of expanding the base adversarial phrase by
-                        embedding it within a longer phrase of random dictionary words. This
-                        applies to any input length. Default is 0.4.
+                          Probability (0.0–1.0) of expanding the base adversarial phrase by
+                          embedding it within a longer phrase of random dictionary words. This
+                          applies to any input length. Default is 0.4.
         max_multi_word_len : int, optional
-                            The maximum total words for an expanded phrase generated via
-                            `multi_word_prob`. This sets the upper limit for the final phrase
-                            length. Default is 3.
+                             The maximum total words for an expanded phrase generated via
+                             `multi_word_prob`. This sets the upper limit for the final phrase
+                             length. Default is 3.
 
         Returns
         -------
