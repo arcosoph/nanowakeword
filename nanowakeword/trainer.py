@@ -45,6 +45,7 @@ from logging.handlers import RotatingFileHandler
 from nanowakeword.config_generator import ConfigGenerator
 
 from .data import HardSampleFilterSampler
+# from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.utils.data import DataLoader
 from nanowakeword.data import augment_clips, WakeWordDataset, generate_adversarial_texts
 
@@ -642,9 +643,12 @@ class Model(nn.Module):
                             self.best_training_checkpoints[worst_idx] = copy.deepcopy(self.state_dict())
                             self.best_training_scores[worst_idx] = {"step": step_ndx, "stable_loss": current_score}
 
-            if (step_ndx + 1) % FILTER_INTERVAL_STEPS == 0 and step_ndx > 0:
-                easy_mask = per_sample_losses < LOSS_THRESHOLD
-                easy_indices_in_batch = original_indices[easy_mask].tolist()
+            if (step_ndx + 1) % FILTER_INTERVAL_STEPS == 0 and step_ndx > 0:   
+
+                current_device = per_sample_losses.device                
+                indices_on_correct_device = original_indices.to(current_device)                
+                easy_mask = per_sample_losses < LOSS_THRESHOLD                
+                easy_indices_in_batch = indices_on_correct_device[easy_mask].cpu().tolist()
                 
                 if easy_indices_in_batch:
                     dataset.mark_as_easy(easy_indices_in_batch)
