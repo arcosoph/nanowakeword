@@ -899,6 +899,8 @@ def train(cli_args=None):
 
         include_partial_phrase= base_config.get("include_partial_phrase", 0.5)
         include_input_words= base_config.get("include_input_words", 0.7)
+        multi_word_prob = base_config.get("multi_word_prob", 0.4)
+        max_multi_word_len= base_config.get("max_multi_word_len", 3)
 
         final_negative_texts = []
 
@@ -926,7 +928,14 @@ def train(cli_args=None):
                     print_info(f"Generating {gap} auto-adversarial phrases to fill the gap.")
                     
                     # Generate phonetically similar words to fill the remaining count
-                    auto_adversarial = generate_adversarial_texts(target_phrase[0], N=gap, include_partial_phrase=include_partial_phrase, include_input_words=include_input_words)
+                    auto_adversarial = generate_adversarial_texts(
+                                                                  target_phrase[0], 
+                                                                  N=gap, 
+                                                                  include_input_words=include_input_words, 
+                                                                  include_partial_phrase=include_partial_phrase, 
+                                                                  multi_word_prob=multi_word_prob,
+                                                                  max_multi_word_len=max_multi_word_len)
+                    
                     final_negative_texts.extend(auto_adversarial)
                 else:
                     print_info(f"Target is {target_total_neg}, but auto-adversarial generation is DISABLED.")

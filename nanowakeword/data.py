@@ -535,6 +535,7 @@ def trim_mmap(target_path):
         
     os.rename(temp_filepath, target_path)
 
+
 _PHONEMIZE_AVAILABLE = True
 try:
     from phonemize.preprocessing.text import (
@@ -554,8 +555,6 @@ def _require_phonemize():
             "Phonemize support is not available. Please `pip install phonemize` package to use this feature."
         )
     
-
-
 # Generate words that sound similar ("adversarial") to the input phrase using phoneme overlap
 def _require_phonemize():
     """Helper to ensure phonemize is ready"""
@@ -585,53 +584,71 @@ def phoneme_replacement(input_chars, max_replace, replace_char='"(.){1,3}"'):
             results.append(' '.join(chars_copy))
     return results
 
-def generate_adversarial_texts(input_text: str, N: int, include_partial_phrase: float = 0.0, include_input_words: float = 0.0):
+_DICTIONARY_WORDS = None
 
-    """
-    Generate adversarial words and phrases based on phonetic (phoneme-level) similarity.
+def _get_dictionary_words():
+    """Loads and filters words from the Pronunciation library dictionary."""
+    global _DICTIONARY_WORDS
+    if _DICTIONARY_WORDS is not None:
+        return _DICTIONARY_WORDS
+    
+    print_info("Preparing dictionary, this may take a moment...")
 
-    This function creates phonetically similar but non-identical words or phrases
-    to a given input text. The generated outputs are intended to act as adversarial
-    examples, meaning they sound similar to the original input but differ in spelling
-    and meaning.
+    all_words = pronouncing.cmudict.words()
+    # Only common words of 3 to 8 letters are being selected
+    _DICTIONARY_WORDS = [w for w in all_words if 3 <= len(w) <= 8 and w.isalpha()]
+    return _DICTIONARY_WORDS
 
-    - Currently supports **English text only**.
-    - Exact homophones are intentionally excluded, as they do not constitute true
-    adversarial examples for the original input.
+def generate_adversarial_texts(input_text: str, N: int, include_partial_phrase: float = 0.0, include_input_words: float = 0.0, multi_word_prob: float = 0.4, max_multi_word_len: int = 3):
 
-    Parameters
-    ----------
-    input_text : str
-        The target text for which adversarial words or phrases will be generated.
+    """Generates phonetically similar adversarial words and phrases.
 
-    N : int
-        The total number of adversarial texts to return. The generation process
-        relies on sampling, so:
-        - Not all possible combinations are guaranteed to appear.
-        - Duplicate outputs may occur.
+        This function creates words or phrases that sound similar to the input
+        text but are spelled differently. These "adversarial examples" are useful
+        for testing speech recognition models and other phonetic-based systems.
 
-    include_partial_phrase : float
-                            Probability (0.0–1.0) of generating adversarial phrases that contain fewer
-                            words than the input text. The number of words will always be between
-                            1 and the total number of words in `input_text`.
+        The process works in two potential stages:
+        1.  A "base" adversarial phrase is generated using phonetic matching. The
+            parameters `include_partial_phrase` and `include_input_words` control
+            the structure of this base phrase.
+        2.  Optionally, this base phrase is then embedded within a longer, more
+            complex phrase using random words from a dictionary. This expansion is
+            controlled by `multi_word_prob` and `max_multi_word_len`.
 
-    include_input_words : float
-                        Probability (0.0–1.0) of retaining individual words from the original
-                        input text when generating adversarial phrases (only applicable when
-                        the input consists of multiple words).
-                            
-        Example:
-                input_text = "ok google"
-                A value > 0.0 allows outputs like "ok noodle",
-                whereas a value of 0.0 prevents original words like "ok"
-                from appearing in the adversarial results.
+        Note:
+            This function currently supports English text only. Exact homophones
+            (words with the same sound and spelling) are excluded from results.
 
-    Returns
-    -------
-    list[str]
-        A list of words or phrases that are phonetically similar—but not identical—
-        to the input text.
-    """
+        Parameters
+        ----------
+        input_text : str
+            The target text for which to generate adversarial examples.
+        N : int
+            The total number of unique adversarial texts to return.
+        include_partial_phrase : float, optional
+                                Probability (0.0–1.0) of creating a base adversarial phrase with
+                                fewer words than the original `input_text`. Default is 0.0.
+        include_input_words : float, optional
+                            Probability (0.0–1.0) of keeping an original word from `input_text`
+                            in the base adversarial phrase instead of replacing it with a
+                            phonetically similar word. Default is 0.0.
+                                
+            Example for "ok google":
+                                A value > 0.0 allows outputs like "ok noodle", preserving "ok".
+        multi_word_prob : float, optional
+                        Probability (0.0–1.0) of expanding the base adversarial phrase by
+                        embedding it within a longer phrase of random dictionary words. This
+                        applies to any input length. Default is 0.4.
+        max_multi_word_len : int, optional
+                            The maximum total words for an expanded phrase generated via
+                            `multi_word_prob`. This sets the upper limit for the final phrase
+                            length. Default is 3.
+
+        Returns
+        -------
+        list[str]
+            A list of phonetically similar words or phrases.
+        """
 
     _require_phonemize()
     
@@ -722,33 +739,26 @@ def generate_adversarial_texts(input_text: str, N: int, include_partial_phrase: 
     attempts = 0
     consecutive_failures = 0
     
+    dictionary_words = _get_dictionary_words()
+    
     while len(results) < N and attempts < max_attempts:
         attempts += 1
         
-        # Build one candidate phrase
         current_selection = []
         
-        # Decide word count (Partial logic), If partial prob is high, we might pick fewer words
-        if len(input_words) > 1 and np.random.random() <= curr_inc_partial_prob:
-            # Pick a random length between 1 and total words
+        # Determining the number of words according to the include_partial_phrase parameter
+        if len(input_words) > 1 and np.random.random() <= include_partial_phrase:
             target_len = np.random.randint(1, len(input_words) + 1)
-            # Pick random indices to keep
             indices = sorted(np.random.choice(range(len(input_words)), target_len, replace=False))
         else:
             indices = range(len(input_words))
 
-        # Build the phrase based on indices
+        # Selecting the main word or its synonyms according to the include_input_words parameter
         for idx in indices:
             original_word = input_words[idx]
             candidates = adversarial_phrases_map[idx]
-            
-            # Decide: Use original word or adversarial word?
             use_original = False
-            
-            if not candidates:
-                # If no candidates exist, we MUST use original (or skip if logic allowed, but here we keep structure)
-                use_original = True
-            elif np.random.random() <= curr_inc_input_prob:
+            if not candidates or np.random.random() <= include_input_words:
                 use_original = True
             
             if use_original:
@@ -756,20 +766,37 @@ def generate_adversarial_texts(input_text: str, N: int, include_partial_phrase: 
             else:
                 current_selection.append(np.random.choice(candidates))
         
-        candidate_text = " ".join(current_selection)
-        
-        # Check validity: Not empty, not exactly the input (unless input was 1 word and no candidates exist)
-        if candidate_text and candidate_text != cleaned_input:
-            if candidate_text not in results:
-                results.add(candidate_text)
-                consecutive_failures = 0 # Reset failure counter
+        base_adversarial_phrase = " ".join(current_selection)
+
+        final_candidate_text = base_adversarial_phrase 
+        dictionary_words = _get_dictionary_words()
+
+        if dictionary_words and np.random.random() < multi_word_prob:
+            
+            # Set the length of the new sentence (longer than the base phrase, up to max_multi_word_len)
+            base_len = len(base_adversarial_phrase.split())
+            if base_len < max_multi_word_len:
+                phrase_len = np.random.randint(base_len + 1, max_multi_word_len + 1)
+                
+                num_random_words = phrase_len - base_len
+                
+                random_words = list(np.random.choice(dictionary_words, num_random_words, replace=False))
+                
+                new_phrase_list = random_words + [base_adversarial_phrase]
+                np.random.shuffle(new_phrase_list)
+                
+                final_candidate_text = " ".join(new_phrase_list)
+
+        if final_candidate_text and final_candidate_text != cleaned_input:
+            if final_candidate_text not in results:
+                results.add(final_candidate_text)
+                consecutive_failures = 0
             else:
                 consecutive_failures += 1
         else:
             consecutive_failures += 1
-            
-        # Automatic Parameter Adjustment Logic
-        # If we fail to find a NEW word for 50 tries in a row, relax constraints
+        
+        # Automatic Parameter Adjustment Logic 
         if consecutive_failures > 50:
             changed = False
             if curr_inc_input_prob < 1.0:
@@ -781,11 +808,7 @@ def generate_adversarial_texts(input_text: str, N: int, include_partial_phrase: 
                 changed = True
             
             if changed:
-                # logging.info(f"Struggling to find unique phrases. Relaxing constraints: InputProb={curr_inc_input_prob:.2f}, PartialProb={curr_inc_partial_prob:.2f}")
-                consecutive_failures = 0 # Reset to give new params a chance
-            else:
-                # If we are already at 1.0 for both and still failing, we might just break early
-                # But let's keep trying until max_attempts just in case random sampling helps
-                pass
+                consecutive_failures = 0
+
 
     return list(results)
