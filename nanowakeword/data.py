@@ -754,17 +754,33 @@ def generate_adversarial_texts(input_text: str, N: int, include_partial_phrase: 
             indices = range(len(input_words))
 
         # Selecting the main word or its synonyms according to the include_input_words parameter
+        changeable_indices = [
+            idx for idx in indices 
+            if adversarial_phrases_map[idx]
+        ]
+
+        guaranteed_change_index = -1
+        if changeable_indices:
+            guaranteed_change_index = np.random.choice(changeable_indices)
+
+        if guaranteed_change_index == -1:
+            continue
+
         for idx in indices:
             original_word = input_words[idx]
             candidates = adversarial_phrases_map[idx]
-            use_original = False
-            if not candidates or np.random.random() <= include_input_words:
-                use_original = True
             
-            if use_original:
-                current_selection.append(original_word)
-            else:
+            if idx == guaranteed_change_index:
                 current_selection.append(np.random.choice(candidates))
+            else:
+                use_original = False
+                if not candidates or np.random.random() <= include_input_words:
+                    use_original = True
+                
+                if use_original:
+                    current_selection.append(original_word)
+                else:
+                    current_selection.append(np.random.choice(candidates))
         
         base_adversarial_phrase = " ".join(current_selection)
 
