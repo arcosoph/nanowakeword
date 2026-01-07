@@ -826,5 +826,4 @@ def generate_adversarial_texts(input_text: str, N: int, include_partial_phrase: 
             if changed:
                 consecutive_failures = 0
 
-
     return list(results)

@@ -45,7 +45,6 @@ from logging.handlers import RotatingFileHandler
 from nanowakeword.config_generator import ConfigGenerator
 
 from .data import HardSampleFilterSampler
-# from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.utils.data import DataLoader
 from nanowakeword.data import augment_clips, WakeWordDataset, generate_adversarial_texts
 
@@ -551,7 +550,7 @@ class Model(nn.Module):
         steps_without_improvement = 0
         ema_alpha = self.config.get("ema_alpha", 0.01)
 
-        FILTER_INTERVAL_STEPS = self.config.get("filter_interval_steps", 10)
+        FILTER_INTERVAL_STEPS = self.config.get("filter_interval_steps", 500)
         LOSS_THRESHOLD = self.config.get("loss_threshold_for_easy", 0.01)
 
         default_patience_steps = int(max_steps * 0.15)
@@ -902,9 +901,9 @@ def train(cli_args=None):
         repeats_per_phrase = int(base_config.get("custom_negative_per_phrase", 50))
 
         include_partial_phrase= base_config.get("include_partial_phrase", 0.5)
-        include_input_words= base_config.get("include_input_words", 0.7)
-        multi_word_prob = base_config.get("multi_word_prob", 0.4)
-        max_multi_word_len= base_config.get("max_multi_word_len", 3)
+        include_input_words= base_config.get("include_input_words", 0.1)
+        multi_word_prob = base_config.get("multi_word_prob", 0.8)
+        max_multi_word_len= base_config.get("max_multi_word_len", 2)
 
         final_negative_texts = []
 
@@ -1347,7 +1346,7 @@ def train(cli_args=None):
                 final_metrics["Avg. Neg Conf"] = report.get("Avg. Negative Score (Logit)", "N/A")
 
             final_metrics["Train Time"] = f"{training_duration_minutes:.1f}"
-            base_output_directory = os.path.abspath(base_config["output_dir"])
+            base_output_directory = os.path.abspath(config["output_dir"])
 
             update_training_journal(
                 base_output_dir=base_output_directory,

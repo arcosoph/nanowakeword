@@ -122,36 +122,36 @@ class ConfigGenerator:
         dropout_prob = clamp(0.6 + (overfitting_risk * (self.C['dropout_risk_scaler'] * 1.5)), 0.4, 0.8)
         self.config['dropout_prob'] = dropout_prob
 
-        pos_data_score = clamp(np.log1p(H_pos / 0.5) / np.log1p(4), 0.0, 1.0)
-        cleanliness_score = clamp(1 - (A_noise / 0.25), 0.0, 1.0)
-        signal_strength = (pos_data_score + cleanliness_score) / 2.0
+                        # - These are temporarily closed - #
+        # pos_data_score = clamp(np.log1p(H_pos / 0.5) / np.log1p(4), 0.0, 1.0)
+        # cleanliness_score = clamp(1 - (A_noise / 0.25), 0.0, 1.0)
+        # signal_strength = (pos_data_score + cleanliness_score) / 2.0
 
         # Calculate RIR Probability
-        rir_availability_factor = clamp(N_rir / 100.0, 0.0, 1.0) # This will be 1 in 100 RIR files
-        base_rir_prob = 0.20 + (0.45 * signal_strength) # Probability will be between 0.20 and 0.65
-        rir = clamp(base_rir_prob * rir_availability_factor, 0.0, 0.65)
+        # rir_availability_factor = clamp(N_rir / 100.0, 0.0, 1.0) # This will be 1 in 100 RIR files
+        # base_rir_prob = 0.20 + (0.45 * signal_strength) # Probability will be between 0.20 and 0.65
+        # rir = clamp(base_rir_prob * rir_availability_factor, 0.0, 0.65)
 
         # Calculate Background Noise Probability
-        noise_availability_factor = clamp(H_noise / 1.5, 0.0, 1.0) # It will be 1 for 1.5 hours of noise data
-        base_noise_prob = 0.30 + (0.40 * signal_strength) # Probability will be between 0.30 and 0.70
-        backgroundnoise = clamp(base_noise_prob * noise_availability_factor, 0.0, 0.70)
+        # noise_availability_factor = clamp(H_noise / 1.5, 0.0, 1.0) # It will be 1 for 1.5 hours of noise data
+        # base_noise_prob = 0.30 + (0.40 * signal_strength) # Probability will be between 0.30 and 0.70
+        # backgroundnoise = clamp(base_noise_prob * noise_availability_factor, 0.0, 0.70)
 
-        self.config['augmentation_settings'] = {
-            'RIR': rir,
-            'AddBackgroundNoise': backgroundnoise
-         }
+        # self.config['augmentation_settings'] = {    # It has been temporarily turn of.
+        #     'RIR': rir,
+        #     'AddBackgroundNoise': backgroundnoise
+        #  }
 
         # Determine the SNR range       
-        SNR_MIN_HARD = -10  
-        SNR_MIN_EASY = -2  
+        # SNR_MIN_HARD = -10  
+        # SNR_MIN_EASY = -2  
         
-        SNR_MAX_HARD = 10   
-        SNR_MAX_EASY = 20  
+        # SNR_MAX_HARD = 10   
+        # SNR_MAX_EASY = 20  
 
-        self.config['min_snr_in_db'] = SNR_MIN_EASY + (SNR_MIN_HARD - SNR_MIN_EASY) * signal_strength
-        self.config['max_snr_in_db'] = SNR_MAX_EASY + (SNR_MAX_HARD - SNR_MAX_EASY) * signal_strength
+        # self.config['min_snr_in_db'] = SNR_MIN_EASY + (SNR_MIN_HARD - SNR_MIN_EASY) * signal_strength # It has been temporarily turn of
+        # self.config['max_snr_in_db'] = SNR_MAX_EASY + (SNR_MAX_HARD - SNR_MAX_EASY) * signal_strength # It has been temporarily turn of
 
-    
         # 
         num_cycles = clamp(effective_data_volume / 25, 2, 4)
         total_cycle_steps = self.config['steps'] / num_cycles
