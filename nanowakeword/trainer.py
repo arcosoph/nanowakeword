@@ -125,7 +125,7 @@ class Model(nn.Module):
 
         self.debug_save_dir = None
 
-        if model_type.lower() in {"quartznet", "conformer", "e_branchformer", "crnn"}:
+        if model_type.lower() in {"conformer", "e_branchformer", "crnn"}:
             print_info(f"\n[WARNING] The '{model_type.upper()}' architecture is highly sensitive to hyperparameters and may exhibit convergence instability.\n")
 
         if model_type == "cnn":
