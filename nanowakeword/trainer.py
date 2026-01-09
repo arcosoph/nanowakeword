@@ -44,8 +44,8 @@ import matplotlib.pyplot as plt
 from logging.handlers import RotatingFileHandler
 from nanowakeword.config_generator import ConfigGenerator
 
-from .data import HardSampleFilterSampler
 from torch.utils.data import DataLoader
+from .data import DynamicClassAwareSampler
 from nanowakeword.data import augment_clips, WakeWordDataset, generate_adversarial_texts
 
 from nanowakeword.modules import BiasWeightedLoss
@@ -344,7 +344,7 @@ class Model(nn.Module):
                 return avg_state_dict
 
 
-    def auto_train(self, X_train, dataset, steps, table_updater, debug_path, resume_from_dir=None):
+    def auto_train(self, X_train, steps, table_updater, debug_path, resume_from_dir=None):
             """
             A modern, single-sequence training process that combines the best checkpoints to
               create a final and robust model.
@@ -352,7 +352,6 @@ class Model(nn.Module):
 
             self.train_model(
                 X=X_train,
-                dataset=dataset,
                 max_steps=steps,
                 log_path=debug_path,
                 table_updater=table_updater,
@@ -394,7 +393,9 @@ class Model(nn.Module):
 
             try:
                 with torch.no_grad():
-                    _, x_batch, y_batch = next(iter(X_train))
+                    # Get a sample batch, which now contains features, labels, and indices
+                    x_batch, y_batch, _ = next(iter(X_train)) # Unpack all three, but ignore the index
+                    
                     confidence_batch_x = x_batch.to(self.device)
                     confidence_batch_y = y_batch.to(self.device)
 
@@ -403,8 +404,16 @@ class Model(nn.Module):
                     pos_preds = predictions[confidence_batch_y.squeeze() == 1]
                     neg_preds = predictions[confidence_batch_y.squeeze() == 0]
 
-                    final_results["Avg. Positive Score (Logit)"] = f"{pos_preds.mean().item():.3f}"
-                    final_results["Avg. Negative Score (Logit)"] = f"{neg_preds.mean().item():.3f}"
+                    # Ensure we have predictions to average to avoid NaN errors
+                    if pos_preds.numel() > 0:
+                        final_results["Avg. Positive Score (Logit)"] = f"{pos_preds.mean().item():.3f}"
+                    else:
+                        final_results["Avg. Positive Score (Logit)"] = "N/A (No positives in batch)"
+
+                    if neg_preds.numel() > 0:
+                        final_results["Avg. Negative Score (Logit)"] = f"{neg_preds.mean().item():.3f}"
+                    else:
+                        final_results["Avg. Negative Score (Logit)"] = "N/A (No negatives in batch)"
 
             except (StopIteration, RuntimeError) as e:
                 final_results["Confidence Score"] = f"N/A (Error: {e})"
@@ -502,7 +511,7 @@ class Model(nn.Module):
             print_info(f"ERROR: PyTorch model save failed. Details: {e}")
 
 
-    def train_model(self, X, dataset, max_steps, log_path, table_updater, resume_from_dir=None):
+    def train_model(self, X, max_steps, log_path, table_updater, resume_from_dir=None):
         
         import itertools 
 
@@ -549,9 +558,6 @@ class Model(nn.Module):
         best_ema_loss_for_stopping = float('inf')
         steps_without_improvement = 0
         ema_alpha = self.config.get("ema_alpha", 0.01)
-
-        FILTER_INTERVAL_STEPS = self.config.get("filter_interval_steps", 500)
-        LOSS_THRESHOLD = self.config.get("loss_threshold_for_easy", 0.01)
 
         default_patience_steps = int(max_steps * 0.15)
         user_patience = self.config.get("early_stopping_patience", None)
@@ -617,11 +623,31 @@ class Model(nn.Module):
                 print_info(f"WARNING: Checkpoint directory not found at '{resume_checkpoint_dir}'. Starting fresh.")
         
         table_updater.update(force_print=True)
-
+        
         training_loop = tqdm(data_iterator, total=max_steps, desc="Training", initial=start_step)
         for step_ndx, data in enumerate(training_loop, start=start_step):
 
-            current_loss, original_indices, per_sample_losses = BiasWeightedLoss(self, data, step_ndx, logger)
+            # The 'data' variable will now contain features, labels, and indices
+            features, labels, indices = data
+            # Call the loss function, which now returns two values
+            total_loss, per_example_loss = BiasWeightedLoss(self, (features, labels), step_ndx=step_ndx, logger=logger)
+
+            # Live Feedback Loop, Update Hardness Scores
+            # Using Exponential Moving Average (EMA) for stable updates
+            alpha = 0.1  # Smoothing factor
+
+            # Get the old hardness scores for the samples in this batch
+            # We access the dataset via the DataLoader object 'X'
+            old_hardness = X.dataset.sample_hardness[indices].to(self.device)
+
+            # Calculate the new hardness score based on the current loss
+            new_hardness = (alpha * per_example_loss) + ((1.0 - alpha) * old_hardness)
+
+            # Update the scores in the dataset's memory (move back to CPU)
+            X.dataset.sample_hardness[indices] = new_hardness.cpu()
+
+            # Use the 'total_loss' for history and EMA calculation
+            current_loss = total_loss.detach().cpu().item()
 
             if current_loss is not None:
                 self.history["loss"].append(current_loss)
@@ -641,20 +667,6 @@ class Model(nn.Module):
                             worst_idx = [i for i, s in enumerate(self.best_training_scores) if s['stable_loss'] == worst_score][0]
                             self.best_training_checkpoints[worst_idx] = copy.deepcopy(self.state_dict())
                             self.best_training_scores[worst_idx] = {"step": step_ndx, "stable_loss": current_score}
-
-            if (step_ndx + 1) % FILTER_INTERVAL_STEPS == 0 and step_ndx > 0:   
-
-                current_device = per_sample_losses.device                
-                indices_on_correct_device = original_indices.to(current_device)                
-                easy_mask = per_sample_losses < LOSS_THRESHOLD                
-                easy_indices_in_batch = indices_on_correct_device[easy_mask].cpu().tolist()
-                
-                if easy_indices_in_batch:
-                    dataset.mark_as_easy(easy_indices_in_batch)
-                    
-                    training_loop.set_description(
-                        f"Training (Hard samples: {len(dataset)}/{dataset.total_samples})"
-                    )
 
             if patience > 0 and ema_loss is not None:
                 if ema_loss < best_ema_loss_for_stopping - min_delta:
@@ -690,6 +702,15 @@ class Model(nn.Module):
                     
             if step_ndx >= max_steps - 1:
                 break
+
+def collate_fn_with_indices(batch):
+    """
+    Custom collate function that handles features, labels, and indices.
+    """
+    features = torch.stack([item[0] for item in batch])
+    labels = torch.stack([item[1] for item in batch])
+    indices = torch.tensor([item[2] for item in batch], dtype=torch.long)
+    return features, labels, indices
 
 
 def train(cli_args=None):
@@ -900,9 +921,9 @@ def train(cli_args=None):
         custom_negatives = base_config.get("custom_negative_phrases", [])
         repeats_per_phrase = int(base_config.get("custom_negative_per_phrase", 50))
 
-        include_partial_phrase= base_config.get("include_partial_phrase", 0.5)
-        include_input_words= base_config.get("include_input_words", 0.1)
-        multi_word_prob = base_config.get("multi_word_prob", 0.8)
+        include_partial_phrase= base_config.get("include_partial_phrase", 0.09)
+        include_input_words= base_config.get("include_input_words", 0.2)
+        multi_word_prob = base_config.get("multi_word_prob", 0.9)
         max_multi_word_len= base_config.get("max_multi_word_len", 2)
 
         final_negative_texts = []
@@ -1245,44 +1266,87 @@ def train(cli_args=None):
     if args.train_model is True or should_train:
         training_start_time = time.time()
 
-        # Get all positive and negative file paths from .yaml
+        # Get the feature manifest from the config
         manifest = config.get("feature_manifest", {})
-        positive_paths = list(manifest.get("targets", {}).values())
 
-        negative_paths = list(manifest.get("negatives", {}).values())
-        negative_paths.extend(list(manifest.get("backgrounds", {}).values()))
-
-        positive_paths = [p for p in positive_paths if p]
-        negative_paths = [p for p in negative_paths if p]
-
-        if not positive_paths or not negative_paths:
-            raise ValueError("CRITICAL: 'targets' and at least one of 'negatives' or 'backgrounds' must be defined in the feature_manifest.")
-
+        # Pass the full manifest dictionary to the dataset
         dataset = WakeWordDataset(
-            positive_feature_paths=positive_paths,
-            negative_feature_paths=negative_paths
+            feature_manifests=manifest
         )
 
         if len(dataset) == 0:
             raise ValueError("CRITICAL: Dataset is empty. Check your feature file paths in the manifest.")
 
-        sampler = HardSampleFilterSampler(dataset)
+        # Get the batch composition from the config
+        composition_cfg = config.get("batch_composition")
 
-        # DataLoader
+        if not composition_cfg:
+            print_info("'batch_composition' not found in config. Generating a default balanced composition.")
+            
+            # Get the total batch size
+            total_batch_size = config.get('batch_size', 128)
+            
+            # Determine which categories are present in the manifest
+            has_targets = bool(manifest.get("targets"))
+            has_negatives = bool(manifest.get("negatives"))
+            has_backgrounds = bool(manifest.get("backgrounds"))
+            
+            num_categories_present = sum([has_targets, has_negatives, has_backgrounds])
+            
+            if num_categories_present == 0:
+                raise ValueError("CRITICAL: feature_manifest is empty. Cannot create a default batch composition.")
+
+            # A good default ratio: 25% targets, 50% negatives, 25% backgrounds
+            # If a category is missing, its share is distributed among the others.
+            
+            composition_cfg = {}
+            
+            # Calculate default quotas
+            if num_categories_present == 1:
+                # If only one category exists, it gets the full batch size
+                if has_targets: composition_cfg['targets'] = total_batch_size
+                if has_negatives: composition_cfg['negatives'] = total_batch_size
+                if has_backgrounds: composition_cfg['backgrounds'] = total_batch_size
+            elif num_categories_present == 2:
+                # Distribute among two, e.g., 50/50 or 33/67
+                if has_targets and has_negatives:
+                    composition_cfg['targets'] = total_batch_size // 3
+                    composition_cfg['negatives'] = total_batch_size - composition_cfg['targets']
+                elif has_targets and has_backgrounds:
+                    composition_cfg['targets'] = total_batch_size // 2
+                    composition_cfg['backgrounds'] = total_batch_size - composition_cfg['targets']
+                elif has_negatives and has_backgrounds:
+                    composition_cfg['negatives'] = total_batch_size // 2
+                    composition_cfg['backgrounds'] = total_batch_size - composition_cfg['negatives']
+            else: # All three are present
+                composition_cfg['targets'] = total_batch_size // 4       # 25%
+                composition_cfg['backgrounds'] = total_batch_size // 4  # 25%
+                composition_cfg['negatives'] = total_batch_size - (composition_cfg['targets'] + composition_cfg['backgrounds']) # Remaining 50%
+
+            print_info(f"Using default composition: {composition_cfg}")
+
+
+        sampler = DynamicClassAwareSampler(
+            dataset=dataset,
+            batch_composition=composition_cfg,
+            feature_manifests=manifest
+        )
+
+        # Create DataLoader with our custom sampler and collate_fn
+        # Note: We use batch_sampler, and set batch_size=1, shuffle=False etc. for the DataLoader itself.
         num_workers = config.get("num_workers", 2)
         X_train = DataLoader(
             dataset,
-            batch_size=config.get('batch_size', 128),
-            sampler=sampler,
+            batch_sampler=sampler, # Use batch_sampler for samplers that yield full batches
             num_workers=num_workers,
             pin_memory=True if num_workers > 0 else False,
             persistent_workers=True if num_workers > 0 else False,
-            # drop_last=True 
+            collate_fn=collate_fn_with_indices # Use our custom collate function
         )
-
+        
         # Shape deteced
         try:
-            _, sample_feature, _ = dataset[0]
+            sample_feature, _, _ = dataset[0] 
             input_shape = sample_feature.shape
             seconds_per_example = (1280 * input_shape[0]) / 16000 
             print_info(f"Input Shape Detected: {input_shape} ({seconds_per_example:.2f}s context)")
@@ -1290,7 +1354,6 @@ def train(cli_args=None):
             print_info(f"[ERROR] Data integrity check failed: {e}")
             sys.exit(1)
         
-
         # MODEL INITIALIZATION
         print_info("Initializing Neural Architecture...")
         
@@ -1313,7 +1376,6 @@ def train(cli_args=None):
         
         best_model = nww.auto_train(
             X_train=X_train,
-            dataset=dataset,
             steps=config.get("steps", 15000),
             debug_path=artifacts_dir,
             table_updater=dynamic_table,
@@ -1346,7 +1408,7 @@ def train(cli_args=None):
                 final_metrics["Avg. Neg Conf"] = report.get("Avg. Negative Score (Logit)", "N/A")
 
             final_metrics["Train Time"] = f"{training_duration_minutes:.1f}"
-            base_output_directory = os.path.abspath(config["output_dir"])
+            base_output_directory = os.path.abspath(base_config["output_dir"])
 
             update_training_journal(
                 base_output_dir=base_output_directory,

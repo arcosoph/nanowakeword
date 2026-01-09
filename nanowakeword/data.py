@@ -291,184 +291,203 @@ def mmap_batch_generator(source_registry, blueprints, batch_size, input_shape):
 
 
 class WakeWordDataset(Dataset):
-    """
-    An enhanced Dataset class for wake word data that supports dynamic filtering.
 
-    This class handles multiple .npy files for each class (positives, negatives)
-    using efficient memory-mapping. It has been updated to track the "hardness"
-    of each sample. The __len__ and __getitem__ methods are designed to work
-    only on the subset of samples currently marked as "hard", effectively
-    filtering out the "easy" ones that the model has already learned.
-    """
-    def __init__(self, positive_feature_paths: list, negative_feature_paths: list):
+    def __init__(self, feature_manifests: dict):
+        """
+        Initializes the dataset by loading memory-mapped files from a structured manifest.
+        It creates separate index pools for each unique key in the manifest and
+        initializes a hardness score for each sample.
+        """
         super().__init__()
 
-        # Adding its label (1.0 or 0.0) and path to each source
-        self.sources = []
-        if positive_feature_paths:
-            self.sources.extend([(path, 1.0) for path in positive_feature_paths])
-        if negative_feature_paths:
-            self.sources.extend([(path, 0.0) for path in negative_feature_paths])
-
-        if not self.sources:
-            raise ValueError("No feature files provided to the dataset!")
-
+        # Initialize all instance attributes inside the constructor
         self.memmaps = []
-        self.source_info = [] # Will store each file's information (label, length, cumulative length)
-        
+        self.source_info = []
+
+        # This dictionary will store the global indices for each unique source key.
+        # e.g., {'t': tensor([0, 1, ...]), 'n': tensor([1000, 1001, ...])}
+        self.index_pools = {}
+
         cumulative_len = 0
-        self.total_positives = 0
-        self.total_negatives = 0
 
-        for path, label in self.sources:
-            try:
-                memmap = np.load(path, mmap_mode='r')
-                length = len(memmap)
+        # Process each category (e.g., 'targets', 'negatives', 'backgrounds')
+        for category, manifest in feature_manifests.items():
+            if not manifest: continue
+            
+            # Process each source file (key-path pair) within the category
+            for key, path in manifest.items():
+                if not path: continue
                 
-                self.memmaps.append(memmap)
-                self.source_info.append({
-                    'label': label,
-                    'length': length,
-                    'start_index': cumulative_len,
-                    'end_index': cumulative_len + length - 1
-                })
-                
-                cumulative_len += length
+                try:
+                    memmap = np.load(path, mmap_mode='r')
+                    length = len(memmap)
+                    
+                    self.memmaps.append(memmap)
+                    
+                    # Determine the numeric label based on the category
+                    label = 1.0 if category == 'targets' else 0.0
+                    
+                    # Store information about this data source for __getitem__
+                    self.source_info.append({
+                        'label': label,
+                        'length': length,
+                        'start_index': cumulative_len,
+                    })
 
-                if label == 1.0:
-                    self.total_positives += length
-                else:
-                    self.total_negatives += length
+                    # Create and populate the index pool for this specific key
+                    indices_for_this_key = list(range(cumulative_len, cumulative_len + length))
+                    self.index_pools[key] = torch.tensor(indices_for_this_key, dtype=torch.long)
+                    
+                    cumulative_len += length
 
-            except FileNotFoundError:
-                print(f"WARNING: File not found, skipping: {path}")
-            except Exception as e:
-                print(f"WARNING: Could not load file {path}. Error: {e}")
+                except FileNotFoundError:
+                    print(f"WARNING: File not found for key '{key}', skipping: {path}")
+                except Exception as e:
+                    print(f"WARNING: Could not load file for key '{key}'. Error: {e}")
 
         self.total_samples = cumulative_len
-        
-        # A boolean tensor where `True` indicates a sample is still "hard"
-        # and should be used for training. All samples start as hard.
-        self._is_hard_mask = torch.ones(self.total_samples, dtype=torch.bool)
-        
-        # This list holds the original indices (0 to total_samples-1) of all
-        # samples that are currently considered hard. This is the active
-        # set of data the model will train on.
-        self._hard_indices_map = self._get_current_hard_indices()
-        
-        print_info(f"Dataset initialized | Positives: {self.total_positives} | Negatives: {self.total_negatives} | Total: {self.total_samples}")
 
-    def _get_current_hard_indices(self):
-        """Helper function to get a tensor of original indices for all hard samples."""
-        return torch.where(self._is_hard_mask)[0]
-        
+        # This tensor tracks the "hardness" of each individual sample across the entire dataset.
+        # It is initialized to 1.0 for all samples.
+        self.sample_hardness = torch.ones(self.total_samples, dtype=torch.float32)
+
+        print_info(f"Dataset initialized with {len(self.index_pools)} sources | Total samples: {self.total_samples}")
+
     def __len__(self):
-        """
-        The effective length of the dataset is the number of samples
-        currently marked as hard.
-        """
-        return len(self._hard_indices_map)
+        return self.total_samples
 
-    def __getitem__(self, index_in_hard_list):
+    def __getitem__(self, index):
         """
-        Fetches a single data sample using a filtered index.
-        The incoming `index_in_hard_list` is an index into the list of
-        hard samples, which is then mapped to the sample's original index.
+        Fetches a single data sample and its label using a global index.
         """
-        if index_in_hard_list < 0 or index_in_hard_list >= len(self):
-            raise IndexError("Index out of bounds for the current set of hard samples.")
-        
-        # Map the filtered index back to the original, absolute index.
-        original_index = self._hard_indices_map[index_in_hard_list]
+        if index < 0 or index >= self.total_samples:
+            raise IndexError(f"Index {index} out of bounds for dataset with size {self.total_samples}")
 
-        # Use the original index to find the correct file and data.
-        # This logic is the same as your original implementation.
-        file_idx = 0
+        # Find the correct file and local index for the given global index.
+        file_idx = -1
         for i, info in enumerate(self.source_info):
-            if info['start_index'] <= original_index <= info['end_index']:
+            # The file's range is [start_index, start_index + length - 1]
+            if info['start_index'] <= index < (info['start_index'] + info['length']):
                 file_idx = i
                 break
         
-        info = self.source_info[file_idx]
-        local_index = original_index - info['start_index']
+        if file_idx == -1:
+            # This should theoretically never happen if the initial index check passes
+            raise RuntimeError(f"Could not find a data source for index {index}")
+
+        # Calculate the local index within the found file
+        local_index = index - self.source_info[file_idx]['start_index']
+        
         feature = self.memmaps[file_idx][local_index]
-        label = torch.tensor(info['label'], dtype=torch.float32)
+        label = torch.tensor(self.source_info[file_idx]['label'], dtype=torch.float32)
 
-        # Return the original index along with the data.
-        # This is crucial for the training loop to know which sample's
-        # status needs to be updated.
-        return original_index.item(), torch.from_numpy(feature.astype(np.float32)), label
-
-    def get_sample_weights(self):
-        """
-        This function is no longer needed if we use a simple random sampler,
-        but it can be adapted to work on the hard set if class balancing is still desired.
-        For now, we will replace it with a simpler sampler.
-        """
-        pass # This can be removed or adapted later.
-
-    def mark_as_easy(self, original_indices: list):
-        """
-        Marks a list of samples as "easy" by updating the hardness mask.
-        This effectively removes them from the training set for subsequent epochs.
-        """
-        if not original_indices:
-            return
-        
-        # Set the mask to False for the given indices
-        self._is_hard_mask[original_indices] = False
-        
-        # Refresh the map of hard indices
-        self._hard_indices_map = self._get_current_hard_indices()
-        
-        # num_remaining = len(self)
-        # percent_remaining = (num_remaining / self.total_samples) * 100 if self.total_samples > 0 else 0
-        # print_info(
-            # f"Filtered {len(original_indices)} easy samples. "
-            # f"Remaining hard samples: {num_remaining}/{self.total_samples} ({percent_remaining:.2f}%)"
-        # )
+        # Return the feature, its label, and its global index
+        return torch.from_numpy(feature.astype(np.float32)), label, index
 
 
-class HardSampleFilterSampler(Sampler):
+class DynamicClassAwareSampler(Sampler):
     """
-    A Sampler that works with the dynamically changing WakeWordDataset.
-
-    Its primary job is to generate a randomly shuffled sequence of indices
-    from 0 to the current number of "hard" samples in the dataset.
-    The DataLoader uses this sequence to fetch batches.
-    Since the dataset's length itself changes, this sampler remains very simple.
+    A sampler that builds each batch with a fixed number of samples from different classes
+    (positive, speech_negative, noise_negative). The selection within each class is
+    weighted by the sample's "hardness" score, which is updated dynamically during training.
     """
-    def __init__(self, data_source: WakeWordDataset):
+    def __init__(self, dataset: WakeWordDataset, batch_composition: dict, feature_manifests: dict):
+        self.dataset = dataset
+        self.batch_composition = batch_composition
+        self.feature_manifests = feature_manifests
+        
+        self.num_samples_per_batch = sum(self.batch_composition.values())
+        self.num_batches = self._calculate_num_batches()
+
+    def _calculate_num_batches(self):
         """
-        Initializes the sampler.
-        Args:
-            data_source (WakeWordDataset): An instance of our modified dataset
-                                           which knows its own effective length.
+        Calculates the maximum number of batches that can be created.
+        This is limited by the smallest data pool relative to its batch quota.
         """
-        self.data_source = data_source
+        min_possible_batches = float('inf')
+
+        # Iterate through each rule (e.g., 'targets': 32) in the composition
+        for key_or_category, quota in self.batch_composition.items():
+            if quota == 0:
+                continue  # Skip rules that don't request any samples
+
+            # Determine the total number of available samples for this rule
+            total_available_samples = 0
+            if key_or_category in self.dataset.index_pools:
+                # Rule is a specific key (e.g., 'n')
+                total_available_samples = len(self.dataset.index_pools[key_or_category])
+            else:
+                # Rule is a category (e.g., 'targets'), so sum up all keys under it
+                keys_in_category = self._get_keys_for_category(key_or_category)
+                for k in keys_in_category:
+                    total_available_samples += len(self.dataset.index_pools.get(k, []))
+
+            if total_available_samples == 0:
+                # If any required pool is empty, we can't form any batches
+                return 0
+
+            # Calculate how many batches this specific pool can support
+            possible_batches_for_this_pool = total_available_samples // quota
+
+            # The true number of batches is limited by the smallest pool
+            if possible_batches_for_this_pool < min_possible_batches:
+                min_possible_batches = possible_batches_for_this_pool
+        
+        # If the composition was empty or no limiting factor was found, return 0
+        if min_possible_batches == float('inf'):
+            return 0
+
+        return min_possible_batches
+
+
+
+    # HELPER method inside the class to get all keys for a category 
+    def _get_keys_for_category(self, category_name: str) -> list[str]:
+        return list(self.feature_manifests.get(category_name, {}).keys())
 
     def __iter__(self):
-        """
-        Provides an iterator over the indices of the hard samples.
-        This is called by the DataLoader at the beginning of each epoch.
-        """
-        # self.data_source.__len__() dynamically returns the number of hard samples.
-        num_hard_samples = len(self.data_source)
-        
-        # We simply generate a random permutation of indices from 0 to num_hard_samples - 1.
-        # The WakeWordDataset.__getitem__ will handle mapping these temporary indices
-        # to the correct, original sample indices.
-        shuffled_indices = torch.randperm(num_hard_samples).tolist()
-        
-        return iter(shuffled_indices)
+        for _ in range(self.num_batches):
+            final_batch_indices = []
+            hardness = self.dataset.sample_hardness
+
+            # Iterate through the user-defined batch composition
+            for key_or_category, num_samples in self.batch_composition.items():
+                if num_samples == 0: continue
+
+                # Check if it's a specific key (e.g., 'n') or a category (e.g., 'targets')
+                if key_or_category in self.dataset.index_pools:
+                    # It's a specific key
+                    keys_to_sample_from = [key_or_category]
+                else:
+                    # It's a category, get all keys under it
+                    keys_to_sample_from = self._get_keys_for_category(key_or_category)
+                
+                if not keys_to_sample_from: continue
+
+                # Combine all indices from the relevant pools
+                combined_indices = torch.cat([self.dataset.index_pools[k] for k in keys_to_sample_from])
+                
+                # Get the hardness scores for these combined indices
+                weights = hardness[combined_indices]
+                
+                # Perform weighted sampling
+                selected_local_indices = torch.multinomial(weights, num_samples, replacement=True)
+                selected_global_indices = combined_indices[selected_local_indices]
+                
+                final_batch_indices.append(selected_global_indices)
+            
+            # Combine indices from all composition rules and shuffle
+            if not final_batch_indices:
+                continue # Skip if batch is empty
+
+            batch = torch.cat(final_batch_indices)
+            batch = batch[torch.randperm(len(batch))]
+            
+            yield batch.tolist()
 
     def __len__(self):
-        """
-        Returns the number of samples in the iterator, which is the current
-        number of hard samples.
-        """
-        return len(self.data_source)
-    
+        return self.num_batches
+
 
 def trim_mmap(target_path):
     """

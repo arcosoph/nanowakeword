@@ -165,52 +165,52 @@ class ConfigGenerator:
         except ImportError:
             SYSTEM_INFO_AVAILABLE = False
 
-
-        final_training_batch_size = 64 # Default
-        if torch.cuda.is_available():
-            try:
-                vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+                    # - These are temporarily closed - #
+        # final_training_batch_size = 64 # Default
+        # if torch.cuda.is_available():
+        #     try:
+        #         vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
                 
-                if vram_gb >= 12: base_batch_size = 256
-                elif vram_gb >= 8: base_batch_size = 128
-                elif vram_gb >= 4: base_batch_size = 64
-                else: base_batch_size = 32
+        #         if vram_gb >= 12: base_batch_size = 256
+        #         elif vram_gb >= 8: base_batch_size = 128
+        #         elif vram_gb >= 4: base_batch_size = 64
+        #         else: base_batch_size = 32
                 
-                complexity_factor = 2.0 / model_complexity
-                calculated_batch_size = base_batch_size * complexity_factor
-                clamped_batch_size = clamp(calculated_batch_size, 32, 256)
-                powers_of_2 = [32, 64, 128, 256]
-                final_training_batch_size = min(powers_of_2, key=lambda x: abs(x - clamped_batch_size))
-            except Exception:
-                final_training_batch_size = 64
-        else:
-            final_training_batch_size = 64
+        #         complexity_factor = 2.0 / model_complexity
+        #         calculated_batch_size = base_batch_size * complexity_factor
+        #         clamped_batch_size = clamp(calculated_batch_size, 32, 256)
+        #         powers_of_2 = [32, 64, 128, 256]
+                # final_training_batch_size = min(powers_of_2, key=lambda x: abs(x - clamped_batch_size))
+            # except Exception:
+                # final_training_batch_size = 64
+        # else:
+            # final_training_batch_size = 64
 
 
-        MIN_NOISE_PERCENT = 25
+        # MIN_NOISE_PERCENT = 25
         # Maximum limit for excess noise based on data noise
-        ADAPTIVE_NOISE_RANGE = 15
+        # ADAPTIVE_NOISE_RANGE = 15
 
-        adaptive_noise_amount = int(round(ADAPTIVE_NOISE_RANGE * clamp(A_noise * 2.0, 0, 1)))
+        # adaptive_noise_amount = int(round(ADAPTIVE_NOISE_RANGE * clamp(A_noise * 2.0, 0, 1)))
 
-        dist_noise = MIN_NOISE_PERCENT + adaptive_noise_amount
+        # dist_noise = MIN_NOISE_PERCENT + adaptive_noise_amount
 
-        remaining_percentage = 100 - dist_noise
-        dist_pos = int(round(remaining_percentage / 2.5 * 1.0))
-        dist_neg_speech = 100 - dist_noise - dist_pos
+        # remaining_percentage = 100 - dist_noise
+        # dist_pos = int(round(remaining_percentage / 2.5 * 1.0))
+        # dist_neg_speech = 100 - dist_noise - dist_pos
 
-        final_source_distribution = {
-            'positive': dist_pos,
-            'negative_speech': dist_neg_speech,
-            'pure_noise': dist_noise
-        }                
+        # final_source_distribution = {
+        #     'positive': dist_pos,
+        #     'negative_speech': dist_neg_speech,
+        #     'pure_noise': dist_noise
+        # }                
 
 
-        # Combine them into the final `batch_composition` dictionary 
-        self.config['batch_composition'] = {
-            'batch_size': final_training_batch_size,
-            'source_distribution': final_source_distribution
-        }
+        # # Combine them into the final `batch_composition` dictionary 
+        # self.config['batch_composition'] = {
+        #     'batch_size': final_training_batch_size,
+        #     'source_distribution': final_source_distribution
+        # }
 
         # # Remove the old top-level `source_distribution` if it exists 
         # if 'source_distribution' in self.config:

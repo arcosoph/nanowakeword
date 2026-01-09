@@ -17,83 +17,73 @@
 #  Project: https://github.com/arcosoph/nanowakeword
 # ==============================================================================
 
-# IMPORTS
 import collections.abc
 
 class ConfigProxy(collections.abc.Mapping):
     """
-    A powerful, transparent proxy for configuration dictionaries.
-    Acts almost exactly like a read-only dictionary (supports .keys(), .values(), .items(), etc.).
-    Transparently tracks which configuration values are accessed.
-    Returns nested dictionaries also as ConfigProxy objects for deep tracking.
+    A powerful, transparent proxy for configuration dictionaries that supports
+    access tracking, deep nesting, and behaves correctly as both a mapping
+    and a numeric/string type when it wraps a final value.
     """
-    def __init__(self, data: dict, root_proxy=None, prefix=""):
-        # Keeping self._data "private" so it is not directly accessed
-        self.__data = data
-        self._root = root_proxy if root_proxy is not None else self
-        self._prefix = prefix
+    def __init__(self, data, root_proxy=None, prefix=""):
+        # Use a non-standard name to avoid conflicts with potential keys in data
+        self._internal_data = data
+        self._internal_root = root_proxy if root_proxy is not None else self
+        self._internal_prefix = prefix
         
-        if self._root is self:
-            self._used_params = {}
-            self._accessed_keys = set()
+        if self._internal_root is self:
+            self._internal_used_params = {}
+            self._internal_accessed_keys = set()
 
     def _track_access(self, key, value):
-        full_key = self._prefix + key
-        # Only the final values ​​will be tracked, not the entire dictionary.
-        if not isinstance(value, (dict, ConfigProxy)):
-            if full_key not in self._root._accessed_keys:
-                self._root._used_params[full_key] = value
-                self._root._accessed_keys.add(full_key)
+        full_key = self._internal_prefix + key
+        # Only track leaf nodes (final values), not entire dictionaries.
+        if not isinstance(value, dict):
+            if full_key not in self._internal_root._internal_accessed_keys:
+                self._internal_root._internal_used_params[full_key] = value
+                self._internal_root._internal_accessed_keys.add(full_key)
     
-
     def __getitem__(self, key):
-        if key not in self.__data:
-            raise KeyError(f"Key '{self._prefix}{key}' not found in configuration.")
+        if key not in self._internal_data:
+            raise KeyError(f"Key '{self._internal_prefix}{key}' not found in configuration.")
         
-        value = self.__data[key]
-        self._track_access(key, value) 
+        value = self._internal_data[key]
+        self._track_access(key, value)
         
+        # If the value is another dictionary, wrap it in a new ConfigProxy
         if isinstance(value, dict):
-            new_prefix = f"{self._prefix}{key}."
-            return ConfigProxy(value, root_proxy=self._root, prefix=new_prefix)
+            new_prefix = f"{self._internal_prefix}{key}."
+            return ConfigProxy(value, root_proxy=self._internal_root, prefix=new_prefix)
         
         return value
 
     def __iter__(self):
-        return iter(self.__data)
+        return iter(self._internal_data)
 
     def __len__(self):
-        return len(self.__data)
-    
+        return len(self._internal_data)
+
     def get(self, key: str, default=None):
-        """
-        Gets a value, returning a default if the key is not found.
-        Tracks the access of the key and the returned value.
-        """
-        if key in self.__data:
+        if key in self._internal_data:
             return self[key]
         else:
             self._track_access(key, default)
-            
             if isinstance(default, dict):
-                new_prefix = f"{self._prefix}{key}."
-                return ConfigProxy(default, root_proxy=self._root, prefix=new_prefix)
-
+                new_prefix = f"{self._internal_prefix}{key}."
+                return ConfigProxy(default, root_proxy=self._internal_root, prefix=new_prefix)
             return default
             
     def __setitem__(self, key, value):
-        self.__data[key] = value
-        self._track_access(key, value) 
+        self._internal_data[key] = value
+        self._track_access(key, value)
 
     def report(self) -> dict:
         """Returns a dictionary of all parameters that were accessed."""
-        return self._root._used_params
+        return self._internal_root._internal_used_params
         
     def to_dict(self) -> dict:
         """
-
-        Recursively converts the ConfigProxy and all nested proxies back to a standard Python dictionary.
-        This is useful when a library or function specifically requires a real dict.
+        Recursively converts the ConfigProxy back to a standard Python dictionary.
         """
         plain_dict = {}
         for key, value in self.items():
@@ -104,4 +94,33 @@ class ConfigProxy(collections.abc.Mapping):
         return plain_dict
 
     def __repr__(self):
-        return f"ConfigProxy(prefix='{self._prefix}', data={self.__data})"
+        return f"ConfigProxy(prefix='{self._internal_prefix}', data={self._internal_data})"
+
+    def _get_leaf_value(self):
+        """Helper to get the raw value if this proxy wraps a single item, not a dict."""
+        if isinstance(self._internal_data, dict):
+            raise TypeError(f"This ConfigProxy wraps a dictionary and cannot be treated as a single value. Path: '{self._internal_prefix}'")
+        return self._internal_data
+
+    def __int__(self):
+        """Allows casting to int: int(proxy)"""
+        return int(self._get_leaf_value())
+
+    def __float__(self):
+        """Allows casting to float: float(proxy)"""
+        return float(self._get_leaf_value())
+
+    def __str__(self):
+        """Allows casting to string: str(proxy)"""
+        # If it's a dict, show the dict string representation, otherwise the value's.
+        if isinstance(self._internal_data, dict):
+            return str(self._internal_data)
+        return str(self._get_leaf_value())
+
+    def __add__(self, other):
+        """Handles: proxy + other"""
+        return self._get_leaf_value() + other
+
+    def __radd__(self, other):
+        """Handles: other + proxy (This is what sum() uses!)"""
+        return other + self._get_leaf_value()
