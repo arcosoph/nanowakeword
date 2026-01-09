@@ -53,8 +53,10 @@ feature_manifest:
 generate_positive_samples: 2500
 generate_negative_samples: 5000
 
-include_input_words: 0.7
-include_partial_phrase: 0.5
+include_input_words: 0.2
+include_partial_phrase: 0.09 
+multi_word_prob: 0.9 
+max_multi_word_len: 2 # your wake word len
 
 augmentation_batch_size: 16
 feature_gen_cpu_ratio: 1.0
