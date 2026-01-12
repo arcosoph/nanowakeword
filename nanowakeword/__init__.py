@@ -1,7 +1,8 @@
-from nanowakeword.nanointerpreter import NanoInterpreter
-from nanowakeword.vad import VAD
+from nanowakeword.data.AudioFeatures import AudioFeatures
+from nanowakeword.interpreter.nanointerpreter import NanoInterpreter
+from nanowakeword.interpreter.vad import VAD
 
-__all__ = ['NanoInterpreter', 'VAD']
+__all__ = ['NanoInterpreter', 'VAD', 'AudioFeatures']
 
 
 from pathlib import Path

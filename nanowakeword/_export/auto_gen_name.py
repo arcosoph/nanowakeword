@@ -18,7 +18,7 @@
 # ==============================================================================
 
 
-def GNMV(model_type: str, base_dir: str = ".", prefix: str = "nww"):
+def auto_gen_name(model_type: str, base_dir: str = ".", prefix: str = "nww"):
     """
     Automatically generate model name including type and maintain version professionally
     The version option will be kept the same, meaning if there is an older model, it will be overwritten.

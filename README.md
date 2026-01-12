@@ -282,8 +282,8 @@ import os
 import sys
 import time
 # Import the interpreter class from the library
-from nanowakeword.nanointerpreter import NanoInterpreter 
-# --- Simple Configuration ---
+from nanowakeword.interpreter.nanointerpreter import NanoInterpreter  
+#                Simple Configuration 
 MODEL_PATH = r"model/path/your.onnx"
 THRESHOLD = 0.9  # A simple threshold for detection | ⚠️ This may need to be changed (eg, 0.999, 0.80) 
 COOLDOWN = 2     # A simple cooldown managed outside the interpreter

@@ -32,11 +32,14 @@ DEFAULT_MODELS_DIR = None
 # Safe import of utilities and project root initialization 
 try:
     from nanowakeword import PROJECT_ROOT
-    from nanowakeword.utils.download_file import download_file
-    DEFAULT_MODELS_DIR = PROJECT_ROOT / "resources" / "tts_models"
+    from nanowakeword.utils.download_files import download_file
+    # DEFAULT_MODELS_DIR = PROJECT_ROOT / "resources" / "tts_models"
+
+    DEFAULT_MODELS_DIR = os.path.join("NwwResourcesModel", "tts_models")
 except ImportError:
     PROJECT_ROOT = Path(__file__).resolve().parent.parent
-    DEFAULT_MODELS_DIR = PROJECT_ROOT / "resources" / "tts_models"
+    # DEFAULT_MODELS_DIR = PROJECT_ROOT / "resources" / "tts_models"
+    DEFAULT_MODELS_DIR = os.path.join("NwwResourcesModel", "tts_models")
     def download_file(url: str, target_directory: str):
         import requests
         filename = url.split('/')[-1]

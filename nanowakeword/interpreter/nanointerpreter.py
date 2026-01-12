@@ -18,7 +18,6 @@
 
 from __future__ import annotations 
 import os
-import time
 import wave
 import logging
 import numpy as np
@@ -26,7 +25,6 @@ import nanowakeword # Required for VAD
 from functools import partial
 from collections import deque, defaultdict
 from typing import List, Union, Dict, TYPE_CHECKING
-from nanowakeword.modules.audio_processing import AudioFeatures
 
 # Conditionally import noisereduce to avoid a hard dependency.
 try:
@@ -96,6 +94,7 @@ class NanoInterpreter:
 
         # Buffer, Preprocessor, and Optional Components Setup
         self._setup_components(**kwargs)
+        
 
     @classmethod
     def load_model(cls, model_path: Union[str, List[str]], **kwargs):
@@ -240,6 +239,7 @@ class NanoInterpreter:
         return (h0, c0)
 
     def _setup_components(self, **kwargs):
+        from nanowakeword.data.AudioFeatures import AudioFeatures
         self.prediction_buffer = defaultdict(partial(deque, maxlen=30))
 
         # Pop and handle known interpreter-specific arguments

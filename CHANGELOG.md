@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0] - 2026-01-12
+### Breaking Changes
+- All import paths reorganized; scripts from any **1.x** version will **not work** without modification.
+- Users should update their scripts to match the new v2.0.0 API.
+
+
+## [1.4.0...1.4.3] - 2025-12-13 to 2026-1-9
+### Added / Fixed / Changed
+- Multiple updates including preprocessing improvements, training stability enhancements, and documentation corrections.
+
+
 ## [1.3.3] - 2025-11-14
 
 ### Added

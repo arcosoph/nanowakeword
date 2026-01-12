@@ -1,21 +1,21 @@
 import torch
 
-def BiasWeightedLoss(self, data, step_ndx, logger):
+def BiasWeightedLoss(trainer, data, step_ndx, logger):
     
-    LOSS_BIAS = self.config.get("LOSS_BIAS", 0.8)
+    LOSS_BIAS = trainer.config.get("LOSS_BIAS", 0.8)
 
     # Data Setup 
     x, y = data
-    x = x.to(self.device)
+    x = x.to(trainer.model.device)
     
-    y = y.to(self.device).float().view(-1) 
+    y = y.to(trainer.model.device).float().view(-1) 
 
-    self.optimizer.zero_grad()
+    trainer.optimizer.zero_grad()
     
     # Forward Pass 
-    embeddings = self.model(x)
+    embeddings = trainer.model.model(x)
 
-    logits = self.classifier(embeddings).view(-1)
+    logits = trainer.model.classifier(embeddings).view(-1)
     
     yp = torch.sigmoid(logits)
     yt = y
@@ -37,21 +37,21 @@ def BiasWeightedLoss(self, data, step_ndx, logger):
     
     # Optimization 
     # History tracking (Optional, for your graph)
-    if not hasattr(self, 'state'):
-        self.state = {'loss_hist': [], 'fa_ema': 0.0, 'miss_ema': 0.0}
-    self.state['loss_hist'].append(total.item())
-    if len(self.state['loss_hist']) > 100: self.state['loss_hist'] = self.state['loss_hist'][-100:]
+    if not hasattr(trainer, 'state'):
+        trainer.state = {'loss_hist': [], 'fa_ema': 0.0, 'miss_ema': 0.0}
+    trainer.state['loss_hist'].append(total.item())
+    if len(trainer.state['loss_hist']) > 100: trainer.state['loss_hist'] = trainer.state['loss_hist'][-100:]
     
     total.backward()
     
     # Gradient Clipping (Standard Safe Practice, not strictly part of logic but recommended)
     grad_norm = torch.nn.utils.clip_grad_norm_(
-                list(self.model.parameters()) + list(self.classifier.parameters()),
+                list(trainer.model.parameters()) + list(trainer.model.classifier.parameters()),
                 max_norm=1.0
                )
     
-    self.optimizer.step()
-    self.scheduler.step()
+    trainer.optimizer.step()
+    trainer.scheduler.step()
     
     # Logging 
     with torch.no_grad():
@@ -59,7 +59,7 @@ def BiasWeightedLoss(self, data, step_ndx, logger):
             is_pos = (yt == 1)
             is_neg = (yt == 0)
 
-            current_lr = self.optimizer.param_groups[0]['lr']
+            current_lr = trainer.optimizer.param_groups[0]['lr']
 
             # Average predictions
             pos_avg = yp[is_pos].mean().item() if is_pos.sum() > 0 else 0.0
@@ -81,6 +81,4 @@ def BiasWeightedLoss(self, data, step_ndx, logger):
 
     per_example_loss = (LOSS_BIAS * neg_term) + ((1.0 - LOSS_BIAS) * pos_term)
 
-    # return total.detach().cpu().item()
     return total, per_example_loss.detach()
-

@@ -23,9 +23,7 @@ import numpy as np
 from collections import deque
 from multiprocessing.pool import ThreadPool
 from typing import Union, List, Callable, Deque
-import matplotlib.pyplot as plt
-from nanowakeword.resources.models import models
-import scipy.io.wavfile
+from nanowakeword.interpreter.models import models
 
 
 # Base class for computing audio features using Google's speech_embedding
@@ -326,6 +324,8 @@ class AudioFeatures():
         embeddings = self._get_embeddings_batch(melspecs[:, :, :, None], batch_size=batch_size, ncpu=ncpu)
 
         if self.debug_mode and self.debug_count < self.debug_limit:
+            import matplotlib.pyplot as plt
+            import scipy.io.wavfile
             
             samples_to_save = min(batch_size, len(x))
             

@@ -41,7 +41,7 @@ class VAD():
             # To break the cycle, we avoid top-level imports and get the path dynamically.
             # This is a robust way to find the models directory.
             try:
-                from .resources.models import models
+                from nanowakeword.interpreter.models import models
                 model_path = models.silero_vad_onnx
             except ImportError as e:
                 # This is a fallback if the above still fails due to complex cycles.

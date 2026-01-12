@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 # pip install nanowakeword
 name = "nanowakeword"
 
-version = "1.4.2"
+version = "2.0.0"
 authors = [
   { name="Arcosoph", email="a5tkabid@gmail.com" },
 ]
@@ -18,7 +18,7 @@ requires-python = ">=3.8"
 
 license = "Apache-2.0"
 
-keywords = ["wakeword", "keyword-spotting", "pytorch", "kws", "speech-recognition", "nanowakeword" ]
+keywords = ["wakeword", "keyword-spotting", "classification", "kws", "speech-recognition", "nanowakeword" ]
 
 classifiers = [
     "Development Status :: 4 - Beta",
