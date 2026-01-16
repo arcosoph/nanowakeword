@@ -25,14 +25,11 @@ import torch
 import random
 import logging
 import warnings
-# import matplotlib
 import numpy as np
 import collections
 from tqdm import tqdm
 from logging.handlers import RotatingFileHandler
 
-
-# from nanowakeword.data import augment_clips
 from nanowakeword.modules.loss import BiasWeightedLoss
 from nanowakeword.modules.model import Model
 from nanowakeword.utils.logger import print_info, print_key_value, print_final_report_header
@@ -57,286 +54,6 @@ def set_seed(seed):
         torch.backends.cudnn.benchmark = False
 
 set_seed(SEED)
-
-
-# def auto_train(self, X_train, steps, table_updater, debug_path, resume_from_dir=None):
-#         """
-#         A modern, single-sequence training process that combines the best checkpoints to
-#             create a final and robust model.
-#         """
-
-#         self.train_model(
-#             X=X_train,
-#             max_steps=steps,
-#             log_path=debug_path,
-#             table_updater=table_updater,
-#             resume_from_dir=resume_from_dir        
-#         )
-
-#         print_info("Training finished. Merging best checkpoints to create final model...")
-        
-#         if not self.best_training_checkpoints:
-#             print_info("No stable models were saved based on training loss stability. Returning the final model state.")
-
-#             final_model = self
-#             final_model.eval()
-#         else:
-#             print_info(f"Averaging the top {len(self.best_training_checkpoints)} most stable models found during training...")
-            
-#             averaged_state_dict = self.average_models(state_dicts=self.best_training_checkpoints)
-
-#             final_model = copy.deepcopy(self)
-#             final_model.load_state_dict(averaged_state_dict)
-#             final_model.eval() 
-
-#         print_info("Calculating performance metrics for the final averaged model...")
-        
-#         final_results = collections.OrderedDict()
-
-#         if self.best_training_scores:
-#             avg_stable_loss = np.mean([score['stable_loss'] for score in self.best_training_scores])
-#             final_results["Average Stable Loss"] = f"{avg_stable_loss:.4f}"
-#         else:
-#             final_results["Average Stable Loss"] = "N/A"
-        
-#         try:
-#             final_classifier_weights = final_model.classifier.weight.detach().cpu().numpy()
-#             weight_std_dev = np.std(final_classifier_weights)
-#             final_results["Weight Diversity (Std Dev)"] = f"{weight_std_dev:.4f}"
-#         except Exception as e:
-#             final_results["Weight Diversity (Std Dev)"] = f"N/A (Error: {e})"
-
-#         try:
-#             with torch.no_grad():
-#                 # Get a sample batch, which now contains features, labels, and indices
-#                 x_batch, y_batch, _ = next(iter(X_train)) # Unpack all three, but ignore the index
-                
-#                 confidence_batch_x = x_batch.to(self.device)
-#                 confidence_batch_y = y_batch.to(self.device)
-
-#                 predictions = final_model(confidence_batch_x).squeeze()
-                
-#                 pos_preds = predictions[confidence_batch_y.squeeze() == 1]
-#                 neg_preds = predictions[confidence_batch_y.squeeze() == 0]
-
-#                 # Ensure we have predictions to average to avoid NaN errors
-#                 if pos_preds.numel() > 0:
-#                     final_results["Avg. Positive Score (Logit)"] = f"{pos_preds.mean().item():.3f}"
-#                 else:
-#                     final_results["Avg. Positive Score (Logit)"] = "N/A (No positives in batch)"
-
-#                 if neg_preds.numel() > 0:
-#                     final_results["Avg. Negative Score (Logit)"] = f"{neg_preds.mean().item():.3f}"
-#                 else:
-#                     final_results["Avg. Negative Score (Logit)"] = "N/A (No negatives in batch)"
-
-#         except (StopIteration, RuntimeError) as e:
-#             final_results["Confidence Score"] = f"N/A (Error: {e})"
-
-#         print_final_report_header()
-#         print_info("NOTE: These metrics are indicators of model health, not real-world performance.")
-
-#         for key, value in final_results.items():
-#             print_key_value(key, value)
-
-#         self.history["final_report"] = final_results
-
-#         # Returning the completed and averaged model
-#         return final_model
-
-
-
-# def train_model(self, X, max_steps, log_path, table_updater, resume_from_dir=None):
-    
-#     import itertools 
-
-#     debug_mode = self.config.get("debug_mode", False)
-#     log_dir = os.path.join(log_path, "training_debug")
-#     os.makedirs(log_dir, exist_ok=True)
-#     debug_log_file = os.path.join(log_dir, "training_debug.log")
-#     if debug_mode:
-#         logger = logging.getLogger("NanoTrainerDebug")
-#         logger.setLevel(logging.INFO)
-#         if not logger.handlers:
-#             handler = RotatingFileHandler(
-#                 debug_log_file, 
-#                 maxBytes=5_000_000, 
-#                 backupCount=30,
-#                 encoding='utf-8'  
-#             )
-#             formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
-#             handler.setFormatter(formatter)
-#             logger.addHandler(handler)
-#         logger.propagate = False
-#         print_info(f"Debug mode ON. Logs will be saved to:\n{debug_log_file}")
-#     else:
-#         logger = logging.getLogger("NanoTrainerDebug")
-#         logger.disabled = True
-
-
-#     checkpoint_cfg = self.config.get("checkpointing", {})
-#     checkpointing_enabled = checkpoint_cfg.get("enabled", False)
-#     checkpoint_interval = checkpoint_cfg.get("interval_steps", 1000)
-#     checkpoint_limit = checkpoint_cfg.get("limit", 3)
-#     checkpoint_dir = os.path.join(log_path, "checkpoints")
-#     if checkpointing_enabled:
-#         os.makedirs(checkpoint_dir, exist_ok=True)
-#         print_info(f"Checkpointing is ENABLED. A checkpoint will be saved every {checkpoint_interval} steps.")
-
-#     ema_loss = None
-#     self.best_training_checkpoints = [] 
-#     self.best_training_scores = []
-#     checkpoint_averaging_top_k= self.config.get("checkpoint_averaging_top_k", 5)
-#     default_warmup_steps = int(max_steps * 0.15)
-#     WARMUP_STEPS = self.config.get("WARMUP_STEPS", default_warmup_steps)
-#     min_delta = self.config.get("min_delta", 0.0001)
-#     best_ema_loss_for_stopping = float('inf')
-#     steps_without_improvement = 0
-#     ema_alpha = self.config.get("ema_alpha", 0.01)
-
-#     default_patience_steps = int(max_steps * 0.15)
-#     user_patience = self.config.get("early_stopping_patience", None)
-#     if user_patience is not None:
-#         patience = user_patience
-#     elif self.config.get("steps", max_steps) < 3000:
-#         patience = 0
-#     else:
-#         patience = default_patience_steps
-
-#     if patience == 0:
-#         print_info("Early stopping is DISABLED. Training will run for the full duration of 'steps'.")
-#     else:
-#         print_info(f"Training for {max_steps} steps. Model checkpointing and early stopping will activate after {WARMUP_STEPS} warm-up steps.")
-
-#     self.to(self.device)
-#     self.model.train() 
-#     self.classifier.train() 
-
-#     start_step = 0
-#     data_iterator = iter(itertools.cycle(X))
-
-#     if resume_from_dir:
-#         resume_checkpoint_dir = os.path.join(resume_from_dir, "2_training_artifacts", "checkpoints")
-#         print_info(f"Attempting to resume training from: {resume_checkpoint_dir}")
-#         if os.path.exists(resume_checkpoint_dir):
-#             checkpoints = [f for f in os.listdir(resume_checkpoint_dir) if f.startswith("checkpoint_step_") and f.endswith(".pth")]
-#             if checkpoints:
-#                 latest_step = -1
-#                 latest_checkpoint_file = None
-#                 for cp_file in checkpoints:
-#                     match = re.search(r"checkpoint_step_(\d+).pth", cp_file)
-#                     if match:
-#                         step = int(match.group(1))
-#                         if step > latest_step:
-#                             latest_step = step
-#                             latest_checkpoint_file = cp_file
-                
-#                 if latest_checkpoint_file:
-#                     checkpoint_path = os.path.join(resume_checkpoint_dir, latest_checkpoint_file)
-#                     print_info(f"Loading latest checkpoint: {checkpoint_path}")
-#                     checkpoint = torch.load(checkpoint_path, map_location=self.device)
-                    
-#                     self.load_state_dict(checkpoint['model_state_dict'])
-#                     self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-#                     self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-                    
-#                     start_step = checkpoint.get('step', 0)
-#                     ema_loss = checkpoint.get('ema_loss', None)
-#                     steps_without_improvement = checkpoint.get('steps_without_improvement', 0)
-#                     best_ema_loss_for_stopping = checkpoint.get('best_ema_loss_for_stopping', float('inf'))
-#                     self.history['loss'] = checkpoint.get('loss_history', [])
-#                     print_info(f"Successfully restored state. Resuming training from step {start_step + 1}.")
-                    
-#                     print_info("Synchronizing data stream to the restored step...")
-#                     for _ in tqdm(range(start_step + 1), desc="Fast-forwarding data", unit="steps", leave=False):
-#                         next(data_iterator, None)
-#                 else:
-#                     print_info("WARNING: Checkpoint files found, but their names are not in the expected format. Starting fresh.")
-#             else:
-#                 print_info("WARNING: No valid checkpoint files found in the directory. Starting fresh.")
-#         else:
-#             print_info(f"WARNING: Checkpoint directory not found at '{resume_checkpoint_dir}'. Starting fresh.")
-    
-#     table_updater.update(force_print=True)
-    
-#     training_loop = tqdm(data_iterator, total=max_steps, desc="Training", initial=start_step)
-#     for step_ndx, data in enumerate(training_loop, start=start_step):
-
-#         # The 'data' variable will now contain features, labels, and indices
-#         features, labels, indices = data
-#         # Call the loss function, which now returns two values
-#         total_loss, per_example_loss = BiasWeightedLoss(self, (features, labels), step_ndx=step_ndx, logger=logger)
-
-#         # Live Feedback Loop, Update Hardness Scores
-#         # Using Exponential Moving Average (EMA) for stable updates
-#         alpha = 0.1  # Smoothing factor
-
-#         # Get the old hardness scores for the samples in this batch
-#         # We access the dataset via the DataLoader object 'X'
-#         old_hardness = X.dataset.sample_hardness[indices].to(self.device)
-
-#         # Calculate the new hardness score based on the current loss
-#         new_hardness = (alpha * per_example_loss) + ((1.0 - alpha) * old_hardness)
-
-#         # Update the scores in the dataset's memory (move back to CPU)
-#         X.dataset.sample_hardness[indices] = new_hardness.cpu()
-
-#         # Use the 'total_loss' for history and EMA calculation
-#         current_loss = total_loss.detach().cpu().item()
-
-#         if current_loss is not None:
-#             self.history["loss"].append(current_loss)
-            
-#             if ema_loss is None: 
-#                 ema_loss = current_loss
-#             ema_loss = ema_alpha * current_loss + (1 - ema_alpha) * ema_loss
-
-#             if step_ndx > WARMUP_STEPS:
-#                 current_score = ema_loss
-#                 if len(self.best_training_checkpoints) < checkpoint_averaging_top_k:
-#                     self.best_training_checkpoints.append(copy.deepcopy(self.state_dict()))
-#                     self.best_training_scores.append({"step": step_ndx, "stable_loss": current_score})
-#                 else:
-#                     worst_score = max(s['stable_loss'] for s in self.best_training_scores)
-#                     if current_score < worst_score:
-#                         worst_idx = [i for i, s in enumerate(self.best_training_scores) if s['stable_loss'] == worst_score][0]
-#                         self.best_training_checkpoints[worst_idx] = copy.deepcopy(self.state_dict())
-#                         self.best_training_scores[worst_idx] = {"step": step_ndx, "stable_loss": current_score}
-
-#         if patience > 0 and ema_loss is not None:
-#             if ema_loss < best_ema_loss_for_stopping - min_delta:
-#                 best_ema_loss_for_stopping = ema_loss
-#                 steps_without_improvement = 0
-#             else:
-#                 steps_without_improvement += 1
-            
-#             if step_ndx > WARMUP_STEPS and steps_without_improvement >= patience:
-#                 print_info(f"\nEarly stopping triggered at step {step_ndx}. No improvement in stable loss for {patience} steps.")
-#                 break
-
-#         if checkpointing_enabled and step_ndx > 0 and step_ndx % checkpoint_interval == 0:
-#             checkpoint_data = {
-#                 'step': step_ndx,
-#                 'model_state_dict': self.state_dict(),
-#                 'optimizer_state_dict': self.optimizer.state_dict(),
-#                 'scheduler_state_dict': self.scheduler.state_dict(),
-#                 'ema_loss': ema_loss,
-#                 'best_ema_loss_for_stopping': best_ema_loss_for_stopping,
-#                 'steps_without_improvement': steps_without_improvement,
-#                 'loss_history': self.history['loss']
-#             }
-#             checkpoint_name = f"checkpoint_step_{step_ndx}.pth"
-#             torch.save(checkpoint_data, os.path.join(checkpoint_dir, checkpoint_name))
-            
-#             all_checkpoints = sorted(
-#                 [f for f in os.listdir(checkpoint_dir) if f.startswith("checkpoint_step_")],
-#                 key=lambda f: int(re.search(r"(\d+)", f).group(1))
-#             )
-#             if len(all_checkpoints) > checkpoint_limit:
-#                 os.remove(os.path.join(checkpoint_dir, all_checkpoints[0]))
-                
-#         if step_ndx >= max_steps - 1:
-#             break
 
 
 class Trainer:
@@ -367,7 +84,9 @@ class Trainer:
             from itertools import chain
 
             all_params = chain(self.model.parameters(), self.model.classifier.parameters())
-            
+            # all_params = self.model.parameters()
+
+
             optimizer_type = self.config.get("optimizer_type", "adamw").lower() 
             learning_rate = self.config.get('learning_rate_max', 1e-4)
             weight_decay = self.config.get("weight_decay", 1e-2)
@@ -426,9 +145,64 @@ class Trainer:
                 )
 
 
+    def validate(self, val_loader):
+        """
+        Runs a full validation cycle on the provided dataloader and returns key performance metrics.
+        """
+
+        self.model.eval()
+        self.model.classifier.eval()
+
+        total_val_loss = 0
+        
+        all_pos_logits = []
+        all_neg_logits = []
+
+        with torch.no_grad():
+            for features, labels, _ in val_loader:
+                features = features.to(self.model.device)
+                labels = labels.to(self.model.device).float()
+
+                logits = self.model(features).squeeze()
+
+                yp = torch.sigmoid(logits)
+                yt = labels
+                epsilon = 1e-7
+
+                pos_term = -(yt) * torch.log(yp + epsilon)
+                neg_term = -(1 - yt) * torch.log(1 - yp + epsilon)
+
+                combined_loss = torch.cat([pos_term[yt==1], neg_term[yt==0]])
+                loss = combined_loss.mean()
+
+                total_val_loss += loss.item()
+
+                pos_mask = (labels == 1)
+                neg_mask = (labels == 0)
+
+                if pos_mask.sum() > 0:
+                    all_pos_logits.append(logits[pos_mask].cpu())
+                if neg_mask.sum() > 0:
+                    all_neg_logits.append(logits[neg_mask].cpu())
+        
+        self.model.train()
+        self.model.classifier.train()
+
+        if all_pos_logits:
+            all_pos_logits = torch.cat(all_pos_logits)
+        if all_neg_logits:
+            all_neg_logits = torch.cat(all_neg_logits)
+
+        metrics = collections.OrderedDict()
+        metrics['val_loss'] = total_val_loss / len(val_loader)
+        
+        metrics['avg_pos_logit'] = all_pos_logits.mean().item() if len(all_pos_logits) > 0 else 0.0
+        metrics['avg_neg_logit'] = all_neg_logits.mean().item() if len(all_neg_logits) > 0 else 0.0
+        
+        return metrics
 
 
-    def auto_train(self, X_train, steps, table_updater, debug_path, resume_from_dir=None):
+    def auto_train(self, X_train, X_val, steps, table_updater, debug_path, resume_from_dir=None):
             """
             A modern, single-sequence training process that combines the best checkpoints to
                 create a final and robust model.
@@ -436,6 +210,7 @@ class Trainer:
 
             self.train_model(
                 X=X_train,
+                X_val=X_val,
                 max_steps=steps,
                 log_path=debug_path,
                 table_updater=table_updater,
@@ -458,8 +233,10 @@ class Trainer:
                 final_model.load_state_dict(averaged_state_dict)
                 final_model.eval() 
 
-            print_info("Calculating performance metrics for the final averaged model...")
-            
+
+
+            print_info("Calculating performance metrics for the final model...")
+                        
             final_results = collections.OrderedDict()
 
             if self.best_training_scores:
@@ -474,6 +251,7 @@ class Trainer:
                 final_results["Weight Diversity (Std Dev)"] = f"{weight_std_dev:.4f}"
             except Exception as e:
                 final_results["Weight Diversity (Std Dev)"] = f"N/A (Error: {e})"
+
 
             try:
                 with torch.no_grad():
@@ -514,8 +292,7 @@ class Trainer:
             return final_model
 
 
-
-    def train_model(self, X, max_steps, log_path, table_updater, resume_from_dir=None):
+    def train_model(self, X, X_val, max_steps, log_path, table_updater, resume_from_dir=None):
         
         import itertools 
 
@@ -562,6 +339,10 @@ class Trainer:
         best_ema_loss_for_stopping = float('inf')
         steps_without_improvement = 0
         ema_alpha = self.config.get("ema_alpha", 0.01)
+
+        # steps_without_improvement = 0
+        validation_interval = self.config.get("validation_interval", 500) # প্রতি ৫০০ স্টেপে ভ্যালিডেশন হবে
+
 
         default_patience_steps = int(max_steps * 0.15)
         user_patience = self.config.get("early_stopping_patience", None)
@@ -630,11 +411,30 @@ class Trainer:
     
         training_loop = tqdm(data_iterator, total=max_steps, desc="Training", initial=start_step)
         for step_ndx, data in enumerate(training_loop, start=start_step):
-
-            # The 'data' variable will now contain features, labels, and indices
+            
+            self.model.train()
             features, labels, indices = data
-            # Call the loss function, which now returns two values
-            total_loss, per_example_loss = BiasWeightedLoss(self, (features, labels), step_ndx=step_ndx, logger=logger)
+            features = features.to(self.model.device)
+            labels = labels.to(self.model.device).float().view(-1)
+
+            self.optimizer.zero_grad()
+            
+            embeddings = self.model.model(features)
+            logits = self.model.classifier(embeddings).view(-1)
+
+            LOSS_BIAS = self.config.get("LOSS_BIAS", 0.8)
+            total_loss, per_example_loss = BiasWeightedLoss(logits, labels, LOSS_BIAS)
+            
+            total_loss.backward()
+
+            grad_norm = torch.nn.utils.clip_grad_norm_(
+                        list(self.model.parameters()) + list(self.model.classifier.parameters()),
+                        max_norm=1.0
+                    )
+
+            self.optimizer.step()
+            self.scheduler.step()
+            
 
             # Live Feedback Loop, Update Hardness Scores
             # Using Exponential Moving Average (EMA) for stable updates
@@ -672,6 +472,33 @@ class Trainer:
                             self.best_training_checkpoints[worst_idx] = copy.deepcopy(self.model.state_dict())
                             self.best_training_scores[worst_idx] = {"step": step_ndx, "stable_loss": current_score}
 
+            # info
+            with torch.no_grad():
+                if logger and step_ndx % 100 == 0:
+                    yp = torch.sigmoid(logits)
+                    yt = labels
+                    
+                    is_pos = (yt == 1)
+                    is_neg = (yt == 0)
+                    current_lr = self.optimizer.param_groups[0]['lr']
+                    pos_avg = yp[is_pos].mean().item() if is_pos.sum() > 0 else 0.0
+                    neg_avg = yp[is_neg].mean().item() if is_neg.sum() > 0 else 0.0
+                    FA = (yp[is_neg] > 0.5).float().mean().item() if is_neg.sum() > 0 else 0.0
+                    Ms = (yp[is_pos] < 0.5).float().mean().item() if is_pos.sum() > 0 else 0.0
+                    
+                    pos_term = per_example_loss[is_pos] / (1.0 - LOSS_BIAS) if (1.0 - LOSS_BIAS) > 0 else per_example_loss[is_pos]
+                    neg_term = per_example_loss[is_neg] / LOSS_BIAS if LOSS_BIAS > 0 else per_example_loss[is_neg]
+
+                    PosL = pos_term.mean().item() if is_pos.sum() > 0 else 0.0
+                    NegL = neg_term.mean().item() if is_neg.sum() > 0 else 0.0
+
+                    logger.info(
+                        f"[{step_ndx:5d}] L:{total_loss.item():.6f} "
+                        f"PL:{PosL:.6f} NL:{NegL:.6f} |PA:{pos_avg:.3f} NA:{neg_avg:.3f} "
+                        f"|FA:{FA:.3f} Ms:{Ms:.3f} |η:{current_lr:.2e} gNorm:{grad_norm:.3f}"
+                    )
+
+
             if patience > 0 and ema_loss is not None:
                 if ema_loss < best_ema_loss_for_stopping - min_delta:
                     best_ema_loss_for_stopping = ema_loss
@@ -704,5 +531,18 @@ class Trainer:
                 if len(all_checkpoints) > checkpoint_limit:
                     os.remove(os.path.join(checkpoint_dir, all_checkpoints[0]))
                     
+
+            validation_interval = self.config.get("validation_interval", 500)
+            validation_warmup_steps = self.config.get("validation_warmup_steps", WARMUP_STEPS)
+
+            if X_val and step_ndx > validation_warmup_steps and step_ndx % validation_interval == 0:
+                
+                val_metrics = self.validate(X_val)
+                
+                self.model.history['val_loss_steps'].append(step_ndx)
+                self.model.history['val_loss'].append(val_metrics['val_loss'])
+                self.model.history['val_avg_pos_logit'].append(val_metrics['avg_pos_logit'])
+                self.model.history['val_avg_neg_logit'].append(val_metrics['avg_neg_logit'])
+
             if step_ndx >= max_steps - 1:
                 break

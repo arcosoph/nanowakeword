@@ -72,15 +72,8 @@ We use a virtual environment to isolate project dependencies.
 
 2.  **Write your code!** This is the creative part. Implement your feature or fix the bug.
 
-### Step 4: Format and Lint Your Code
 
-Before committing, please run our automated code quality tools. This ensures consistency across the entire project.
-
-```bash
-# This single command will format your code and fix many common linting issues.
-ruff format . && ruff check . --fix```
-```
-### Step 5: Submit a Pull Request (PR)
+### Step 4: Submit a Pull Request (PR)
 
 1.  **Commit** your changes using the Conventional Commits format.
     ```bash

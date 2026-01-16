@@ -152,48 +152,99 @@ class Model(nn.Module):
 
 
     def plot_history(self, output_dir):
-            """
-            Creates a meaningful graph of training loss and its stable form (EMA).
-            """
-            print_info("Generating training performance graph...")
-            graph_output_dir = os.path.join(output_dir, "graphs")
-            os.makedirs(graph_output_dir, exist_ok=True)
+        """
+        Creates a graph of training loss (raw + EMA) and validation loss.
+        """
+        import os
+        import numpy as np
+        import matplotlib.pyplot as plt
 
-            loss_history = np.array(self.history['loss'])
-            
-            ema_loss_history = []
-            ema_loss = None
-            # alpha = 0.01  # Match this value with the train_model function.
-                        # alpha = 0.01  # Match this value with the train_model function.
-            alpha = self.config.get("ema_alpha", 0.01)
+        print_info("Generating training performance graph...")
 
-            for loss_val in loss_history:
-                if ema_loss is None:
-                    ema_loss = loss_val
-                else:
-                    ema_loss = alpha * loss_val + (1 - alpha) * ema_loss
+        graph_output_dir = os.path.join(output_dir, "graphs")
+        os.makedirs(graph_output_dir, exist_ok=True)
 
-                ema_loss_history.append(ema_loss)
+        # ---------------------------
+        # Training loss
+        # ---------------------------
+        loss_history = np.array(self.history['loss'])
 
-            plt.figure(figsize=(12, 6))
-            
-            plt.plot(loss_history, label='Training Loss (Raw)', color='skyblue', alpha=0.6)
-            
-            plt.plot(ema_loss_history, label='Training Loss (Stable/EMA)', color='navy', linewidth=2)
-            
-            plt.title('Training Loss Stability Analysis', fontsize=16)
-            plt.xlabel('Training Steps', fontsize=12)
-            plt.ylabel('Loss', fontsize=12)
-            plt.legend(fontsize=10)
-            plt.grid(True, linestyle='--', alpha=0.6)
-            plt.ylim(bottom=0) # Loss will never go below 0
+        # EMA computation
+        ema_loss_history = []
+        ema_loss = None
+        alpha = self.config.get("ema_alpha", 0.01)
 
-            save_path = os.path.join(graph_output_dir, "training_performance_graph.png")
-            plt.tight_layout()
-            plt.savefig(save_path)
-            plt.close()
+        for loss_val in loss_history:
+            if ema_loss is None:
+                ema_loss = loss_val
+            else:
+                ema_loss = alpha * loss_val + (1 - alpha) * ema_loss
+            ema_loss_history.append(ema_loss)
 
-            print_info(f"Performance graph saved to: {save_path}")
+        # ---------------------------
+        # Plot
+        # ---------------------------
+        plt.figure(figsize=(12, 6))
+
+        plt.plot(
+            loss_history,
+            label="Train Loss (raw)",
+            color="tab:blue",
+            alpha=0.45,
+            linewidth=1.2
+        )
+
+        # EMA training loss (main signal)
+        plt.plot(
+            ema_loss_history,
+            label="Train Loss (EMA)",
+            color="tab:blue",
+            linewidth=2.5
+        )
+
+        # Validation loss (authoritative checkpoints)
+        if (
+            'val_loss_steps' in self.history
+            and 'val_loss' in self.history
+            and self.history['val_loss']
+        ):
+            plt.plot(
+                self.history['val_loss_steps'],
+                self.history['val_loss'],
+                label="Validation Loss",
+                color="tab:orange",
+                linestyle="--",
+                marker="o",
+                markersize=4,
+                linewidth=2
+            )
+
+        # ---------------------------
+        # Styling (engineer-grade)
+        # ---------------------------
+        plt.title("Training & Validation Loss", fontsize=15, weight="bold")
+        plt.xlabel("Training Steps", fontsize=12)
+        plt.ylabel("Loss", fontsize=12)
+
+        plt.legend(frameon=False)
+        plt.grid(True, which="major", linestyle="--", alpha=0.25)
+        plt.grid(True, which="minor", linestyle=":", alpha=0.1)
+        plt.minorticks_on()
+
+        plt.ylim(bottom=0)
+
+        # ---------------------------
+        # Save
+        # ---------------------------
+        save_path = os.path.join(graph_output_dir, "training_performance_graph.png")
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=150)
+        plt.close()
+
+        print_info(f"Performance graph saved to: {save_path}")
+
+
+
 
     def forward(self, x):
             """

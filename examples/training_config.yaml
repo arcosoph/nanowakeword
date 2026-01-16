@@ -11,9 +11,9 @@ model_name: "arcosoph_A_v1"
 output_dir: "./trained_models"
 
 # Source audio data paths (raw .wav files)
-positive_data_path: "./data/generated_positive"
-negative_data_path: "./data/generated_negative"
-background_paths: ["./data/background_noise"]
+positive_data_path: "./data/positive"
+negative_data_path: "./data/negative"
+background_paths: ["./data/noise"]
 rir_paths: ["./data/rir"]
 
 # Model Architecture
@@ -48,6 +48,17 @@ feature_manifest:
     # For example, adding a large external noise dataset:
     # openwakeword_noise: './openwakeword_features_ACAV100M_2000_hrs_16bit.npy'
 
+  # # oftional
+  # targets_val:
+  #   t: './trained_models/arcosoph_D_v1/features/positive_features_train.npy'
+  # negatives_val:
+  #   n: "./trained_models/arcosoph_D_v10/features/max3_hard_negative_features.npy"
+  # backgrounds_val:
+  #   b: './trained_models/arcosoph_C_v10/features/pure_noise_features.npy'
+
+
+
+
 ## Synthetic Data Generation
 # Parameters for generating audio clips using Text-to-Speech (TTS).
 generate_positive_samples: 2500
@@ -62,9 +73,10 @@ augmentation_batch_size: 16
 feature_gen_cpu_ratio: 1.0
 
 feature_generation_manifest:
+  # you can create more feature 
 
-  positive_wakeword:
-    input_audio_dirs: ["./data/generated_positive"]
+  jast_a_name_like_pos_feature:
+    input_audio_dirs: ["./data/positive"]
     output_filename: "positive_features_train.npy"
     use_background_noise: true
     use_rir: true
@@ -73,7 +85,7 @@ feature_generation_manifest:
     # augmentation_settings: (we will use default)
 
   hard_negatives:
-    input_audio_dirs: ["./data/generated_negative"]
+    input_audio_dirs: ["./data/negative"]
     output_filename: "hard_negative_features.npy"
     use_background_noise: true
     use_rir: true
@@ -81,7 +93,7 @@ feature_generation_manifest:
     augmentation_rounds: 11 
   
   pure_ambient_noise:
-    input_audio_dirs: ["./data/background_noise"]
+    input_audio_dirs: ["./data/noise"]
     output_filename: "pure_noise_features.npy"
     use_background_noise: false
 
@@ -91,6 +103,8 @@ feature_generation_manifest:
         AddBackgroundNoise: 0.0
         Gain: 1.0
         RIR: 0.5
+  
+  # and others if you want to genarete
 
 ## Advanced & Miscellaneous Settings
 # Checkpointing, logging, and other fine-tuning parameters.

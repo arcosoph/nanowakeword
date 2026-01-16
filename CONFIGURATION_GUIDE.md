@@ -1,10 +1,9 @@
-# **NOTE**: Most of the information here is invalid until new updates are released.
- - **You can view the example/training_config.yaml file for quick reference.**
-
 <div style="font-size:20px; font-weight:bold; color:#f59e0b;">
 NOTE: The information in this document will be updated.
 </div>
 
+# **NOTE**: Most of the information here is invalid until new updates are released.
+ - **You can view the example/training_config.yaml file for quick reference.**
 
 # Nanowakeword: The Complete Configuration Guide
 

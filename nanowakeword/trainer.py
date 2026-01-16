@@ -33,22 +33,24 @@ import matplotlib
 import numpy as np
 import collections
 import collections.abc
+from torch.utils.data import DataLoader
 
 from nanowakeword._config.config_generator import ConfigGenerator
 from nanowakeword._config.ConfigProxy import ConfigProxy
 
-from torch.utils.data import DataLoader
+from nanowakeword._export.auto_gen_name import auto_gen_name as atoGeNm
+
+from nanowakeword.modules.model import Model
+
+from nanowakeword.train.train_model import Trainer
 
 from nanowakeword.data.data_sampler import DynamicClassAwareSampler, HardnessCurriculumDataset
 
 from nanowakeword.utils.audio_preprocess import verify_and_process_directory
-
-from nanowakeword._export.auto_gen_name import auto_gen_name as atoGeNm
 from nanowakeword.utils.audio_analyzer import DatasetAnalyzer
 from nanowakeword.utils.DynamicTable import DynamicTable
 from nanowakeword.utils.journal import update_training_journal
 from nanowakeword.utils.logger import print_banner, print_step_header, print_info, print_table
-from nanowakeword.modules.model import Model
 
 matplotlib.use('Agg')
 
@@ -349,7 +351,21 @@ def train(cli_args=None):
         training_start_time = time.time()
 
         # Get the feature manifest from the config
-        manifest = config.get("feature_manifest", {})
+        # manifest = config.get("feature_manifest", {})
+
+
+        training_manifest = config.get("feature_manifest", {})
+
+        # একটি নতুন ম্যানিফেস্ট তৈরি করা যাতে শুধুমাত্র ট্রেনিং কী-গুলো থাকবে
+        manifest = {}
+        for category, paths in training_manifest.items():
+            if not category.endswith('_val'):
+                manifest[category] = paths
+
+        print("DEBUG: Using only the following manifest for training dataset:")
+        print(manifest)
+
+
 
         # Pass the full manifest dictionary to the dataset
         dataset = HardnessCurriculumDataset(
@@ -377,6 +393,7 @@ def train(cli_args=None):
             
             if num_categories_present == 0:
                 raise ValueError("CRITICAL: feature_manifest is empty. Cannot create a default batch composition.")
+
 
             # A good default ratio: 25% targets, 50% negatives, 25% backgrounds
             # If a category is missing, its share is distributed among the others.
@@ -408,14 +425,16 @@ def train(cli_args=None):
             print_info(f"Using default composition: {composition_cfg}")
 
 
+
         sampler = DynamicClassAwareSampler(
             dataset=dataset,
             batch_composition=composition_cfg,
             feature_manifests=manifest
         )
 
-        # Create DataLoader with our custom sampler and collate_fn
         num_workers = config.get("num_workers", 2)
+
+        # Create DataLoader with our custom sampler and collate_fn
         X_train = DataLoader(
             dataset,
             batch_sampler=sampler, # Use batch_sampler for samplers that yield full batches
@@ -425,6 +444,44 @@ def train(cli_args=None):
             collate_fn=collate_fn_with_indices # Use our custom collate function
         )
         
+        print_info("Checking for validation data and creating validation loader...")
+
+        val_manifest = {}
+        feature_manifest = config.get("feature_manifest", {})
+        for category, manifest_paths in feature_manifest.items():
+            if category.endswith('_val'):
+                new_category_name = category.replace('_val', '')
+                val_manifest[new_category_name] = manifest_paths
+
+        from nanowakeword.data.data_sampler import ValidationDataset
+
+        balanced_val_loader = None
+        if val_manifest:
+            try:
+                
+                val_dataset = ValidationDataset(feature_manifest=val_manifest)
+
+                if len(val_dataset) > 0:
+                    val_batch_size = config.get("validation_batch_size", 256)
+                    
+                    balanced_val_loader = DataLoader(
+                        dataset=val_dataset,
+                        batch_size=val_batch_size,
+                        shuffle=False,
+                        num_workers=config.get("num_workers", 2),
+                        pin_memory=True if num_workers > 0 else False,
+                        persistent_workers=True if num_workers > 0 else False,
+                    )
+                    print_info(f"Successfully created validation dataloader with {len(val_dataset)} samples.")
+                else:
+                    print_info("Validation manifest found, but the resulting dataset is empty. Skipping validation.")
+
+            except Exception as e:
+                print_info(f"[WARNING] Failed to create validation dataloader. Error: {e}")
+        else:
+            print_info("No validation data keys (e.g., 'targets_val') found in feature_manifest. Skipping validation.")
+
+
         # Shape deteced
         try:
             sample_feature, _, _ = dataset[0] 
@@ -450,16 +507,14 @@ def train(cli_args=None):
             seconds_per_example=seconds_per_example
         )
 
-        from nanowakeword.train.train_model import Trainer
         trainer_instance = Trainer(model=nww, config=config)
-        # nww.setup_optimizer_and_scheduler(config=config)
         
         # EXECUTE TRAINING
         print_step_header("Training is progress")
 
         best_model = trainer_instance.auto_train(
-            # model=nww,
             X_train=X_train,
+            X_val=balanced_val_loader,  
             steps=config.get("steps", 15000),
             debug_path=artifacts_dir,
             table_updater=dynamic_table,

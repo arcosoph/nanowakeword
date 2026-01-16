@@ -1,83 +1,22 @@
 import torch
 
-def BiasWeightedLoss(trainer, data, step_ndx, logger):
-    
-    LOSS_BIAS = trainer.config.get("LOSS_BIAS", 0.8)
-
-    # Data Setup 
-    x, y = data
-    x = x.to(trainer.model.device)
-    
-    y = y.to(trainer.model.device).float().view(-1) 
-
-    trainer.optimizer.zero_grad()
-    
-    # Forward Pass 
-    embeddings = trainer.model.model(x)
-
-    logits = trainer.model.classifier(embeddings).view(-1)
+def BiasWeightedLoss(logits, labels, LOSS_BIAS):
     
     yp = torch.sigmoid(logits)
-    yt = y
+    yt = labels
     
     epsilon = 1e-7
     
-    # Calculate term for Positives
-    # If yt=0, then this entire line will become 0.
-    pos_term = -(yt) * torch.log(yp + epsilon)
-    
-    # Calculate term for Negatives
-    # If yt=1, then (1-yt) = 0, so the entire line becomes 0.
-    neg_term = -(1 - yt) * torch.log(1 - yp + epsilon)
-    
-    neg_loss_mean = neg_term.mean()
-    pos_loss_mean = pos_term.mean()
+    pos_term = -(yt) * torch.log(torch.clamp(yp, min=epsilon))
+    neg_term = -(1 - yt) * torch.log(torch.clamp(1 - yp, min=epsilon))
+
+    pos_mask = (yt == 1)
+    neg_mask = (yt == 0)
+
+    pos_loss_mean = pos_term[pos_mask].mean() if pos_mask.sum() > 0 else torch.tensor(0.0, device=logits.device)
+    neg_loss_mean = neg_term[neg_mask].mean() if neg_mask.sum() > 0 else torch.tensor(0.0, device=logits.device)
     
     total = (LOSS_BIAS * neg_loss_mean) + ((1.0 - LOSS_BIAS) * pos_loss_mean)
-    
-    # Optimization 
-    # History tracking (Optional, for your graph)
-    if not hasattr(trainer, 'state'):
-        trainer.state = {'loss_hist': [], 'fa_ema': 0.0, 'miss_ema': 0.0}
-    trainer.state['loss_hist'].append(total.item())
-    if len(trainer.state['loss_hist']) > 100: trainer.state['loss_hist'] = trainer.state['loss_hist'][-100:]
-    
-    total.backward()
-    
-    # Gradient Clipping (Standard Safe Practice, not strictly part of logic but recommended)
-    grad_norm = torch.nn.utils.clip_grad_norm_(
-                list(trainer.model.parameters()) + list(trainer.model.classifier.parameters()),
-                max_norm=1.0
-               )
-    
-    trainer.optimizer.step()
-    trainer.scheduler.step()
-    
-    # Logging 
-    with torch.no_grad():
-        if logger and step_ndx % 100 == 0:
-            is_pos = (yt == 1)
-            is_neg = (yt == 0)
-
-            current_lr = trainer.optimizer.param_groups[0]['lr']
-
-            # Average predictions
-            pos_avg = yp[is_pos].mean().item() if is_pos.sum() > 0 else 0.0
-            neg_avg = yp[is_neg].mean().item() if is_neg.sum() > 0 else 0.0
-
-            # Calculate FA (False Alarm) and Misses
-            FA = (yp[is_neg] > 0.5).float().mean().item() if is_neg.sum() > 0 else 0.0
-            Ms = (yp[is_pos] < 0.5).float().mean().item() if is_pos.sum() > 0 else 0.0
-
-            # Positive & Negative Loss
-            PosL = pos_term.mean().item()
-            NegL = neg_term.mean().item()
-
-            logger.info(
-                f"[{step_ndx:5d}] L:{total.item():.6f} "
-                f"PL:{PosL:.6f} NL:{NegL:.6f} |PA:{pos_avg:.3f} NA:{neg_avg:.3f} "
-                f"|FA:{FA:.3f} Ms:{Ms:.3f} |η:{current_lr:.2e} gNorm:{grad_norm:.3f}"
-            )
 
     per_example_loss = (LOSS_BIAS * neg_term) + ((1.0 - LOSS_BIAS) * pos_term)
 

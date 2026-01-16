@@ -21,7 +21,7 @@
 import os
 import sys
 import torch
-# from .data import DynamicClassAwareSampler
+
 from nanowakeword.data.generator.adversarial_texts import adversarial_texts
 from nanowakeword.data.generator.generate_samples import generate_samples
 

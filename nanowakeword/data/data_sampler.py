@@ -241,6 +241,10 @@ class DynamicClassAwareSampler(Sampler):
         self.num_samples_per_batch = sum(self.batch_composition.values())
         self.num_batches = self._calculate_num_batches()
 
+
+        # self.hardness_smoothing_factor = self.config.get("hardness_smoothing_factor", 0.75)
+        self.hardness_smoothing_factor = 0.75
+
     def _calculate_num_batches(self):
         """
         Calculates the maximum number of batches that can be created.
@@ -310,7 +314,18 @@ class DynamicClassAwareSampler(Sampler):
                 combined_indices = torch.cat([self.dataset.index_pools[k] for k in keys_to_sample_from])
                 
                 # Get the hardness scores for these combined indices
-                weights = hardness[combined_indices]
+                # weights = hardness[combined_indices]
+
+                #             # নতুন এবং উন্নত কোড:
+                raw_weights = hardness[combined_indices]
+                
+                # হার্ডনেস স্কোরগুলোকে স্মুথ করা হচ্ছে যাতে খুব বেশি এবং খুব কমের মধ্যে পার্থক্য কমে যায়
+                # self.hardness_smoothing_factor (e.g., 0.75) এর মান ১-এর কম হলে এই পার্থক্য কমবে
+                smoothed_weights = raw_weights ** self.hardness_smoothing_factor
+                
+                # সংখ্যাগত স্থিতিশীলতার জন্য একটি ক্ষুদ্র মান (epsilon) যোগ করা
+                weights = smoothed_weights + 1e-6 
+                
                 
                 # Perform weighted sampling
                 selected_local_indices = torch.multinomial(weights, num_samples, replacement=True)
@@ -329,3 +344,50 @@ class DynamicClassAwareSampler(Sampler):
 
     def __len__(self):
         return self.num_batches
+
+
+class ValidationDataset(Dataset):
+    """
+    A safe, standalone Dataset for validation. It loads data on-the-fly from file paths.
+    """
+    def __init__(self, feature_manifest: dict):
+        super().__init__()
+        self.file_paths = []
+        self.local_indices = []
+        self.labels = []
+        
+        for category, manifest_paths in feature_manifest.items():
+            label = 1.0 if category == 'targets' else 0.0
+            
+            for key, path in manifest_paths.items():
+                try:
+                    # 'with' স্টেটমেন্ট ছাড়া mmap লোড করা হচ্ছে
+                    data = np.load(path, mmap_mode='r')
+                    length = len(data)
+                    
+                    for i in range(length):
+                        self.file_paths.append(path)
+                        self.local_indices.append(i)
+                        self.labels.append(label)
+                        
+                except FileNotFoundError:
+                    print(f"[WARNING] Validation file not found, skipping: {path}")
+                except Exception as e:
+                    print(f"[WARNING] Could not probe validation file '{path}'. Error: {e}")
+    
+    def __len__(self):
+        return len(self.file_paths)
+
+    def __getitem__(self, index):
+        path = self.file_paths[index]
+        local_index = self.local_indices[index]
+        label = self.labels[index]
+        
+        # এখানেও 'with' ছাড়াই লোড করা হচ্ছে
+        data = np.load(path, mmap_mode='r')
+        feature = data[local_index]
+
+        feature_tensor = torch.from_numpy(feature.astype(np.float32))
+        label_tensor = torch.tensor(label, dtype=torch.float32)
+        
+        return feature_tensor, label_tensor, index

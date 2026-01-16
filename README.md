@@ -63,7 +63,7 @@ The cornerstone and "brain" of the framework is its data-driven configuration en
 
 *   **Hardware-Aware Performance Tuning:** The engine profiles your entire hardware stack (CPU cores, system RAM, and GPU VRAM) to maximize throughput at every stage. It calculates the maximum efficient batch sizes for data generation, augmentation, and model training, ensuring that your hardware's full potential is unlocked.
 
-*   **Automatic Pre-processing:** Just drop your raw audio files (`.mp3`, `.m4a`, `.flac`, etc.) into the data folders — NanoWakeWord automatically handles resampling, channel conversion, and format standardization.
+*   **Automatic Pre-processing:** Just drop your raw audio files (`.mp3`, `.flac`, `.pcm`, etc.) into the data folders — NanoWakeWord automatically handles resampling, channel conversion, and format standardization.
 
 *   **Data-Driven Augmentation Policy:** Rather than applying a generic augmentation strategy, the engine crafts a custom augmentation policy. It analyzes the statistical properties of your provided noise and reverberation files to tailor the intensity, probability, and type of on-the-fly augmentations, creating a training environment that mirrors real-world challenges.
 
@@ -89,7 +89,7 @@ Recognizing that data is the bedrock of any great model, Nanowakeword automates 
 
 The training process itself is infused with cutting-edge techniques to ensure the final model is not just accurate, but exceptionally robust and reliable:
 
-*   **Hybrid Loss Architecture:** The model's learning is guided by a sophisticated, dual-objective loss function. **Triplet Loss** sculpts a highly discriminative embedding space, pushing dissimilar sounds far apart. Simultaneously, a **Classification Loss** (such as Focal Loss or Label Smoothing) fine-tunes the final decision boundary for raw accuracy. These two losses work in concert to produce models with superior discrimination capabilities.
+*   **Hybrid Loss Architecture:** The model's learning is guided by a sophisticated, dual-objective loss function. 
 
 *   **Checkpoint Ensembling / Stochastic Weight Averaging (SWA):** Instead of relying on a single "best" checkpoint, the framework identifies and averages the weights of the most stable and high-performing models from the training run. This powerful ensembling technique finds a flatter, more robust minimum in the loss landscape, leading to a final model with provably better generalization to unseen data.
 
@@ -106,7 +106,7 @@ A model's true value is in its deployment. Nanowakeword's inference engine is de
 
 *   **Stateful Streaming Architecture:** It processes continuous audio streams incrementally, maintaining temporal context via hidden states for recurrent models (like LSTMs/GRUs). This is essential for delivering instant, low-latency predictions in real-time applications.
 
-*   **Universal ONNX Export:** The final trained model is exported to the industry-standard ONNX format. This guarantees maximum hardware acceleration and platform-agnostic deployment across a vast range of environments, from powerful servers to resource-constrained edge devices.
+*   **Universal Export:** The final trained model is exported to the industry-standard **ONNX** & **Pytorch** format. This guarantees maximum hardware acceleration and platform-agnostic deployment across a vast range of environments, from powerful servers to resource-constrained edge devices.
 
 *   **Integrated On-Device Post-Processing Stack:** The engine is a complete, production-ready solution. It incorporates an on-device stack that includes optional **Voice Activity Detection (VAD)** to conserve power, **Noise Reduction** to enhance clarity, and intelligent **Debouncing/Patience Filters**. This stack transforms the raw model output into a reliable, robust trigger, ready for integration out of the box.
 
@@ -119,7 +119,6 @@ A model's true value is in its deployment. Nanowakeword's inference engine is de
 ### Prerequisites
 
 *   Python 3.9 or higher
-*   `ffmpeg` (for audio processing)
 
 ### Installation
 
@@ -138,12 +137,6 @@ While the PyPI package offers the latest stable release, you can install the mos
 pip install git+https://github.com/arcosoph/nanowakeword.git
 ```
 
-**FFmpeg:** If you want to train your model you must have FFmpeg installed on your system and available in your system's PATH. This is required for automatic audio preprocessing.
-*  **On Windows:** Download from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) and follow their instructions to add it to your PATH.
-*  **On macOS (using Homebrew):** `brew install ffmpeg`
-*  **On Debian/Ubuntu:** `sudo apt update && sudo apt install ffmpeg`
-
-
 ## Usage
 
 The primary method for controlling the NanoWakeWord framework is through a `.yaml` file. This file acts as the central hub for your entire project, defining data paths and controlling which pipeline stages are active.
@@ -151,14 +144,14 @@ The primary method for controlling the NanoWakeWord framework is through a `.yam
 ### Simple Example Workflow
 
 1.  **Prepare Your Data Structure:**
-    Organize your raw audio files (`.mp3`, `.wav`, etc.) into their respective subfolders.
+    Organize your raw audio files (`.wav`, `flac` etc.) into their respective subfolders.
     ```
     training_data/
     ├── positive/         # Your wake word samples ("hey_nano.wav")
-    │   ├── sample1.wav
-    │   └── user_01.mp3
+    │   ├── sample.wav
+    │   └── user_01.aiff
     ├── negative/         # Speech/sounds that are NOT the wake word
-    │   ├── not_wakeword1.m4a
+    │   ├── adversarial_word.pcm
     │   └── random_speech.wav
     ├── noise/            # Background noises (fan, traffic, crowd)
     │   ├── cafe.wav
@@ -232,7 +225,7 @@ The command above automates a sophisticated, multi-stage pipeline:
 3.  **Synthetic Data Generation:** If the engine detects a data imbalance, it synthesizes new audio samples to create a robust dataset.
 4.  **Augmentation & Feature Extraction:** Creates thousands of augmented audio variations and extracts numerical features, saving them in a memory-efficient format.
 5.  **Autonomous Model Training:** Trains the model using the intelligently generated configuration, automatically stopping when peak performance is reached.
-6.  **Checkpoint Averaging & Export:** Averages the weights of the most stable models found during training and exports a final, production-ready `.onnx` file.
+6.  **Checkpoint Averaging & Export:** Averages the weights of the most stable models found during training and exports a final, production-ready `.onnx`/`.pytorch` model.
 
 ## Performance and Evaluation
 

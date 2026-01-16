@@ -1,15 +1,21 @@
 # Nanowakeword: Project Status & Release Notes
 
-**Upcoming Update: New update coming within 72 hours**
-
-
-*Last Updated: December 13, 2025*
-
 This document provides timely updates, performance notes, stability reports, and important recommendations regarding the Nanowakeword framework. We advise reviewing this file for the latest information on specific versions and features.
 
 ---
 
-### Current Release: `v1.3.3`
+# Current Release: `v2.0.0`
+*   **✅ Production-Ready:** `DNN`, `CNN`, `LSTM`, `GRU`, `RNN`, `QuartzNet`, `Transformer`, `TCN`. These architectures are stable and recommended for production use.
+
+*    **Untested:** `Conformer`, `E-Branchformer`, `CRNN` are not tested
+
+### Future Development Notes
+
+*   Currently, work is being done to increase the accuracy of the model.
+*   It may be possible to create an E2E model very soon.
+
+
+### Release: `v1.3.3`
 
 #### Architecture Stability Report
 

@@ -82,7 +82,7 @@ def augment_clips(
         "min_snr_in_db": 3.0, "max_snr_in_db": 30.0,
         "rir_prob": 0.2,
         "pitch_prob": 0.3, "min_pitch_semitones": -2.0, "max_pitch_semitones": 2.0,
-        "gain_prob": 1.0, "min_gain_in_db": -6.0, "max_gain_in_db": 6.0
+        "gain_prob": 1.0, "min_gain_in_db": -6.0, "max_gain_in_db": 6.0, "ColoredNoise": 0.30
     }
     if augmentation_settings:
         cfg.update(augmentation_settings)
@@ -106,7 +106,7 @@ def augment_clips(
     )    
     
     transforms.append(
-        AddColoredNoise(min_snr_in_db=20.0, max_snr_in_db=40.0, p=1.0, sample_rate=sr)
+        AddColoredNoise(min_snr_in_db=20.0, max_snr_in_db=40.0, p=0.30, sample_rate=sr)
     )
 
     augmenter = Compose(transforms=transforms, output_type="dict")
