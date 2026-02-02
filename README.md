@@ -1,4 +1,3 @@
-
 <p align="center">
   <img src="https://raw.githubusercontent.com/arcosoph/nanowakeword/main/assets/logo/logo_0.png" alt="Logo" width="290">
 </p>
@@ -20,7 +19,7 @@
 - [Features](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#state-of-the-art-features-and-architecture)
 - [Using model](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#using-your-trained-model-inference)
 - [Performance](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#performance-and-evaluation)
-- [NOTIS](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#notes--status)
+- [NOTIS](https://github.com/arcosoph/nanowakeword/blob/main/STATUS.md)
 - [FAQ](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#faq)
 
 ## **Choose Your Architecture, Build Your Pro Model**
@@ -41,11 +40,10 @@ NanoWakeWord is a versatile framework offering a rich library of neural network 
 | **RNN** | Baseline experiments or educational purposes. | Simple & Foundational | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=rnn) |
 
 ---
-### **Notes & Status**
-
-Nanowakeword is under active development. For important updates, version-specific notes, and the latest stability status of all features, please refer to our official status document.
-
-**[➡️ View Latest Release Notes & Project Status](https://github.com/arcosoph/nanowakeword/blob/main/STATUS.md)**
+> [!NOTE]
+> Nanowakeword is under active development. For important updates, version-specific notes, and the latest stability status of all features, please refer to our official status document.
+>
+> **[➡️ View Latest Release Notes & Project Status](https://github.com/arcosoph/nanowakeword/blob/main/STATUS.md)**
 
 
 ## State-of-the-Art Features and Architecture
@@ -243,11 +241,9 @@ Below is a typical training performance graph for a model trained on a standard 
 
 *   **Stable and Efficient Learning:** The "Training Loss (Stable/EMA)" curve demonstrates the model's rapid and stable convergence. The loss consistently decreases and flattens, indicating that the model has effectively learned the underlying patterns of the wake word without overfitting. The raw loss (light blue) shows the natural variance between batches, while the stable loss (dark blue) confirms a solid and reliable learning trend.
 
-*   **Intelligent Early Stopping:** The training process is not just powerful but also efficient. In this example, the process was scheduled for **18,109 steps** but was intelligently halted at **11,799 steps** by the early stopping mechanism. This feature saved significant time and computational resources by automatically detecting the point of maximum learning, preventing hours of unnecessary training.
-
 *   **Exceptional Confidence and Separation:** The final report card is a testament to the model's quality. With an **Average Stable Loss of just 0.2065**, the model is highly accurate. More importantly, the high margin between the positive and negative confidence scores highlights its decision-making power:
-    *   **Avg. Positive Confidence (Logit): `3.166`** (Extremely confident when the wake word is spoken)
-    *   **Avg. Negative Confidence (Logit): `-3.137`** (Equally confident in rejecting incorrect words and noise)
+    *   **Avg. Positive Confidence (Logit): `17.006`** (Extremely confident when the wake word is spoken)
+    *   **Avg. Negative Confidence (Logit): `-18.647`** (Equally confident in rejecting incorrect words and noise)
     This large separation is crucial for minimizing false activations and ensuring the model responds only when it should.
 
 *   **Extremely Low False Positive Rate:** While real-world performance depends on the environment, our new training methodology, which heavily penalizes misclassifications, produces models with an exceptionally low rate of false activations. A well-trained model often achieves **less than one false positive every 8-12 hours** on average, making it ideal for a seamless user experience.
@@ -362,12 +358,9 @@ In a world of complex machine learning tools, Nanowakeword is built on a simple 
 
 NanoWakeWord is an actively developed project. Here are some of the features and improvements we are planning for the future:
 
+-   **E2E:** End to End model
 -   **Model Quantization:** Tools to automatically quantize the final `.onnx` model for even better performance on edge devices.
--   **Advanced Augmentation:** Adding more audio augmentation techniques like SpecAugment.
 -   **Model Zoo Expansion:** Adding more pre-trained models for different languages and phrases.
--   **Performance Benchmarks:** A dedicated section with benchmarks on popular hardware like Raspberry Pi.
-
-We welcome feedback and contributions to help shape the future of this project!
 
 ## Contributing
 
