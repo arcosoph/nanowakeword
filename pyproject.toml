@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 # pip install nanowakeword
 name = "nanowakeword"
 
-version = "2.0.0"
+version = "2.0.1"
 authors = [
   { name="Arcosoph", email="a5tkabid@gmail.com" },
 ]

@@ -30,6 +30,7 @@ from nanowakeword.data.augment_clips import augment_clips
 from nanowakeword.data.AudioFeatures import AudioFeatures
 from nanowakeword.utils.logger import print_step_header, print_info
 
+import json
 
 SEED=10
 def set_seed(seed):

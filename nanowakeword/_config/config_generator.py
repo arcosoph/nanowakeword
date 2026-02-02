@@ -89,7 +89,7 @@ class ConfigGenerator:
         
         effective_data_volume = base_hours_for_calculation * calculated_rounds
 
-       # step 5
+        # 
         quality_score = (1 - clamp(A_noise, 0, 1)) + clamp(N_rir / 500, 0, 1)
         normalized_quality = quality_score / 2
 

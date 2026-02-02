@@ -18,7 +18,6 @@
 # ==============================================================================
 
 # (✿◕‿◕✿)
-import os
 import copy
 import torch
 import random
@@ -29,7 +28,6 @@ import matplotlib
 import numpy as np
 import collections
 from torch import nn
-import matplotlib.pyplot as plt
 from nanowakeword.utils.logger import print_info
 
 from .architectures import (
@@ -145,7 +143,14 @@ class Model(nn.Module):
         else:
             raise ValueError(f"Unsupported model_type: '{model_type}'.")
 
-        self.classifier = nn.Linear(embedding_dim, n_classes)
+        # self.classifier = nn.Linear(embedding_dim, n_classes)
+
+        self.classifier = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim // 2),
+            self.activation_fn, 
+            nn.Dropout(dropout_prob),
+            nn.Linear(embedding_dim // 2, n_classes)
+        )
 
         # Define logging dict (in-memory)
         self.history = collections.defaultdict(list)
@@ -242,8 +247,6 @@ class Model(nn.Module):
         plt.close()
 
         print_info(f"Performance graph saved to: {save_path}")
-
-
 
 
     def forward(self, x):

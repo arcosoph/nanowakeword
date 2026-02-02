@@ -356,15 +356,10 @@ def train(cli_args=None):
 
         training_manifest = config.get("feature_manifest", {})
 
-        # একটি নতুন ম্যানিফেস্ট তৈরি করা যাতে শুধুমাত্র ট্রেনিং কী-গুলো থাকবে
         manifest = {}
         for category, paths in training_manifest.items():
             if not category.endswith('_val'):
                 manifest[category] = paths
-
-        print("DEBUG: Using only the following manifest for training dataset:")
-        print(manifest)
-
 
 
         # Pass the full manifest dictionary to the dataset

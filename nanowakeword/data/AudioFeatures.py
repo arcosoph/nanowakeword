@@ -39,7 +39,9 @@ class AudioFeatures():
                  sr: int = 16000,
                  ncpu: int = 1,
                  inference_framework: str = "onnx", # currently only onnx  suport
-                 device: str = 'cpu'
+                 device: str = 'cpu',
+                 debug_mode = False,
+                 debug_limit = 10
                  ):
         """
         Initialize the AudioFeatures object.
@@ -59,10 +61,10 @@ class AudioFeatures():
         # Initialize the models with the appropriate framework
         self.inference_framework = inference_framework
         self.device = device
-        self.debug_mode = False
+        self.debug_mode = debug_mode
         self.debug_count = 0
-        self.debug_limit = 30
-        self.debug_dir = "debug_pipeline_visuals"
+        self.debug_limit = debug_limit
+        self.debug_dir = "AudioFeatures_visuals"
 
         if self.debug_mode:
             os.makedirs(self.debug_dir, exist_ok=True)

@@ -144,7 +144,6 @@ class GRUModel(nn.Module):
         return out
            
 
-
 # RNN architecture
 class RNNModel(nn.Module):
     def __init__(self, input_shape, embedding_dim, n_blocks, dropout_prob):

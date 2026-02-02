@@ -29,6 +29,7 @@ import numpy as np
 import collections
 from tqdm import tqdm
 from logging.handlers import RotatingFileHandler
+from collections import deque
 
 from nanowakeword.modules.loss import BiasWeightedLoss
 from nanowakeword.modules.model import Model
@@ -84,8 +85,6 @@ class Trainer:
             from itertools import chain
 
             all_params = chain(self.model.parameters(), self.model.classifier.parameters())
-            # all_params = self.model.parameters()
-
 
             optimizer_type = self.config.get("optimizer_type", "adamw").lower() 
             learning_rate = self.config.get('learning_rate_max', 1e-4)
@@ -102,7 +101,7 @@ class Trainer:
             print_info(f"Using optimizer: {optimizer_type.upper()}")
 
 
-            #  Scheduler Setup (New Dynamic Logic) 
+            #  Scheduler Setup 
             # Get the scheduler type from config, defaulting to 'onecycle' for backward compatibility.
             scheduler_type = self.config.get('lr_scheduler_type', 'onecycle').lower()
             
@@ -147,57 +146,55 @@ class Trainer:
 
     def validate(self, val_loader):
         """
-        Runs a full validation cycle on the provided dataloader and returns key performance metrics.
+        Runs a full validation cycle on the provided dataloader and returns a
+        dictionary of key performance metrics, including an error-based score.
         """
+        import collections 
+        import torch.nn.functional as F
 
         self.model.eval()
         self.model.classifier.eval()
 
-        total_val_loss = 0
-        
-        all_pos_logits = []
-        all_neg_logits = []
+        all_logits = []
+        all_labels = []
 
         with torch.no_grad():
             for features, labels, _ in val_loader:
                 features = features.to(self.model.device)
-                labels = labels.to(self.model.device).float()
-
+                labels = labels.to(self.model.device)
+                
                 logits = self.model(features).squeeze()
+                
+                all_logits.append(logits.cpu())
+                all_labels.append(labels.cpu())
 
-                yp = torch.sigmoid(logits)
-                yt = labels
-                epsilon = 1e-7
-
-                pos_term = -(yt) * torch.log(yp + epsilon)
-                neg_term = -(1 - yt) * torch.log(1 - yp + epsilon)
-
-                combined_loss = torch.cat([pos_term[yt==1], neg_term[yt==0]])
-                loss = combined_loss.mean()
-
-                total_val_loss += loss.item()
-
-                pos_mask = (labels == 1)
-                neg_mask = (labels == 0)
-
-                if pos_mask.sum() > 0:
-                    all_pos_logits.append(logits[pos_mask].cpu())
-                if neg_mask.sum() > 0:
-                    all_neg_logits.append(logits[neg_mask].cpu())
+        all_logits = torch.cat(all_logits)
+        all_labels = torch.cat(all_labels).float()
         
-        self.model.train()
-        self.model.classifier.train()
+        val_loss = F.binary_cross_entropy_with_logits(all_logits, all_labels).item()
 
-        if all_pos_logits:
-            all_pos_logits = torch.cat(all_pos_logits)
-        if all_neg_logits:
-            all_neg_logits = torch.cat(all_neg_logits)
+        preds_binary = (all_logits >= 0.0).float() 
+
+        tp = ((preds_binary == 1) & (all_labels == 1)).sum().item() # True Positives
+        tn = ((preds_binary == 0) & (all_labels == 0)).sum().item() # True Negatives
+        fp = ((preds_binary == 1) & (all_labels == 0)).sum().item() # False Positives (False Alarms)
+        fn = ((preds_binary == 0) & (all_labels == 1)).sum().item() # False Negatives (Misses)
+
+        val_recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        val_fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+
+        error_score = fp + fn
 
         metrics = collections.OrderedDict()
-        metrics['val_loss'] = total_val_loss / len(val_loader)
-        
-        metrics['avg_pos_logit'] = all_pos_logits.mean().item() if len(all_pos_logits) > 0 else 0.0
-        metrics['avg_neg_logit'] = all_neg_logits.mean().item() if len(all_neg_logits) > 0 else 0.0
+        metrics['val_loss'] = val_loss
+        metrics['val_recall'] = val_recall
+        metrics['val_fpr'] = val_fpr
+        metrics['total_false_alarms'] = fp
+        metrics['total_misses'] = fn
+        metrics['error_score'] = error_score 
+
+        self.model.train()
+        self.model.classifier.train()
         
         return metrics
 
@@ -217,23 +214,31 @@ class Trainer:
                 resume_from_dir=resume_from_dir        
             )
 
-            print_info("Training finished. Merging best checkpoints to create final model...")
+            # print_info("Training finished. Merging best checkpoints to create final model...")
             
-            if not self.best_training_checkpoints:
-                print_info("No stable models were saved based on training loss stability. Returning the final model state.")
+            # if not self.best_training_checkpoints:
+            #     print_info("No stable models were saved based on training loss stability. Returning the final model state.")
 
-                final_model = self
-                final_model.eval()
-            else:
-                print_info(f"Averaging the top {len(self.best_training_checkpoints)} most stable models found during training...")
+            #     final_model = self
+            #     final_model.eval()
+            # else:
+            #     print_info(f"Averaging the top {len(self.best_training_checkpoints)} most stable models found during training...")
                 
-                averaged_state_dict = self.model.average_models(state_dicts=self.best_training_checkpoints)
+            #     averaged_state_dict = self.model.average_models(state_dicts=self.best_training_checkpoints)
 
-                final_model = copy.deepcopy(self.model)
-                final_model.load_state_dict(averaged_state_dict)
-                final_model.eval() 
+            #     final_model = copy.deepcopy(self.model)
+            #     final_model.load_state_dict(averaged_state_dict)
+            #     final_model.eval() 
 
 
+
+            print_info("Training finished. Selecting the best stable model based on smoothed validation score...")
+
+            print_info(f"Loading the champion model with the best error score of {self.best_error_score}")
+            final_model = copy.deepcopy(self.model)
+            final_model.load_state_dict(self.best_model_on_error_score)
+
+            final_model.eval()
 
             print_info("Calculating performance metrics for the final model...")
                         
@@ -245,12 +250,12 @@ class Trainer:
             else:
                 final_results["Average Stable Loss"] = "N/A"
             
-            try:
-                final_classifier_weights = final_model.classifier.weight.detach().cpu().numpy()
-                weight_std_dev = np.std(final_classifier_weights)
-                final_results["Weight Diversity (Std Dev)"] = f"{weight_std_dev:.4f}"
-            except Exception as e:
-                final_results["Weight Diversity (Std Dev)"] = f"N/A (Error: {e})"
+            # try:
+            #     final_classifier_weights = final_model.classifier.weight.detach().cpu().numpy()
+            #     weight_std_dev = np.std(final_classifier_weights)
+            #     final_results["Weight Diversity (Std Dev)"] = f"{weight_std_dev:.4f}"
+            # except Exception as e:
+            #     final_results["Weight Diversity (Std Dev)"] = f"N/A (Error: {e})"
 
 
             try:
@@ -333,6 +338,16 @@ class Trainer:
         self.best_training_checkpoints = [] 
         self.best_training_scores = []
         checkpoint_averaging_top_k= self.config.get("checkpoint_averaging_top_k", 5)
+
+        smoothing_window_size = self.config.get("validation_smoothing_window", 3)
+        self.recent_val_scores = deque(maxlen=smoothing_window_size)
+        
+        self.best_smoothed_val_loss = float('inf')
+        self.best_model_checkpoint = None 
+
+        self.best_error_score = float('inf')
+        self.best_model_on_error_score = None
+
         default_warmup_steps = int(max_steps * 0.15)
         WARMUP_STEPS = self.config.get("WARMUP_STEPS", default_warmup_steps)
         min_delta = self.config.get("min_delta", 0.0001)
@@ -341,8 +356,7 @@ class Trainer:
         ema_alpha = self.config.get("ema_alpha", 0.01)
 
         # steps_without_improvement = 0
-        validation_interval = self.config.get("validation_interval", 500) # প্রতি ৫০০ স্টেপে ভ্যালিডেশন হবে
-
+        validation_interval = self.config.get("validation_interval", 500) 
 
         default_patience_steps = int(max_steps * 0.15)
         user_patience = self.config.get("early_stopping_patience", None)
@@ -422,7 +436,7 @@ class Trainer:
             embeddings = self.model.model(features)
             logits = self.model.classifier(embeddings).view(-1)
 
-            LOSS_BIAS = self.config.get("LOSS_BIAS", 0.8)
+            LOSS_BIAS = self.config.get("LOSS_BIAS", 0.9)
             total_loss, per_example_loss = BiasWeightedLoss(logits, labels, LOSS_BIAS)
             
             total_loss.backward()
@@ -434,7 +448,6 @@ class Trainer:
 
             self.optimizer.step()
             self.scheduler.step()
-            
 
             # Live Feedback Loop, Update Hardness Scores
             # Using Exponential Moving Average (EMA) for stable updates
@@ -531,18 +544,23 @@ class Trainer:
                 if len(all_checkpoints) > checkpoint_limit:
                     os.remove(os.path.join(checkpoint_dir, all_checkpoints[0]))
                     
-
-            validation_interval = self.config.get("validation_interval", 500)
-            validation_warmup_steps = self.config.get("validation_warmup_steps", WARMUP_STEPS)
+            validation_interval = self.config.get("val_interval", 500)
+            validation_warmup_steps = self.config.get("val_warmup_steps", WARMUP_STEPS)
 
             if X_val and step_ndx > validation_warmup_steps and step_ndx % validation_interval == 0:
-                
+  
                 val_metrics = self.validate(X_val)
-                
+                current_val_loss = val_metrics['val_loss']
+                current_error_score = val_metrics['error_score']
+
                 self.model.history['val_loss_steps'].append(step_ndx)
-                self.model.history['val_loss'].append(val_metrics['val_loss'])
-                self.model.history['val_avg_pos_logit'].append(val_metrics['avg_pos_logit'])
-                self.model.history['val_avg_neg_logit'].append(val_metrics['avg_neg_logit'])
+                self.model.history['val_loss'].append(current_val_loss)
+            
+                if current_error_score < self.best_error_score:
+                    self.best_error_score = current_error_score
+                    self.best_model_on_error_score = copy.deepcopy(self.model.state_dict())
+                    
+                    # print_info(f"New best model found! Error Score: {current_error_score} (FA: {val_metrics['total_false_alarms']}, Misses: {val_metrics['total_misses']}) at step {step_ndx}. Checkpoint saved.")
 
             if step_ndx >= max_steps - 1:
                 break

@@ -286,7 +286,6 @@ class DynamicClassAwareSampler(Sampler):
         return min_possible_batches
 
 
-
     # HELPER method inside the class to get all keys for a category 
     def _get_keys_for_category(self, category_name: str) -> list[str]:
         return list(self.feature_manifests.get(category_name, {}).keys())
@@ -316,14 +315,10 @@ class DynamicClassAwareSampler(Sampler):
                 # Get the hardness scores for these combined indices
                 # weights = hardness[combined_indices]
 
-                #             # নতুন এবং উন্নত কোড:
                 raw_weights = hardness[combined_indices]
                 
-                # হার্ডনেস স্কোরগুলোকে স্মুথ করা হচ্ছে যাতে খুব বেশি এবং খুব কমের মধ্যে পার্থক্য কমে যায়
-                # self.hardness_smoothing_factor (e.g., 0.75) এর মান ১-এর কম হলে এই পার্থক্য কমবে
                 smoothed_weights = raw_weights ** self.hardness_smoothing_factor
                 
-                # সংখ্যাগত স্থিতিশীলতার জন্য একটি ক্ষুদ্র মান (epsilon) যোগ করা
                 weights = smoothed_weights + 1e-6 
                 
                 
@@ -361,7 +356,6 @@ class ValidationDataset(Dataset):
             
             for key, path in manifest_paths.items():
                 try:
-                    # 'with' স্টেটমেন্ট ছাড়া mmap লোড করা হচ্ছে
                     data = np.load(path, mmap_mode='r')
                     length = len(data)
                     
@@ -383,7 +377,6 @@ class ValidationDataset(Dataset):
         local_index = self.local_indices[index]
         label = self.labels[index]
         
-        # এখানেও 'with' ছাড়াই লোড করা হচ্ছে
         data = np.load(path, mmap_mode='r')
         feature = data[local_index]
 
