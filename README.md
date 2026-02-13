@@ -275,7 +275,7 @@ from nanowakeword.interpreter.nanointerpreter import NanoInterpreter
 #                Simple Configuration 
 MODEL_PATH = r"model/path/your.onnx"
 THRESHOLD = 0.9  # A simple threshold for detection | ⚠️ This may need to be changed (eg, 0.999, 0.80) 
-COOLDOWN = 2     # A simple cooldown managed outside the interpreter
+COOLDOWN = 1     # A simple cooldown managed outside the interpreter
 # If you want, you can use more advanced methods like VAD or PATIENCE_FRAMES.
 
 # Initialization 
@@ -366,7 +366,7 @@ NanoWakeWord is an actively developed project. Here are some of the features and
 
 Contributions are the lifeblood of open source. We welcome contributions of all forms, from bug reports and documentation improvements to new features.
 
-To get started, please see our **[Contribution Guide](https://github.com/arcosoph/nanowakeword/blob/main/CONTRIBUTING.md)**, which includes information on setting up a development environment, running trsts(f:/nanowakeword/nanowakeword), and our code of conduct.
+To get started, please see our **[Contribution Guide](https://github.com/arcosoph/nanowakeword/blob/main/CONTRIBUTING.md)**, which includes information on setting up a development environment, running trsts, and our code of conduct.
 
 ## License
 
