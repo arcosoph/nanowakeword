@@ -180,7 +180,7 @@ class NanoInterpreter:
 
         # Update Buffers and Final State 
         for mdl_name, score in final_predictions.items():
-            self.prediction_buffer[mdl_name].append(score)
+            self.prediction_buffer[mdl_name].append(self.raw_scores[mdl_name])
             self.post_processed_scores[mdl_name] = score
             
         return self.post_processed_scores
