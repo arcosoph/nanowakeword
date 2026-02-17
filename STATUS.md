@@ -4,7 +4,45 @@ This document provides timely updates, performance notes, stability reports, and
 
 ---
 
-# Current Release: `v2.0.0`
+# Current Release: `v2.0.1`
+
+
+## ⚠️ Known Issue: `ModuleNotFoundError: No module named 'pkg_resources'`
+
+If you encounter the following error while running training:
+
+```bash
+ModuleNotFoundError: No module named 'pkg_resources'
+```
+
+### 🧩 Cause
+
+This issue occurs with newer versions of `setuptools` (70+), where `pkg_resources` is no longer included by default.  
+Some dependencies (such as `pronouncing`) still rely on `pkg_resources`, which causes the training process to fail.
+
+### ✅ Temporary Fix
+
+Downgrade `setuptools` to a compatible version:
+
+```bash
+pip install setuptools==69.5.1
+```
+
+Then verify:
+
+```bash
+python -c "import pkg_resources; print('OK')"
+```
+
+If it prints `OK`, the issue is resolved.
+
+---
+
+🚧 This is a temporary workaround.  
+A proper fix will be provided as soon as possible once dependency compatibility is addressed upstream.
+
+
+# Release: `v2.0.0`
 *   **✅ Production-Ready:** `DNN`, `CNN`, `LSTM`, `GRU`, `RNN`, `QuartzNet`, `Transformer`, `TCN`. These architectures are stable and recommended for production use.
 
 *    **Untested:** `Conformer`, `E-Branchformer`, `CRNN` are not tested
