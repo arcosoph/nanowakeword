@@ -391,7 +391,7 @@ class Trainer:
                         ema_loss = checkpoint.get('ema_loss', None)
                         steps_without_improvement = checkpoint.get('steps_without_improvement', 0)
                         best_ema_loss_for_stopping = checkpoint.get('best_ema_loss_for_stopping', float('inf'))
-                        self.history['loss'] = checkpoint.get('loss_history', [])
+                        self.model.history['loss'] = checkpoint.get('loss_history', [])
                         print_info(f"Successfully restored state. Resuming training from step {start_step + 1}.")
                         
                         print_info("Synchronizing data stream to the restored step...")
