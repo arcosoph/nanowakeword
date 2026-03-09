@@ -17,9 +17,9 @@
 #  Project: https://github.com/arcosoph/nanowakeword
 # ==============================================================================
 
-
 import os
 import re
+import sys
 import torch
 import random
 import logging
@@ -27,13 +27,11 @@ import requests
 import itertools
 import numpy as np
 from typing import List
-from nanowakeword.utils.logger import print_info
+from nanowakeword.utils.logger import print_info, print_error
 import warnings
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
     import pronouncing
-
-
 
 _PHONEMIZE_AVAILABLE = True
 try:
@@ -47,6 +45,9 @@ try:
     )
 except ImportError:
     _PHONEMIZE_AVAILABLE = False
+
+from phonemize.phonemizer import Phonemizer
+
 
 def _require_phonemize():
     if not _PHONEMIZE_AVAILABLE:
@@ -329,38 +330,12 @@ def adversarial_texts(input_text: str, N: int, include_partial_phrase: float = 0
 
 
 
-
-
-                    # # # We will update the following codes in the future. # # #
-import os
-import sys
-import random
-from typing import List
-import torch
-import requests
-
-try:
-    from phonemize.preprocessing.text import (
-        Preprocessor,
-        LanguageTokenizer,
-        SequenceTokenizer,
-    )
-    torch.serialization.add_safe_globals(
-        [Preprocessor, LanguageTokenizer, SequenceTokenizer]
-    )
-except ImportError:
-    print("ERROR: 'phonemize' library not installed. Run: pip install phonemize")
-    sys.exit(1)
-
-from phonemize.phonemizer import Phonemizer
-
-
 class PhonemeAdversarialGenerator:
     """
     Generate phonetically DISTINCT adversarial samples using real phoneme models.
     For wake-word training with guaranteed phonetic distance.
     """
-    
+
     def __init__(self, phonemizer: Phonemizer, min_distance: float = 0.35):
         self.phonemizer = phonemizer
         self.min_distance = min_distance
@@ -581,14 +556,14 @@ def get_phonemizer_model(model_path: str) -> Phonemizer:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
         except requests.exceptions.RequestException as e:
-            print(f"ERROR downloading model: {e}")
+            print_error(f"downloading model: {e}")
             sys.exit(1)
     
     try:
         phonemizer = Phonemizer.from_checkpoint(model_path)
         return phonemizer
     except Exception as e:
-        print(f"FATAL: Error loading phonemizer: {e}")
+        print_error(f"FATAL: loading phonemizer: {e}")
         sys.exit(1)
 
 
@@ -603,10 +578,12 @@ def collapse_repeated_letters(text: str) -> str:
     return "".join(result)
 
 
+# # # you can use this...
 
 # if __name__ == "__main__":
-#     model_path = os.path.join(os.path.dirname(__file__), "models", "phonemize_m1.pt")
-#     phonemizer = get_phonemizer_model(model_path)
+#     # model_path = os.path.join(os.path.dirname(__file__), "models", "phonemize_m1.pt")
+#     phonemizer_mdl_path = os.path.join("NwwResourcesModel", "phonemize_model", "phonemize_m1.pt")
+#     phonemizer = get_phonemizer_model(phonemizer_mdl_path)
 #     generator = PhonemeAdversarialGenerator(phonemizer, min_distance=0.35)
     
 #     input_text = input("Input: ").strip()

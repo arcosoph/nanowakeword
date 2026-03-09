@@ -10,7 +10,7 @@ MIN_SILENCE_LEN = 700      # Minimum silence length (ms) to split audio (0.7 sec
 SILENCE_THRESH = -40       # Silence threshold in dBFS (more negative = more sensitive)
 KEEP_SILENCE = 100         # Extra audio to keep at the start and end of each chunk (ms)
 MAX_SEGMENT_MS = 10 * 60 * 1000  # 10 minutes in milliseconds
-DEFAULT_INPUT_FILE = "D:\MOIVES\Elemental (2023) Dual ORG 1080p.mkv"  # Default input file
+DEFAULT_INPUT_FILE = "D:\MOIVES\Elemental (2023) Dual ORG 1080p.mkv"  
 # ---------------------------------------------
 
 def slice_audio(input_file):

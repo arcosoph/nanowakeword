@@ -19,14 +19,15 @@ rir_paths: ["./data/rir"]
 # Model Architecture
 # Configure the structure and properties of the neural network.
 model_type: "dnn"
-layer_size: 128
+layer_size: 32
 n_blocks: 3
 dropout_prob: 0.2     # To reduce overfitting
 
 ## Training & Optimizer Settings
 # Hyperparameters that control the training loop and optimization process.
 steps: 20000
-batch_size: 128
+stabilization_steps: 10000
+# batch_size: 128
 optimizer_type: "adamw"
 learning_rate_max: 0.001
 lr_scheduler_type: "onecycle"
@@ -34,40 +35,119 @@ weight_decay: 0.01
 momentum: 0.9
 num_workers: 3
 
+
 ## Feature Manifest
 # Paths to the generated .npy feature files. The Acoustic Compositor uses these keys.
 # You can add unlimited additional negative sources with unique keys
 feature_manifest:
   targets:
-    t: './trained_models/arcosoph_A_v1/features/positive_features_train.npy'
+    t: './trained_models/arcosoph_A_v1/features/positive_features.npy'
   negatives:
-    n: "./trained_models/arcosoph_A_v1/features/hard_negative_features.npy"
-    # my_other_negatives: "/path/to/other_negatives.npy"
-  backgrounds:
+    n: "./trained_models/arcosoph_A_v1/features/negative_features.npy"
+    hn: "./trained_models/arcosoph_A_v1/features/hard_nagative_features.npy"
     b: './trained_models/arcosoph_A_v1/features/pure_noise_features.npy'
     # For example, adding a large external noise dataset:
     # openwakeword_noise: './openwakeword_features_ACAV100M_2000_hrs_16bit.npy'
 
-  # # oftional
-  # targets_val:
-  #   t: './trained_models/arcosoph_D_v1/features/positive_features_train.npy'
-  # negatives_val:
-  #   n: "./trained_models/arcosoph_D_v10/features/max3_hard_negative_features.npy"
-  # backgrounds_val:
-  #   b: './trained_models/arcosoph_C_v10/features/pure_noise_features.npy'
+  targets_val:
+    t_v: './trained_models/arcosoph_A_v1/features/positive_features_train.npy'
+  negatives_val:
+    n_v: "./trained_models/arcosoph_A_v1/features/negative_features.npy"
+    b_v: './trained_models/arcosoph_A_v1/features/pure_noise_features.npy'
 
 
+batch_composition:
+  t: 30
+  n: 173
+  hn: 20
+  b: 40
 
 
 ## Synthetic Data Generation
-# Parameters for generating audio clips using Text-to-Speech (TTS).
-generate_positive_samples: 2500
-generate_negative_samples: 5000
+target_phrase: "hello arcosoph"
 
-include_input_words: 0.2
-include_partial_phrase: 0.09 
-multi_word_prob: 0.9 
-max_multi_word_len: 2 # your wake word len
+data_generation_tasks:
+
+  # ===============================
+  # 1️ Positive wake word samples
+  # ===============================
+  - name: "any name like pos_data"
+    enabled: true
+    output_dir: "data/positive"
+    num_samples: 2500
+    file_prefix: "pos"
+
+    text_source:
+      type: "fixed_phrase"
+
+
+  # ===============================
+  # 2️ Word-based adversarial negatives
+  # ===============================
+  - name: "Adversarial Negatives"
+    enabled: true
+    output_dir: "data/negative_auto"
+    num_samples: 5000
+    file_prefix: "neg_auto"
+
+    text_source:
+      type: "auto_adversarial"
+      # base_phrase: "hello arcosoph"
+      include_input_words: true
+      include_partial_phrase: true
+      multi_word_prob: 0.5
+      max_multi_word_len: 3
+
+
+  # ===============================
+  # 3️ Phoneme adversarial negatives
+  # ===============================
+  - name: "Phoneme Hard Negatives"
+    enabled: true
+    output_dir: "data/negative_phoneme"
+    num_samples: 3000
+    file_prefix: "neg_ph"
+
+    text_source:
+      type: "phoneme_adversarial"
+      # base_phrase: "hello arcosoph"
+      min_distance: 0.3
+
+
+  # ===============================
+  # 4️ Custom negative phrases
+  # ===============================
+  - name: "Custom Negatives"
+    enabled: true
+    output_dir: "data/negative"
+    num_samples: 50
+    file_prefix: "neg_custom"
+
+    text_source:
+      type: "from_list"
+      phrases:
+        - "hello arcosoph"
+        - "arcosop"
+        - "hi arcosoph"
+        - "arkhoshap"
+        - "yarkasop"
+
+      repeat_each: 10
+
+
+augmentation_settings: 
+  min_snr_in_db: -10.0 
+  max_snr_in_db: 20.0
+  rir_prob: 0
+  pitch_prob: 0.2
+  min_pitch_semitones: -2.0 
+  max_pitch_semitones: 2.0
+  gain_prob: 0.9
+  min_gain_in_db: -6.0 
+  max_gain_in_db: 6.0 
+  colored_noise_prob: 0
+  bg_noise_prob: 0
+
 
 augmentation_batch_size: 16
 feature_gen_cpu_ratio: 1.0
@@ -77,20 +157,28 @@ feature_generation_manifest:
 
   jast_a_name_like_pos_feature:
     input_audio_dirs: ["./data/positive"]
-    output_filename: "positive_features_train.npy"
-    use_background_noise: true
-    use_rir: true
+    output_filename: "positive_features.npy"
+    use_background_noise: false
+    use_rir: false
     
-    augmentation_rounds: 11
+    augmentation_rounds: 10
     # augmentation_settings: (we will use default)
 
-  hard_negatives:
-    input_audio_dirs: ["./data/negative"]
-    output_filename: "hard_negative_features.npy"
-    use_background_noise: true
-    use_rir: true
+  negatives:
+    input_audio_dirs: ["./data/negative_auto"]
+    output_filename: "negative_features.npy"
+    use_background_noise: false
+    use_rir: false
 
-    augmentation_rounds: 11 
+    augmentation_rounds: 10
+  
+  negatives:
+    input_audio_dirs: ["./data/negative_phoneme"]
+    output_filename: "hard_negative_features.npy"
+    use_background_noise: false
+    use_rir: false
+
+    augmentation_rounds: 1
   
   pure_ambient_noise:
     input_audio_dirs: ["./data/noise"]
@@ -100,7 +188,6 @@ feature_generation_manifest:
     augmentation_rounds: 3
     augmentation_settings: 
         PitchShift: 0.6
-        AddBackgroundNoise: 0.0
         Gain: 1.0
         RIR: 0.5
   
@@ -109,14 +196,14 @@ feature_generation_manifest:
 ## Advanced & Miscellaneous Settings
 # Checkpointing, logging, and other fine-tuning parameters.
 checkpoint_averaging_top_k: 5
-checkpointing:
+
+checkpointing: # For Resume Traning
   enabled: True
   interval_steps: 1000
   limit: 2
 
 early_stopping_patience: 0
 main_delta: 0.0001
-WARMUP_STEPS: 1500
 
 onnx_opset_version: 17
 show_training_summary: true
@@ -128,4 +215,4 @@ ema_alpha: 0.01
 generate_clips: true
 transform_clips: true # ⚠️ Don't forget to turn it off after finished.
 train_model: true
-overwrite: true
+overwrite: false

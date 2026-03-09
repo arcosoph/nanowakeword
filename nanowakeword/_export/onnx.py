@@ -20,7 +20,7 @@
 # (✿◕‿◕✿)
 import os
 import torch
-from nanowakeword.utils.logger import print_info
+from nanowakeword.utils.logger import print_info, print_error
 
 
 def export_onnx_model(model, input_shape, config, model_name, output_dir):
@@ -78,6 +78,6 @@ def export_onnx_model(model, input_shape, config, model_name, output_dir):
 
     except Exception as e:
         # Provide a more detailed error message
-        print_info("ERROR: ONNX export failed. Fix the issue and run again with --resume if a checkpoint exists.")
+        print_error("ONNX export failed. Fix the issue and run again with --resume if a checkpoint exists.")
         print_info(f"   Details: {e}")
 

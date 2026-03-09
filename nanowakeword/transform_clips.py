@@ -28,9 +28,8 @@ from pathlib import Path
 
 from nanowakeword.data.augment_clips import augment_clips
 from nanowakeword.data.AudioFeatures import AudioFeatures
-from nanowakeword.utils.logger import print_step_header, print_info
+from nanowakeword.utils.logger import print_step_header, print_info, print_warning
 
-import json
 
 SEED=10
 def set_seed(seed):
@@ -104,14 +103,14 @@ def transform_clips(config, args, feature_save_dir):
                 try:
                     sample_rate, data = scipy.io.wavfile.read(clip_path)
                     if sample_rate != 16000:
-                        print_info(f"[WARNING] Clip '{os.path.basename(clip_path)}' has sample rate {sample_rate}Hz, not 16kHz. This may affect duration calculation.")
+                        print_warning(f"Clip '{os.path.basename(clip_path)}' has sample rate {sample_rate}Hz, not 16kHz. This may affect duration calculation.")
                     duration_in_samples.append(len(data))
                 except Exception as e:
-                    print_info(f"[WARNING] Could not read and process clip '{os.path.basename(clip_path)}': {e}")
+                    print_warning(f"Could not read and process clip '{os.path.basename(clip_path)}': {e}")
             
             # Calculate the final length based on the sampled durations
             if not duration_in_samples:
-                print_info("[WARNING] Could not determine median duration. Using minimum allowable length as fallback.")
+                print_warning("Could not determine median duration. Using minimum allowable length as fallback.")
                 final_length = min_length
             else:
                 median_duration_samples = np.median(duration_in_samples)
@@ -145,7 +144,7 @@ def transform_clips(config, args, feature_save_dir):
         generation_manifest = config.get("feature_generation_manifest")
 
         if not generation_manifest:
-            print_info("[INFO] 'feature_generation_manifest' not found in config.yaml. Skipping custom feature generation.")
+            print_warning("'feature_generation_manifest' not found in config.yaml. Skipping custom feature generation.")
         else:
             # print_step_header("Activating Flexible Feature Generation Engine")
             print_step_header("Computing Acoustic Features from Audio Sources")
@@ -155,18 +154,18 @@ def transform_clips(config, args, feature_save_dir):
 
                 output_filename = recipe.get("output_filename")
                 if not output_filename:
-                    print_info(f"[WARNING] Skipping job '{job_name}' because 'output_filename' is missing.")
+                    print_warning(f"Skipping job '{job_name}' because 'output_filename' is missing.")
                     continue
 
                 output_filepath = os.path.join(feature_save_dir, output_filename)
 
                 if os.path.exists(output_filepath) and not (args.overwrite or ISoverwrite):
-                    print_info(f"[INFO] Feature file '{output_filename}' already exists. Skipping generation. (Use --overwrite to force regeneration)")
+                    print_info(f"Feature file '{output_filename}' already exists. Skipping generation. (Use --overwrite to force regeneration)")
                     continue
 
                 input_audio_dirs = recipe.get("input_audio_dirs", [])
                 if not input_audio_dirs:
-                    print_info(f"[WARNING] Skipping job '{job_name}' because 'input_audio_dirs' is empty or missing.")
+                    print_warning(f"Skipping job '{job_name}' because 'input_audio_dirs' is empty or missing.")
                     continue
 
                 input_clips = []
@@ -174,7 +173,7 @@ def transform_clips(config, args, feature_save_dir):
                     input_clips.extend([str(p) for p in Path(d).rglob("*.wav")])
                 
                 if not input_clips:
-                    print_info(f"[WARNING] Skipping job '{job_name}' as no .wav files were found in the specified directories.")
+                    print_warning(f"Skipping job '{job_name}' as no .wav files were found in the specified directories.")
                     continue
                 
                 print_info(f"Found {len(input_clips)} source audio files.")
@@ -240,7 +239,7 @@ def transform_clips(config, args, feature_save_dir):
                 
                 print_info(f"{job_name} Completed Successfully!")
             
-            print_info("Flexible Feature Generation Finished")
+            print_info("Feature Generation Finished")
 
     else:
         print_info("Feature generation is disabled as 'transform_clips' is false and '--transform_clips' flag is not set.")

@@ -143,14 +143,7 @@ class Model(nn.Module):
         else:
             raise ValueError(f"Unsupported model_type: '{model_type}'.")
 
-        # self.classifier = nn.Linear(embedding_dim, n_classes)
-
-        self.classifier = nn.Sequential(
-            nn.Linear(embedding_dim, embedding_dim // 2),
-            self.activation_fn, 
-            nn.Dropout(dropout_prob),
-            nn.Linear(embedding_dim // 2, n_classes)
-        )
+        self.classifier = nn.Linear(embedding_dim, n_classes)
 
         # Define logging dict (in-memory)
         self.history = collections.defaultdict(list)
@@ -168,10 +161,6 @@ class Model(nn.Module):
 
         graph_output_dir = os.path.join(output_dir, "graphs")
         os.makedirs(graph_output_dir, exist_ok=True)
-
-        # ---------------------------
-        # Training loss
-        # ---------------------------
         loss_history = np.array(self.history['loss'])
 
         # EMA computation
@@ -186,11 +175,8 @@ class Model(nn.Module):
                 ema_loss = alpha * loss_val + (1 - alpha) * ema_loss
             ema_loss_history.append(ema_loss)
 
-        # ---------------------------
-        # Plot
-        # ---------------------------
         plt.figure(figsize=(12, 6))
-
+        
         plt.plot(
             loss_history,
             label="Train Loss (raw)",
@@ -198,7 +184,6 @@ class Model(nn.Module):
             alpha=0.45,
             linewidth=1.2
         )
-
         # EMA training loss (main signal)
         plt.plot(
             ema_loss_history,
@@ -206,7 +191,6 @@ class Model(nn.Module):
             color="tab:blue",
             linewidth=2.5
         )
-
         # Validation loss (authoritative checkpoints)
         if (
             'val_loss_steps' in self.history
@@ -224,23 +208,14 @@ class Model(nn.Module):
                 linewidth=2
             )
 
-        # ---------------------------
-        # Styling (engineer-grade)
-        # ---------------------------
         plt.title("Training & Validation Loss", fontsize=15, weight="bold")
         plt.xlabel("Training Steps", fontsize=12)
         plt.ylabel("Loss", fontsize=12)
-
         plt.legend(frameon=False)
         plt.grid(True, which="major", linestyle="--", alpha=0.25)
         plt.grid(True, which="minor", linestyle=":", alpha=0.1)
         plt.minorticks_on()
-
         plt.ylim(bottom=0)
-
-        # ---------------------------
-        # Save
-        # ---------------------------
         save_path = os.path.join(graph_output_dir, "training_performance_graph.png")
         plt.tight_layout()
         plt.savefig(save_path, dpi=150)
@@ -248,18 +223,14 @@ class Model(nn.Module):
 
         print_info(f"Performance graph saved to: {save_path}")
 
-
     def forward(self, x):
             """
-            Takes input features and returns the final classification logits
-            in a standardized tensor shape [batch, sequence, classes].
+            Takes input features and returns the final classification logits.
+            Output shape: [B, 1] (batch_size, n_classes)
             """
             embeddings = self.model(x)
-            logits = self.classifier(embeddings) # Shape: [batch_size, 1]
-
-            # Ensure standardized output shape [B, 1, 1] 
-            # Add a new dimension for the 'sequence' length, which is 1 in our case.
-            return logits.unsqueeze(1)
+            logits = self.classifier(embeddings)  # Shape: [B, 1]
+            return logits
 
     def summary(self):
         return torchinfo.summary(self.model, input_size=(1,) + self.input_shape, device='cpu')

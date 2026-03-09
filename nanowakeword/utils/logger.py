@@ -54,6 +54,11 @@ def print_info(message, indent=0):
     """Prints an informational message with indentation."""
     console.print(f"{' ' * indent}[blue]INFO:[/blue] {message}")
 
+def print_warning(message, indent=0):
+    console.print(f"{' ' * indent}[bold yellow]WARNING:[/bold yellow] {message}")
+
+def print_error(message, indent=0):
+    console.print(f"{' ' * indent}[bold red]ERROR:[/bold red] {message}")
 
 def print_key_value(key, value, indent=2):
     """Prints a clean, copy-paste friendly key-value pair."""

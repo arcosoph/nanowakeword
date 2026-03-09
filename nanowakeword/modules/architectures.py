@@ -97,7 +97,7 @@ class LSTMModel(nn.Module):
         out = self.fc(out)
         return out
 
-# # # DNN architecture
+# DNN architecture
 class FCNBlock(nn.Module):
     def __init__(self, layer_dim, activation_fn):
         super().__init__()
@@ -109,7 +109,7 @@ class FCNBlock(nn.Module):
 class Net(nn.Module):
     def __init__(self, input_shape, layer_dim, n_blocks, embedding_dim, dropout_prob, activation_fn):
         super().__init__()
-        self.flatten = nn.Flatten() # It has been used and proven in many places.
+        self.flatten = nn.Flatten() 
         self.layer1 = nn.Linear(input_shape[0]*input_shape[1], layer_dim)
         self.relu1 = activation_fn
         self.layernorm1 = nn.LayerNorm(layer_dim)

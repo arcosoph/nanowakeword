@@ -186,10 +186,48 @@ def generate_samples(
     length_scales: List[float] = [1.0],
     noise_scales: List[float] = [0.667],
     noise_w_scales: List[float] = [0.8]
-):
+    ):
     """
-    Generates high-quality, diverse audio samples using Piper TTS models.
+    Generate audio files from text using Piper TTS models.
+
+    This function takes one or more text prompts and converts them into
+    spoken audio, saving each result as a WAV file. You can control
+    the voice, speaker, speech speed, and audio variation for each sample.
+
+    Parameters
+    ----------
+    text : str or list of str
+        The text(s) you want to turn into audio. Can be a single string
+        or a list of strings.
+    output_dir : str
+        The folder where the audio files will be saved.
+    max_samples : int
+        Total number of audio clips to generate.
+    file_prefix : str, optional
+        The beginning of the filename for each audio clip (default "sample").
+    models : str, list, or dict, optional
+        Which TTS model(s) to use. Can be a model name, list of names,
+        or dictionary mapping names to file paths.
+    models_dir : str, optional
+        Folder containing your TTS model files.
+    speaker_ids : int or list of int, optional
+        If using a multi-speaker model, you can choose specific speaker ID(s).
+        If not provided, a speaker is chosen randomly.
+    length_scales : list of float, optional
+        Controls how fast or slow the speech is. Higher value = longer speech.
+    noise_scales : list of float, optional
+        Controls the amount of randomness/noise in the speech sound.
+    noise_w_scales : list of float, optional
+        Adds small variations in the waveform for more natural sound.
+
+    Notes
+    -----
+    - The audio will be resampled to 16kHz if the model uses a different rate.
+    - Simple filters are applied automatically to make the audio smoother.
+    - File names include a timestamp and random number to avoid overwriting.
+    - Works with single or multiple text prompts and multiple voice models.
     """
+
     import time
     import itertools 
 

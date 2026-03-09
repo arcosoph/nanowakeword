@@ -214,29 +214,22 @@ class Trainer:
                 resume_from_dir=resume_from_dir        
             )
 
-            # print_info("Training finished. Merging best checkpoints to create final model...")
-            
-            # if not self.best_training_checkpoints:
-            #     print_info("No stable models were saved based on training loss stability. Returning the final model state.")
-
-            #     final_model = self
-            #     final_model.eval()
-            # else:
-            #     print_info(f"Averaging the top {len(self.best_training_checkpoints)} most stable models found during training...")
-                
-            #     averaged_state_dict = self.model.average_models(state_dicts=self.best_training_checkpoints)
-
-            #     final_model = copy.deepcopy(self.model)
-            #     final_model.load_state_dict(averaged_state_dict)
-            #     final_model.eval() 
+            print_info("Training finished. Building final model (checkpoint averaging + best-val selection)...")
 
 
-
-            print_info("Training finished. Selecting the best stable model based on smoothed validation score...")
-
-            print_info(f"Loading the champion model with the best error score of {self.best_error_score}")
             final_model = copy.deepcopy(self.model)
             final_model.load_state_dict(self.best_model_on_error_score)
+            # if len(self.best_training_checkpoints) > 1:
+            #     print_info(f"Averaging {len(self.best_training_checkpoints)} top training checkpoints...")
+            #     averaged_state_dict = self.model.average_models(self.best_training_checkpoints)
+            #     final_model.load_state_dict(averaged_state_dict)
+            #     print_info("Checkpoint averaging complete.")
+            # elif self.best_model_on_error_score is not None:
+            #     # Fallback: use the best single checkpoint found during validation
+            #     print_info(f"Using best validation checkpoint (error score: {self.best_error_score}).")
+            #     final_model.load_state_dict(self.best_model_on_error_score)
+            # else:
+            #     print_info("No checkpoints saved yet — using current model weights as final model.")
 
             final_model.eval()
 
@@ -250,14 +243,6 @@ class Trainer:
             else:
                 final_results["Average Stable Loss"] = "N/A"
             
-            # try:
-            #     final_classifier_weights = final_model.classifier.weight.detach().cpu().numpy()
-            #     weight_std_dev = np.std(final_classifier_weights)
-            #     final_results["Weight Diversity (Std Dev)"] = f"{weight_std_dev:.4f}"
-            # except Exception as e:
-            #     final_results["Weight Diversity (Std Dev)"] = f"N/A (Error: {e})"
-
-
             try:
                 with torch.no_grad():
                     # Get a sample batch, which now contains features, labels, and indices
@@ -348,15 +333,12 @@ class Trainer:
         self.best_error_score = float('inf')
         self.best_model_on_error_score = None
 
-        default_warmup_steps = int(max_steps * 0.15)
-        WARMUP_STEPS = self.config.get("WARMUP_STEPS", default_warmup_steps)
+        default_stb_steps = int(max_steps * 0.15)
+        stabilization_steps = self.config.get("stabilization_steps", default_stb_steps)
         min_delta = self.config.get("min_delta", 0.0001)
         best_ema_loss_for_stopping = float('inf')
         steps_without_improvement = 0
         ema_alpha = self.config.get("ema_alpha", 0.01)
-
-        # steps_without_improvement = 0
-        validation_interval = self.config.get("validation_interval", 500) 
 
         default_patience_steps = int(max_steps * 0.15)
         user_patience = self.config.get("early_stopping_patience", None)
@@ -370,7 +352,8 @@ class Trainer:
         if patience == 0:
             print_info("Early stopping is DISABLED. Training will run for the full duration of 'steps'.")
         else:
-            print_info(f"Training for {max_steps} steps. Model checkpointing and early stopping will activate after {WARMUP_STEPS} warm-up steps.")
+            # print_info(f"Training for {max_steps} steps. Model checkpointing and early stopping will activate after {stabilization_steps} warm-up steps.")
+            print_info(f"Training for {max_steps} steps. Early stopping will activate after {stabilization_steps} stabilization steps.")
 
         self.model.to(self.model.device)
         self.model.train() 
@@ -380,7 +363,7 @@ class Trainer:
         data_iterator = iter(itertools.cycle(X))
 
         if resume_from_dir:
-            resume_checkpoint_dir = os.path.join(resume_from_dir, "2_training_artifacts", "checkpoints")
+            resume_checkpoint_dir = os.path.join(resume_from_dir, "training_artifacts", "checkpoints")
             print_info(f"Attempting to resume training from: {resume_checkpoint_dir}")
             if os.path.exists(resume_checkpoint_dir):
                 checkpoints = [f for f in os.listdir(resume_checkpoint_dir) if f.startswith("checkpoint_step_") and f.endswith(".pth")]
@@ -398,9 +381,9 @@ class Trainer:
                     if latest_checkpoint_file:
                         checkpoint_path = os.path.join(resume_checkpoint_dir, latest_checkpoint_file)
                         print_info(f"Loading latest checkpoint: {checkpoint_path}")
-                        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+                        checkpoint = torch.load(checkpoint_path, map_location=self.model.device)
                         
-                        self.load_state_dict(checkpoint['model_state_dict'])
+                        self.model.load_state_dict(checkpoint['model_state_dict'])
                         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
                         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
                         
@@ -438,7 +421,7 @@ class Trainer:
 
             LOSS_BIAS = self.config.get("LOSS_BIAS", 0.9)
             total_loss, per_example_loss = BiasWeightedLoss(logits, labels, LOSS_BIAS)
-            
+
             total_loss.backward()
 
             grad_norm = torch.nn.utils.clip_grad_norm_(
@@ -473,7 +456,7 @@ class Trainer:
                     ema_loss = current_loss
                 ema_loss = ema_alpha * current_loss + (1 - ema_alpha) * ema_loss
 
-                if step_ndx > WARMUP_STEPS:
+                if step_ndx > stabilization_steps:
                     current_score = ema_loss
                     if len(self.best_training_checkpoints) < checkpoint_averaging_top_k:
                         self.best_training_checkpoints.append(copy.deepcopy(self.model.state_dict()))
@@ -496,19 +479,23 @@ class Trainer:
                     current_lr = self.optimizer.param_groups[0]['lr']
                     pos_avg = yp[is_pos].mean().item() if is_pos.sum() > 0 else 0.0
                     neg_avg = yp[is_neg].mean().item() if is_neg.sum() > 0 else 0.0
-                    FA = (yp[is_neg] > 0.5).float().mean().item() if is_neg.sum() > 0 else 0.0
-                    Ms = (yp[is_pos] < 0.5).float().mean().item() if is_pos.sum() > 0 else 0.0
-                    
+               
+                    FA = int((yp[is_neg] > 0.5).sum().item()) if is_neg.sum() > 0 else 0
+                    Ms = int((yp[is_pos] < 0.5).sum().item()) if is_pos.sum() > 0 else 0
+
+                    N_total = is_neg.sum().item()
+                    P_total = is_pos.sum().item()      
+
                     pos_term = per_example_loss[is_pos] / (1.0 - LOSS_BIAS) if (1.0 - LOSS_BIAS) > 0 else per_example_loss[is_pos]
                     neg_term = per_example_loss[is_neg] / LOSS_BIAS if LOSS_BIAS > 0 else per_example_loss[is_neg]
-
+                    
                     PosL = pos_term.mean().item() if is_pos.sum() > 0 else 0.0
                     NegL = neg_term.mean().item() if is_neg.sum() > 0 else 0.0
 
                     logger.info(
                         f"[{step_ndx:5d}] L:{total_loss.item():.6f} "
                         f"PL:{PosL:.6f} NL:{NegL:.6f} |PA:{pos_avg:.3f} NA:{neg_avg:.3f} "
-                        f"|FA:{FA:.3f} Ms:{Ms:.3f} |η:{current_lr:.2e} gNorm:{grad_norm:.3f}"
+                        f"|FA:{FA}/{N_total} Ms:{Ms}/{P_total} |η:{current_lr:.2e} gNorm:{grad_norm:.8f}"
                     )
 
 
@@ -519,7 +506,7 @@ class Trainer:
                 else:
                     steps_without_improvement += 1
                 
-                if step_ndx > WARMUP_STEPS and steps_without_improvement >= patience:
+                if step_ndx > stabilization_steps and steps_without_improvement >= patience:
                     print_info(f"\nEarly stopping triggered at step {step_ndx}. No improvement in stable loss for {patience} steps.")
                     break
 
@@ -545,9 +532,9 @@ class Trainer:
                     os.remove(os.path.join(checkpoint_dir, all_checkpoints[0]))
                     
             validation_interval = self.config.get("val_interval", 500)
-            validation_warmup_steps = self.config.get("val_warmup_steps", WARMUP_STEPS)
+            validation_stabilization_steps = self.config.get("val_stabilization_steps", stabilization_steps)
 
-            if X_val and step_ndx > validation_warmup_steps and step_ndx % validation_interval == 0:
+            if X_val and step_ndx > validation_stabilization_steps and step_ndx % validation_interval == 0:
   
                 val_metrics = self.validate(X_val)
                 current_val_loss = val_metrics['val_loss']

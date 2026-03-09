@@ -1,322 +1,876 @@
-<div style="font-size:20px; font-weight:bold; color:#f59e0b;">
-NOTE: The information in this document will be updated.
-</div>
+# NanoWakeWord Configuration Guide
 
-# **NOTE**: Most of the information here is invalid until new updates are released.
- - **You can view the example/training_config.yaml file for quick reference.**
-
-# Nanowakeword: The Complete Configuration Guide
-
-Welcome to the comprehensive guide for all configurable parameters in Nanowakeword. This document serves as the ultimate reference for advanced users, researchers, and developers who wish to fine-tune every aspect of the training pipeline.
-
-**A Note on the Intelligent Engine:** You do not need to manually set most of these parameters. The cornerstone of Nanowakeword is its **Intelligent Configuration Engine**, which automatically analyzes your data and hardware to generate an optimized configuration. This guide is for those who wish to override those intelligent defaults for specific experiments or advanced control.
-
-Any parameter listed here can be added to your `config.yaml` file to override the default or auto-generated value.
-
----
+Complete documentation of all configurable parameters in the **NanoWakeWord** package, including descriptions, default values, meanings, and usage examples.
 
 ## Table of Contents
 
-1.  [Core Project & Model Selection](#1-core-project--model-selection)
-2.  [Data Sources & Pipeline Control](#2-data-sources--pipeline-control)
-3.  [Synthetic Data Generation (TTS)](#3-synthetic-data-generation-tts)
-4.  [Audio Processing & Feature Engineering](#4-audio-processing--feature-engineering)
-5.  [Data Augmentation](#5-data-augmentation)
-6.  [Model Architecture Specifics](#6-model-architecture-specifics)
-7.  [Training, Optimization & Batching](#7-training-optimization--batching)
-8.  [Loss Function Configuration](#8-loss-function-configuration)
-9.  [Training Stability & Fault Tolerance](#9-training-stability--fault-tolerance)
-10. [Export & Debugging](#10-export--debugging)
+1. [Project & Data Paths](#project--data-paths)
+2. [Model Architecture](#model-architecture)
+3. [Training & Optimization](#training--optimization)
+4. [Feature Manifest](#feature-manifest)
+5. [Batch Composition](#batch-composition)
+6. [Data Generation](#data-generation)
+7. [Augmentation Settings](#augmentation-settings)
+8. [Feature Generation Manifest](#feature-generation-manifest)
+9. [Advanced Settings](#advanced-settings)
+10. [Pipeline Control](#pipeline-control)
+11. [Intelligent Auto-Configuration](#intelligent-auto-configuration)
+12. [Inference Parameters](#inference-parameters)
 
 ---
 
-### 1. Core Project & Model Selection
+## Project & Data Paths
 
-These are the fundamental settings that define your project and the primary model architecture.
+Configuration parameters for project organization and data source locations.
 
-*   `model_type`
-    *   **Description:** Specifies the neural network architecture to be trained. This is one of the most important choices you will make.
-    *   **Type:** `string`
-    *   **Default:** `"dnn"`
-    *   <details>
-        <summary><strong>Click for Guidance & Architecture Trade-offs</strong></summary>
-        
-        Choosing the right architecture depends on your specific goals for accuracy, speed, and noise robustness. Here is a guide to help you decide:
+### `model_name`
+- **Type:** `string`
+- **Default:** Auto-generated based on model type (e.g., `XXX_dnn_v1`)
+- **Description:** Name of the trained model. Used for creating directories and organizing outputs.
+- **Example:**
+  ```yaml
+  model_name: "my_wakeword_A_v1"
+  ```
 
-        *   **For Maximum Speed & Simplicity (`dnn`, `cnn`):**
-            *   **`dnn`:** The fastest and most lightweight option. Its simple, fully-connected structure makes it ideal for microcontrollers and highly resource-constrained devices where every millisecond and kilobyte counts.
-            *   **`cnn`:** Highly efficient at extracting local, time-invariant features. It excels with short, sharp, and explosive wake words (e.g., "Snap!").
-        
-        *   **For Superior Noise Robustness (`lstm`, `gru`, `crnn`):**
-            *   **`lstm`:** The gold standard for sequential data. Its gating mechanism allows it to remember long-term dependencies, making it exceptionally good at filtering out background noise and understanding complex, multi-syllable phrases.
-            *   **`gru`:** A modern, slightly faster alternative to LSTM with a simpler architecture. It offers a great balance between high noise robustness and computational efficiency.
-            *   **`crnn`:** A powerful hybrid model. It first uses CNN layers to extract robust features and then feeds them into an RNN (LSTM/GRU) to model temporal context. This combination is extremely effective in very challenging audio environments.
+### `output_dir`
+- **Type:** `string`
+- **Default:** `"./trained_models"`
+- **Description:** Base directory where all trained models and artifacts will be stored.
+- **Example:**
+  ```yaml
+  output_dir: "./trained_models"
+  # Creates: ./trained_models/my_wakeword_v1/model/, ./trained_models/my_wakeword_v1/features/
+  ```
 
-        *   **For Modern Performance & Efficiency (`tcn`, `quartznet`):**
-            *   **`tcn`:** A high-speed, parallelizable alternative to RNNs. It uses causal, dilated convolutions to capture long-range dependencies, often resulting in faster training and inference than LSTMs with competitive accuracy.
-            *   **`quartznet`:** A highly parameter-efficient architecture. It uses depthwise-separable convolutions to achieve top-tier accuracy with a very small model footprint, making it a perfect choice for powerful but lightweight edge deployment.
+### `positive_data_path`
+- **Type:** `string` (file path)
+- **Mandatory**: Yes
+- **Default**: None
+- **Description:** Directory containing positive audio samples (actual wake word utterances).
+- **Requirements:**
+  - Must contain `.wav` files at 16 kHz sample rate
+  - Mono or stereo audio (will be converted to mono)
+  - Can be empty if using only generated synthetic samples
 
-        *   **For State-of-the-Art Accuracy (`transformer`, `conformer`, `e_branchformer`):**
-            *   **`transformer`:** The foundational attention-based model. Its self-attention mechanism allows it to weigh the importance of different parts of the audio simultaneously, giving it a deep "global" understanding of the entire utterance.
-            *   **`conformer`:** The current state-of-the-art for many speech tasks. It brilliantly fuses the global context understanding of a Transformer with the local feature extraction of a CNN, achieving unmatched performance.
-            *   **`e_branchformer`:** The bleeding-edge evolution of the Conformer. It processes attention and convolution in parallel branches, offering the highest potential accuracy for complex speech patterns.
+### `negative_data_path`
+- **Type:** `string` (file path)
+- **Mandatory**: Yes
+- **Default**: None
+- **Description:** Directory containing negative audio samples (non-wake-word utterances).
+- **Example:**
+  ```yaml
+  negative_data_path: "./data/common_words"
+  ```
 
-        </details>
-    *   **Example:** `model_type: "lstm"`
+### `background_paths`
+- **Type:** `list` of strings
+- **Default:** Optional
+- **Description:** Directories containing background noise audio files for augmentation. Multiple paths supported.
+- **Example:**
+  ```yaml
+  background_paths: # You can add multiple path or only one
+    - "./data/office_noise"
+    - "./data/street_noise"
+    - "./data/home_noise"
+  ```
 
-*   `model_name`
-    *   **Description:** A unique name for your trained model. This name will be used for the project directory and the final exported files.
-    *   **Type:** `string`
-    *   **Default:** `Intelligently Generated` (e.g., `nww_lstm_model_v1`)
-    *   **Example:** `model_name: "jarvis_v2"`
+### `rir_paths`
+- **Type:** `list` of strings
+- **Default:** Optional
+- **Description:** Directories containing Room Impulse Response (RIR) files for acoustic augmentation.
+- **Note:** At least one RIR path is required for intelligent configuration.
 
-*   `output_dir`
-    *   **Description:** The root directory where all trained models and their associated assets will be saved.
-    *   **Type:** `string` (path)
-    *   **Default:** `"./trained_models"`
+---
 
-### 2. Data Sources & Pipeline Control
+## Model Architecture
 
-*   `positive_data_path`, `negative_data_path`
-    *   **Description:** Paths to the folders containing your positive (wake word) and negative (non-wake word) audio samples.
-    *   **Type:** `string` (path)
-    *   **Default:** `null` (Required)
+Parameters controlling the neural network structure and behavior.
 
-*   `background_paths`, `rir_paths`
-    *   **Description:** Lists of paths to folders containing background noise and Room Impulse Response (RIR) audio files, respectively.
-    *   **Type:** `list` of `string` (paths)
-    *   **Default:** `[]`
+### `model_type`
+- **Type:** `string`
+- **Default:** `"dnn"`
+- **Valid Options:** `"dnn"`, `"lstm"`, `"gru"`, `"rnn"`, `"cnn"`, `"transformer"`, `"crnn"`, `"tcn"`, `"quartznet"`, `"conformer"`, `"e_branchformer"`
+- **Description:** The neural network architecture to use for wake word detection.
+- **Complexity Levels (from simplest to most complex):**
+  - `dnn` - Dense feedforward network (lightweight, fast)
+  - `cnn` - Convolutional Neural Network (good for spectrograms)
+  - `lstm`, `gru`, `rnn` - Recurrent networks (excellent for sequences)
+  - `crnn` - Hybrid CNN-RNN (combines both strengths)
+  - `transformer`, `conformer`, `e_branchformer` - Advanced attention-based (most powerful, most complex)
 
-*   `generate_clips`, `transform_clips`, `train_model`
-    *   **Description:** Boolean flags that control which major stages of the pipeline are executed. For a full run from scratch, all should be `true`.
-    *   **Type:** `boolean`
-    *   **Default:** `false`
+- **Examples by use case:**
+  ```yaml
+  # Embedded/Edge device (minimal resources)
+  model_type: "dnn"
+  
+  # Edge device with more resources
+  model_type: "lstm"
+  
+  # Desktop/cloud with ample resources
+  model_type: "conformer"
+  ```
 
-### 3. Synthetic Data Generation (TTS)
+### `layer_size` (DNN/RNN-based architectures)
+- **Type:** `integer`
+- **Default:** `128`
+- **Valid Range:** `64` to `512`
+- **Description:** Number of neurons in each hidden layer for feedforward and recurrent layers.
+- **Relationship to model capacity:** Larger values = more parameters = longer training, better performance (up to a point)
+- **Example:**
+  ```yaml
+  layer_size: 256  # Larger model, slower but potentially better
+  ```
 
-*   `target_phrase`
-    *   **Description:** The wake word or phrase you want the TTS engine to generate.
-    *   **Type:** `list` of `string`
-    *   **Default:** `null`
+### `n_blocks`
+- **Type:** `integer`
+- **Default:** `3`
+- **Valid Range:** `1` to `10`
+- **Description:** Number of stacked blocks/layers in the model.
+  - For `dnn`: Number of fully connected layers
+  - For `lstm`/`gru`: Number of recurrent layers
+  - For `transformer`: Number of encoder layers
+  - For `crnn`: Number of RNN layers (CNN part is fixed)
 
-*   `generate_positive_samples`, `generate_negative_samples`
-    *   **Description:** The number of positive and negative audio samples to generate via TTS.
-    *   **Type:** `integer`
-    *   **Default:** `0`
+- **Example:**
+  ```yaml
+  n_blocks: 5  # Deeper network
+  ```
 
-*   `custom_negative_phrases`
-    *   **Description:** A list of specific phrases to add to the negative set. This is highly effective for handling specific false-positive cases (e.g., words that sound similar to your wake word).
-    *   **Type:** `list` of `string`
-    *   **Default:** `[]`
+### `dropout_prob`
+- **Type:** `float`
+- **Default:** `0.5` (intelligently adjusted)
+- **Valid Range:** `0.0` to `0.8`
+- **Description:** Dropout probability per layer to prevent overfitting.
+  - Higher values = more regularization = potential underfitting
+  - Lower values = less regularization = potential overfitting
+  - Typically 0.2-0.5 for most models
 
-*   `tts_batch_size`
-    *   **Description:** The number of audio clips to generate in parallel during the TTS process.
-    *   **Type:** `integer`
-    *   **Default:** `Intelligently Generated` based on hardware.
+- **Example:**
+  ```yaml
+  dropout_prob: 0.3
+  ```
 
-### 4. Audio Processing & Feature Engineering
+### `activation_function` (Advanced)
+- **Type:** `string`
+- **Default:** `"relu"`
+- **Valid Options:** `"relu"`, `"gelu"`, `"silu"`
+- **Description:** Activation function used in hidden layers.
+  - `relu` - Traditional, fast, widely supported
+  - `gelu` - Smooth, often better convergence
+  - `silu` - Modern alternative (Swish activation)
 
-*   `audio_processing`
-    *   **Description:** A block of parameters to control how raw audio is processed. All parameters within this block are nested.
-    *   **Type:** `dict`
-    *   **Example of correct YAML structure:**
-        ```yaml
-        audio_processing:
-          # Manually forces all training clips to a fixed length (in samples).
-          # If this is set, the autotune feature below is skipped.
-          clip_length_samples: 32000
-          
-          # Controls the automatic clip length detection feature.
-          autotune_length:
-            enabled: true
-            duration_buffer_ms: 750
-            min_allowable_length: 16000
-        ```
+- **Example:**
+  ```yaml
+  activation_function: "gelu"
+  ```
 
-*   `overwrite`
-    *   **Description:** If `true`, forces the regeneration of all feature files, overwriting any existing ones. Use with caution as this can be time-consuming.
-    *   **Type:** `boolean`
-    *   **Default:** `false`
+### `embedding_dim` (Advanced)
+- **Type:** `integer`
+- **Default:** `64`
+- **Valid Range:** `32` to `256`
+- **Description:** Dimensionality of the final embedding before classification.
 
-### 5. Data Augmentation
+### Architecture-Specific Parameters
 
-*   `augmentation_rounds`
-    *   **Description:** The number of times the entire dataset is passed through the augmentation engine. A higher number creates more training data but increases processing time.
-    *   **Type:** `integer`
-    *   **Default:** `Intelligently Generated` (typically between 2 and 5).
+#### Transformer Architecture
+```yaml
+model_type: "transformer"
+transformer_d_model: 128        # Model dimension, default: 128
+transformer_n_head: 4           # Number of attention heads, default: 4
+```
 
-*   `min_snr_in_db`, `max_snr_in_db`
-    *   **Description:** The minimum and maximum Signal-to-Noise Ratio (in decibels) for mixing background noise. Lower values mean more challenging (noisier) audio.
-    *   **Type:** `integer` or `float`
-    *   **Default:** `Intelligently Generated`
+#### CRNN Architecture
+```yaml
+model_type: "crnn"
+crnn_cnn_channels: [16, 32, 32]  # CNN channel progression, default: [16, 32, 32]
+crnn_rnn_type: "lstm"             # "lstm" or "gru", default: "lstm"
+```
 
-*   `augmentation_settings`
-    *   **Description:** A block of parameters to set the probability (from `0.0` to `1.0`) for applying specific on-the-fly augmentations.
-    *   **Options:** `BackgroundNoise`, `RIR`, `PitchShift`, `BandStopFilter`, `ColoredNoise`, `ParametricEQ`, `Distortion`, `Gain`.
-    *   **Default:** `Intelligently Generated` based on provided data.
-    *   **Example of correct YAML structure:**
-        ```yaml
-        augmentation_settings:
-          BackgroundNoise: 0.85
-          RIR: 0.70
-          PitchShift: 0.40
-          ColoredNoise: 0.25
-        ```
+#### TCN Architecture
+```yaml
+model_type: "tcn"
+tcn_channels: [64, 64, 128]      # Channel progression, default: [64, 64, 128]
+tcn_kernel_size: 3                # Convolution kernel size, default: 3
+```
 
-### 6. Model Architecture Specifics
+#### Conformer Architecture
+```yaml
+model_type: "conformer"
+conformer_d_model: 144            # Model dimension, default: 144
+conformer_n_head: 4               # Attention heads, default: 4
+```
 
-These parameters allow you to customize the internal structure of your chosen `model_type`.
+#### E-Branchformer Architecture
+```yaml
+model_type: "e_branchformer"
+branchformer_d_model: 144         # Model dimension, default: 144
+branchformer_n_head: 4            # Attention heads, default: 4
+```
 
-*   `n_blocks`
-    *   **Description:** A general-purpose parameter used to define the depth of many architectures (e.g., number of LSTM layers, Transformer layers, Conformer blocks).
-    *   **Type:** `integer`
-    *   **Default:** `Intelligently Generated`
+#### QuartzNet Architecture
+```yaml
+model_type: "quartznet"
+quartznet_config:                 # Channel, kernel, repeat config
+  - [256, 33, 1]
+  - [256, 33, 1]
+  - [512, 39, 1]
+```
 
-*   `layer_size`
-    *   **Description:** A general-purpose parameter for the width of many architectures (e.g., number of hidden units in an LSTM/GRU layer, or the base size for DNN layers).
-    *   **Type:** `integer`
-    *   **Default:** `Intelligently Generated`
+---
 
-*   `embedding_dim`
-    *   **Description:** The final dimension of the output embedding vector from the core model, before the classifier. A larger dimension can capture more information but increases model size.
-    *   **Type:** `integer`
-    *   **Default:** `64`
+## Training & Optimization
+
+Parameters governing the training loop, optimization, and learning rate scheduling.
+
+### `steps`
+- **Type:** `integer`
+- **Default:** `20000` (intelligently adjusted based on data volume)
+- **Valid Range:** `1000` to `100000`
+- **Description:** Total number of training iterations/steps.
+- **Calculation Logic:**
+  - `base_steps = effective_data_volume * 1000` steps per hour
+  - Adjusted based on data quality and model complexity
+  - Typically 10,000-40,000 for most scenarios
+
+- **Example:**
+  ```yaml
+  steps: 50000  # For very large/complex datasets
+  ```
+
+### `batch_size`
+- **Type:** `integer`
+- **Default:** `128`
+- **Valid Range:**
+  - **Minimum**: 1 (at least 1 sample per batch required)
+  - **Maximum**: Limited by GPU/CPU memory
+  - CPU training → 16–128+ typical
+  - single GPU → 32–256+ typical
+  - multi-GPU → 512+ possible
+
+- **Description:** Number of training samples per batch.
+  - Larger batches = faster training, more stable gradients, more memory
+  - Smaller batches = slower training, noisier gradients, less memory
+
+- **Example:**
+  ```yaml
+  batch_size: 128
+  ```
+
+### `optimizer_type`
+- **Type:** `string`
+- **Default:** `"adamw"`
+- **Valid Options:** `"adamw"`, `"adam"`, `"sgd"`
+- **Description:** Optimization algorithm.
+  - `adamw` - Adaptive Moment Estimation with Weight decay (recommended)
+  - `adam` - Original adaptive optimizer
+  - `sgd` - Stochastic Gradient Descent (simple, slower convergence)
+
+- **Example:**
+  ```yaml
+  optimizer_type: "adamw"
+  ```
+
+### `learning_rate_max`
+- **Type:** `float`
+- **Default:** Auto-calculated
+- **Description:** Maximum learning rate during training (used with cycle schedulers).
+- **Intelligently Adjusted Based On:**
+  - Dataset size (larger datasets → higher LR)
+  - Data noise levels (cleaner data → higher LR)
+  - Model complexity
+
+- **Example:**
+  ```yaml
+  learning_rate_max: 0.001
+  ```
+
+### `learning_rate_base`
+- **Type:** `float`
+- **Default:** `learning_rate_max / 10`
+- **Description:** Minimum/base learning rate during cyclical scheduling.
+- **Note:** Automatically calculated if not specified.
+
+### `lr_scheduler_type`
+- **Type:** `string`
+- **Default:** `"onecycle"`
+- **Valid Options:** `"onecycle"`, `"cyclic"`, `"cosine"`
+- **Description:** Learning rate schedule strategy.
+  - `onecycle` - One cycle from base to max LR and back (good for fast convergence)
+  - `cyclic` - Multiple triangular cycles (good for exploration)
+  - `cosine` - Cosine annealing (smooth, gradual decrease)
+
+- **Example:**
+  ```yaml
+  lr_scheduler_type: "onecycle"
+  ```
+
+### `clr_step_size_up` (Cyclic LR)
+- **Type:** `integer`
+- **Default:** Auto-calculated based on total steps
+- **Description:** Number of steps to increase LR in each cycle.
+
+### `clr_step_size_down` (Cyclic LR)
+- **Type:** `integer`
+- **Default:** Auto-calculated based on total steps
+- **Description:** Number of steps to decrease LR in each cycle.
+
+### `weight_decay`
+- **Type:** `float`
+- **Default:** `0.01`
+- **Description:** L2 regularization coefficient to prevent overfitting.
+
+### `momentum` (SGD optimizer)
+- **Type:** `float`
+- **Default:** `0.9`
+- **Valid Range:** `0.0` to `1.0`
+- **Description:** Momentum factor for SGD optimizer.
+
+### `num_workers`
+- **Type:** `integer`
+- **Default:** `2`
+- **Valid Range:** `0` to `CPU_count`
+- **Description:** Number of worker threads for data loading.
+  - 0 = single thread (slower, no multiprocessing)
+  - 2-4 = typical for most systems
+  - Increase for large datasets and fast GPUs
+
+---
+
+## Feature Manifest
+
+Defines paths to pre-computed audio feature files (.npy format) used for training.
+
+### Structure
+```yaml
+feature_manifest: # You can add Multiple Sources
+  targets:           # Positive samples (wake word)
+    key1: "path/to/features.npy"
+    # others.. 
+  negatives:         # Negative samples (non-wake-words)
+    key1: "path/to/negatives.npy"
     
-*   `activation_function`
-    *   **Description:** The activation function to be used in some architectures (like DNN, CNN, CRNN).
-    *   **Type:** `string`
-    *   **Default:** `"relu"`
-    *   <details>
-        <summary><strong>Click for Guidance & Trade-offs</strong></summary>
+  backgrounds:       # Background noise samples
+    key1: "path/to/noise.npy"
+    # others..
+  # Optional: Validation data (if _val key suffix used)
+  targets_val:
+    key1: "path/to/val_positive.npy"
+  negatives_val:
+    key1: "path/to/val_negatives.npy"
+  backgrounds_val:
+    key1: "path/to/val_noise.npy"
+```
 
-        *   `"relu"`: The standard, fast, and reliable choice. It's computationally cheap and works well in most cases.
-        *   `"gelu"` and `"silu"` (also known as Swish): More modern, smoother functions that can sometimes lead to slightly better accuracy and faster convergence, especially in deeper models. They come at a very minor computational cost.
-        </details>
-    *   **Example:** `activation_function: "silu"`
+### Key Naming Convention (It will use `batch_composition`)
+- Keys within each category can be arbitrary unique identifiers
+- Short keys preferred for readability (e.g., `t`, `n`, `b`)
+- Multiple feature sources can be specified with different keys (e.g., `real_pos`, `bg2`, `hard_neg`)
 
-*   **Architecture-Specific Parameters:** Below are parameters that only apply to certain `model_type` values.
-    *   `crnn_cnn_channels`: `list` of `integer`, e.g., `[16, 32, 64]`
-    *   `crnn_rnn_type`: `string`, either `"lstm"` or `"gru"`
-    *   `tcn_channels`: `list` of `integer`, e.g., `[64, 128]`
-    *   `tcn_kernel_size`: `integer`, e.g., `3`
-    *   `quartznet_config`: `list` of `list`, e.g., `[[256, 33, 1], [512, 39, 1]]`
-    *   `transformer_d_model`, `transformer_n_head`: `integer`
-    *   `conformer_d_model`, `conformer_n_head`: `integer`
-    *   `branchformer_d_model`, `branchformer_n_head`: `integer`
+### Example with Multiple Sources
+```yaml
+feature_manifest:
+  targets:
+    t: "./trained_models/model_v1/features/positive.npy"
+    my_voice: "./voice/muhammad_abid/muhammad_abid_data.npy"
+    
+  negatives:
+    common_words: "./features/common_words.npy"
+    hard_negatives: "./features/similar_words.npy"
+    external_dataset: "./external/negatives_1m.npy"
+    
+  backgrounds:
+    office: "./features/office_noise.npy"
+    street: "./features/street_noise.npy"
+    home: "./features/home_noise.npy"
+```
 
-### 7. Training, Optimization & Batching
+---
 
-*   `steps`
-    *   **Description:** The total number of training steps to perform. More steps can lead to better convergence but also risk overfitting and take longer.
-    *   **Type:** `integer`
-    *   **Default:** `Intelligently Generated`
+## Batch Composition
 
-*   `batch_composition`
-    *   **Description:** A block of parameters defining the makeup of each training batch.
-    *   **Default:** `Intelligently Generated` based on data stats and hardware.
-    *   **Example of correct YAML structure:**
-        ```yaml
-        batch_composition:
-          batch_size: 128
-          source_distribution:
-            positive: 35
-            negative_speech: 45
-            pure_noise: 20
-        ```
+Controls the ratio of different sample types in each training batch.
 
-*   `optimizer_type`
-    *   **Description:** The optimization algorithm to use.
-    *   **Type:** `string`
-    *   **Default:** `"adamw"`
-    *   <details>
-        <summary><strong>Click for Guidance & Trade-offs</strong></summary>
+### Structure
+```yaml
+batch_composition:
+  targets: 32          # Number of positive samples per batch
+  negatives: 64        # Number of negative samples per batch
+  backgrounds: 32      # Number of background noise samples per batch
+```
 
-        *   `"adamw"`: An improved version of the Adam optimizer with decoupled weight decay. It often leads to better model generalization and is the **recommended default** for most modern deep learning tasks.
-        *   `"adam"`: The classic and highly effective adaptive optimizer. A very strong and reliable choice.
-        *   `"sgd"`: Stochastic Gradient Descent. A foundational optimizer. While often slower to converge, it can sometimes find better, more generalizable minima with careful tuning of the learning rate and momentum.
-        </details>
+### Example: Balanced Curriculum
+```yaml
+batch_size: 128        # Total samples per batch
 
-*   `learning_rate_max`, `learning_rate_base`
-    *   **Description:** The maximum and base learning rates for schedulers like `cyclic`.
-    *   **Type:** `float`
-    *   **Default:** `Intelligently Generated`
+batch_composition:
+  targets: 32          # 25% positive samples
+  negatives: 64        # 50% negative/hard samples
+  backgrounds: 32      # 25% background noise
+```
 
-*   `lr_scheduler_type`
-    *   **Description:** The learning rate scheduler, which dynamically adjusts the learning rate during training.
-    *   **Type:** `string`
-    *   **Default:** `"cyclic"`
-    *   <details>
-        <summary><strong>Click for Guidance & Trade-offs</strong></summary>
-        
-        *   `"cyclic"` (CyclicLR): A powerful scheduler that cycles the learning rate between a base and max value. It's excellent for exploring the loss landscape and can help the model escape from local minima.
-        *   `"onecycle"` (OneCycleLR): Another very powerful scheduler known for enabling "super-convergence" (achieving good results with much faster training). A great choice for many tasks.
-        *   `"cosine"` (CosineAnnealingLR): A simple and effective scheduler that smoothly decreases the learning rate in a cosine curve. It is very predictable, robust, and a popular choice in recent research.
-        </details>
 
-### 8. Loss Function Configuration
 
-*   `classification_loss`
-    *   **Description:** The primary classification loss function.
-    *   **Type:** `string`
-    *   **Default:** `"labelsmoothing"`
-    *   <details>
-        <summary><strong>Click for Guidance & Trade-offs</strong></summary>
 
-        *   `"labelsmoothing"`: A robust default that improves generalization. It prevents the model from becoming overconfident by slightly "blurring" the hard 0 and 1 labels (e.g., to 0.1 and 0.9). This encourages the model to learn less extreme weights.
-        *   `"focalloss"`: Specifically designed to handle class imbalance, which is very common in wake word datasets (many more negative samples than positive). It automatically down-weights easy-to-classify examples, forcing the model to focus on harder, ambiguous samples.
-        *   `"bce"` (Binary Cross-Entropy): The standard, fundamental loss for binary classification. It's a good baseline but can be sensitive to class imbalance and may not perform as well as the other two options without careful tuning.
-        </details>
 
-*   `focal_loss_alpha`, `focal_loss_gamma`
-    *   **Description:** Tuning parameters for Focal Loss, used only if `classification_loss: "focalloss"`.
-    *   **Type:** `float`
 
-*   `label_smoothing`
-    *   **Description:** The smoothing factor (`0.0` to `1.0`) for Label Smoothing loss.
-    *   **Type:** `float`
-    *   **Default:** `0.1`
+Here is a **clear and professional English explanation** that makes it obvious to the user that `batch_composition` works **based on `feature_manifest` datasets**:
 
-*   `triplet_loss_margin`
-    *   **Description:** The desired margin between positive and negative samples in the Triplet Loss embedding space. A larger margin forces a more distinct separation.
-    *   **Type:** `float`
-    *   **Default:** `0.2`
+---
 
-*   `loss_weight_triplet`, `loss_weight_class`
-    *   **Description:** The weights to apply to the triplet and classification components of the final hybrid loss, controlling their relative importance.
-    *   **Type:** `float`
-    *   **Default:** `triplet: 0.5`, `class: 1.0`
+### Batch Composition
 
-### 9. Training Stability & Fault Tolerance
+`batch_composition` defines **how many feature samples are taken per training batch from the datasets specified in `feature_manifest`.**
 
-*   `early_stopping_patience`
-    *   **Description:** The number of steps without improvement in the stable (EMA) loss before training is stopped. Set to `0` or a negative value to disable.
-    *   **Type:** `integer`
-    *   **Default:** `Intelligently Generated`
+Each entry in `batch_composition` corresponds to a dataset or dataset group defined in `feature_manifest`.
 
-*   `checkpointing`
-    *   **Description:** A block of parameters to control the automatic checkpointing and resumption system.
-    *   **Default:** `enabled: false`
-    *   **Example of correct YAML structure:**
-        ```yaml
-        checkpointing:
-          enabled: true
-          interval_steps: 1500
-          limit: 5
-        ```
+```yaml
+batch_composition:
+  target: 10
+  n: 68
+  hn: 10
+  b: 40
+  # others..
+```
 
-*   `checkpoint_averaging_top_k`
-    *   **Description:** The number of best-performing checkpoints to average together to create the final model. This ensembling technique often improves generalization.
-    *   **Type:** `integer`
-    *   **Default:** `5`
+This means that each training batch will contain:
 
-### 10. Export & Debugging
+* **10 samples** from the `targets` datasets (all datasets inside the `targets`)
+* **68 samples** from the `negatives.n` dataset
+* **10 samples** from the `negatives.hn` dataset
+* **40 samples** from the `backgrounds.b` dataset
 
-*   `onnx_opset_version`
-    *   **Description:** The ONNX opset version to use for exporting the model. Modern architectures (Transformer, Conformer) require a higher version (e.g., >=14).
-    *   **Type:** `integer`
-    *   **Default:** `17`
+---
 
-*   `debug_mode`
-    *   **Description:** If `true`, enables verbose logging to a file (`training_debug.log`) during training, which is useful for debugging gradients and data shapes.
-    *   **Type:** `boolean`
-    *   **Default:** `false`
+### Relationship with `feature_manifest`
+
+`batch_composition` always uses the datasets defined in `feature_manifest`.
+
+For example:
+
+```yaml
+feature_manifest:
+  targets:
+    t: positive_features.npy
+
+  negatives:
+    n: negative_features.npy
+    hn: hard_negative_features.npy
+
+  backgrounds:
+    b: noise_features.npy
+```
+
+The keys used in `batch_composition` must match the dataset keys or dataset groups defined in `feature_manifest`.
+
+---
+
+### How Samples Are Selected
+
+When a group name is used:
+
+```yaml
+batch_composition:
+  target: 10
+```
+
+the samples are **randomly selected from all datasets inside the `targets` group.**
+
+For example:
+
+```yaml
+targets:
+  t1: dataset1.npy
+  t2: dataset2.npy
+  t3: dataset3.npy
+```
+
+Then:
+
+```
+target: 10
+```
+
+means:
+
+* A total of **10 samples will be taken from the targets group**
+* Samples are selected **randomly across all target datasets**
+* Not exactly 10 from each dataset
+
+Example distribution:
+
+* t1 → 3 samples
+* t2 → 4 samples
+* t3 → 3 samples
+
+---
+
+### Selecting From a Specific Dataset
+
+To select samples from a specific dataset, use its dataset key:
+
+```yaml
+batch_composition:
+  t: 10
+```
+
+This means:
+
+* **10 samples will be taken only from `targets.t`**
+
+because:
+
+```yaml
+targets:
+  t: positive_features.npy
+```
+
+---
+
+### Summary
+
+* `feature_manifest` defines **where the datasets are located**
+* `batch_composition` defines **how many samples are taken from those datasets per batch**
+* Keys in `batch_composition` must match keys or groups in `feature_manifest`
+
+
+
+
+
+
+
+
+
+### Auto-Composition (if not specified)
+If `batch_composition` is not provided, NanoWakeWord automatically generates balanced defaults:
+- All three categories present: 25% targets, 50% negatives, 25% backgrounds
+- Two categories: 33% / 67% split
+- One category: 100% to that category
+
+---
+
+## Data Generation
+
+Parameters for synthetic audio generation using Text-to-Speech (TTS).
+
+*It will be updated later*
+
+---
+
+## Augmentation Settings
+
+Audio augmentation parameters for training robustness.
+
+### Structure
+```yaml
+augmentation_settings:
+  min_snr_in_db: 3.0           # Minimum signal-to-noise ratio
+  max_snr_in_db: 30.0          # Maximum signal-to-noise ratio
+  rir_prob: 0.2                # Probability of applying RIR
+  pitch_prob: 0.3              # Probability of pitch shift
+  min_pitch_semitones: -2.0    # Minimum pitch shift
+  max_pitch_semitones: 2.0     # Maximum pitch shift
+  gain_prob: 1.0               # Probability of gain adjustment
+  min_gain_in_db: -6.0         # Minimum gain in dB
+  max_gain_in_db: 6.0          # Maximum gain in dB
+  ColoredNoise: 0.30           # Probability of adding colored noise
+```
+
+### Parameter Descriptions
+
+#### `min_snr_in_db` / `max_snr_in_db`
+- **Type:** `float`
+- **Range:** Typically -10 to +40 dB
+- **Description:** Signal-to-Noise ratio range when mixing audio with background noise.
+  - Lower SNR = harder augmentation (more noise, harder training)
+  - Higher SNR = easier augmentation (less noise, cleaner audio)
+
+#### `rir_prob`
+- **Type:** `float` (0.0-1.0)
+- **Default:** `0.2`
+- **Description:** Probability of applying room impulse response convolution.
+- **Effect:** Simulates acoustic room effects for robustness.
+
+#### `pitch_prob` / `min_pitch_semitones` / `max_pitch_semitones`
+- **Type:** `float`
+- **Pitch Range:** Typically ±2 to ±5 semitones
+- **Description:** Pitch shifting for voice variation without changing content.
+
+#### `gain_prob` / `min_gain_in_db` / `max_gain_in_db`
+- **Type:** `float`
+- **Gain Range:** Typically -6 to +6 dB
+- **Description:** Volume adjustment for robustness to different microphone levels.
+
+#### `ColoredNoise`
+- **Type:** `float` (0.0-1.0)
+- **Default:** `0.30`
+- **Description:** Probability of adding colored noise (pink/brown noise).
+
+### Example: Aggressive Augmentation
+```yaml
+augmentation_settings:
+  min_snr_in_db: -5.0          # Very noisy (challenging)
+  max_snr_in_db: 20.0
+  rir_prob: 0.5                # Frequent RIR
+  pitch_prob: 0.6              # Frequent pitch shift
+  min_pitch_semitones: -4.0    # Wider pitch range
+  max_pitch_semitones: 4.0
+  gain_prob: 1.0
+  min_gain_in_db: -12.0        # Wider gain range
+  max_gain_in_db: 12.0
+```
+
+---
+
+## Feature Generation Manifest
+
+Defines how to generate and process feature files from raw audio.
+
+### Structure
+```yaml
+feature_generation_manifest:
+  feature_key_name1:
+    input_audio_dirs: ["path/to/audio"]  # Source audio directories
+    output_filename: "output_features.npy" # Output file name
+    use_background_noise: true            # Mix with background noise
+    use_rir: true                         # Apply RIR augmentation
+    augmentation_rounds: 10               # Number of augmentation iterations
+    augmentation_settings:                # Optional: override global settings
+      min_snr_in_db: 5.0
+      pitch_prob: 0.5
+```
+
+### Parameters
+
+#### `input_audio_dirs`
+- **Type:** `list` of strings
+- **Description:** Directories containing raw audio files to process.
+
+#### `output_filename`
+- **Type:** `string`
+- **Description:** Name of the output .npy feature file (without `.npy` extension).
+
+#### `use_background_noise`
+- **Type:** `boolean`
+- **Default:** `true`
+- **Description:** Mix samples with background noise from `background_paths`.
+
+#### `use_rir`
+- **Type:** `boolean`
+- **Default:** `true`
+- **Description:** Apply room impulse response convolution.
+
+#### `augmentation_rounds`
+- **Type:** `integer`
+- **Default:** `10`
+- **Valid Range:** `1` to `50`
+- **Description:** How many times to augment each audio sample.
+  - Higher rounds = more training data, slower generation
+  - Examples: 1-3 rounds for large datasets, 10-20 for small datasets
+
+#### `augmentation_settings`
+- **Type:** `dict` (optional)
+- **Description:** Feature-specific augmentation overrides (if not using global settings).
+
+### Example: Multiple Feature Generations
+```yaml
+feature_generation_manifest:
+  positive_features:
+    input_audio_dirs: ["./data/positive"]
+    output_filename: "positive_features.npy"
+    use_background_noise: true
+    use_rir: true
+    augmentation_rounds: 15
+    
+  hard_negative_features:
+    input_audio_dirs: ["./data/negative"]
+    output_filename: "hard_negative_features.npy"
+    use_background_noise: true
+    use_rir: true
+    augmentation_rounds: 20
+    
+  pure_noise_features:
+    input_audio_dirs: ["./data/background_noise"]
+    output_filename: "noise_features.npy"
+    use_background_noise: false
+    use_rir: false
+    augmentation_rounds: 5
+    augmentation_settings:
+      gain_prob: 0.5
+      pitch_prob: 0.3
+
+  others_features:
+    # your paramiters...
+```
+
+---
+
+## Advanced Settings
+
+Fine-tuning parameters for specialized scenarios.
+
+### `augmentation_batch_size`
+- **Type:** `integer`
+- **Default:** Auto-calculated (16-128 based on system resources)
+- **Description:** Batch size for audio augmentation (separate from training batch size).
+- **Note:** Intelligently calculated based on available RAM and CPU cores.
+
+### `feature_gen_cpu_ratio`
+- **Type:** `float`
+- **Default:** `1.0`
+- **Valid Range:** `0.0` to `1.0`
+- **Description:** CPU utilization ratio for feature generation (0.0=GPU only, 1.0=CPU ratio).
+
+### Checkpointing & Early Stopping
+
+#### `checkpoint_averaging_top_k`
+- **Type:** `integer`
+- **Default:** `5`
+- **Description:** Number of best checkpoints to average for final model.
+
+#### `checkpointing.enabled`
+- **Type:** `boolean`
+- **Default:** `true`
+- **Description:** Enable periodic model checkpointing during training.
+
+#### `checkpointing.interval_steps`
+- **Type:** `integer`
+- **Default:** `1000`
+- **Description:** Save checkpoint every N training steps.
+
+#### `checkpointing.limit`
+- **Type:** `integer`
+- **Default:** `2`
+- **Description:** Maximum checkpoint files to keep (oldest are deleted).
+
+#### `early_stopping_patience`
+- **Type:** `integer`
+- **Default:** `0`
+- **Valid Range:** `0` to `100`
+- **Description:** Stop training if no improvement for N validation checks.
+- **0 = disabled**
+
+#### `main_delta`
+- **Type:** `float`
+- **Default:** `0.0001`
+- **Description:** Minimum improvement threshold for early stopping.
+
+### Loss & Training Dynamics
+
+#### `stabilization_steps`
+- **Type:** `integer`
+- **Default:** `1500`
+- **Description:** Number of gradual warmup steps at training start.
+- **Effect:** Prevents instability in initial iterations.
+
+#### `ema_alpha`
+- **Type:** `float`
+- **Default:** `0.01`
+- **Valid Range:** `0.0` to `1.0`
+- **Description:** Exponential moving average smoothing factor for loss tracking.
+- **Higher values**: Faster response to recent changes
+- **Lower values**: Smoother, more stable trend
+
+### Validation Settings
+
+#### `validation_batch_size`
+- **Type:** `integer`
+- **Default:** `256`
+- **Description:** Batch size for validation pass.
+
+### Export Settings
+
+#### `onnx_opset_version`
+- **Type:** `integer`
+- **Default:** `17`
+- **Valid Range:** `11` to `20`
+- **Description:** ONNX opset version for model export compatibility.
+- **Note:** Lower versions = broader compatibility, higher versions = latest features.
+
+---
+
+## Pipeline Control
+
+Master switches to enable/disable major processing stages.
+
+### `generate_clips`
+- **Type:** `boolean`
+- **Default:** `false`
+- **Description:** Enable/disable the clip generation stage (TTS synthesis).
+- **Example:**
+  ```yaml
+  generate_clips: true
+  ```
+
+### `transform_clips`
+- **Type:** `boolean`
+- **Default:** `false`
+- **Description:** Enable/disable feature extraction and augmentation stage.
+- **⚠️ Important:** Set to `false` when not actively generating features to avoid infinite loops.
+
+### `train_model`
+- **Type:** `boolean`
+- **Default:** `false`
+- **Description:** Enable/disable the training stage.
+
+### `overwrite`
+- **Type:** `boolean`
+- **Default:** `false`
+- **Description:** Force regeneration of feature files, overwriting existing files.
+- **⚠️ Warning:** Use with caution as it will delete existing computed features.
+
+### `force_verify`
+- **Type:** `boolean`
+- **Default:** `false`
+- **Description:** Force re-verification of all data directories, ignoring cache.
+
+### `show_training_summary`
+- **Type:** `boolean`
+- **Default:** `true`
+- **Description:** Display effective training configuration in tabular format.
+
+### `debug_mode`
+- **Type:** `boolean`
+- **Default:** `false`
+- **Description:** Enable debug logging and visualization outputs.
+
+### `enable_journaling`
+- **Type:** `boolean`
+- **Default:** `true`
+- **Description:** Log training metrics and model information to journal.
+
+---
+
+## Command-Line Arguments
+
+Running training with configuration overrides:
+
+```bash
+# Basic training
+python -m nanowakeword.trainer -c your_config_path.yaml 
+
+# Generate + Transform + Train
+python -m nanowakeword.trainer -c config.yaml -G -t -T
+
+# Force re-verification of data
+python -m nanowakeword.trainer -c config.yaml --force-verify
+
+# Force regeneration of features
+python -m nanowakeword.trainer -c config.yaml --overwrite
+
+# Resume from previous training
+python -m nanowakeword.trainer -c config.yaml --resume ./trained_models/my_model_v1
+
+# Only transform (no generation, no training)
+python -m nanowakeword.trainer -c config.yaml -t
+```
+
+### Arguments Explanation
+- `-c, --config_path` - Path to YAML config file (required)
+- `-G, --generate_clips` - Enable synthetic data generation stage
+- `-t, --transform_clips` - Enable feature generation and augmentation
+- `-T, --train_model` - Enable model training
+- `-f, --force-verify` - Ignore cache and re-verify all data
+- `--overwrite` - Regenerate all feature files (destructive)
+- `--resume` - Resume training from specific model directory
+
+---

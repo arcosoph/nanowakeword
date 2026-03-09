@@ -17,140 +17,253 @@
 #  Project: https://github.com/arcosoph/nanowakeword
 # ==============================================================================
 
-# (✿◕‿◕✿)
+# (✿◕‿◕✿) - Your wish for even more power is granted!
+
 import os
-import sys
 import torch
 
-from nanowakeword.data.generator.adversarial_texts import adversarial_texts
+# New imports for the Phoneme Adversarial Generator
+from nanowakeword.data.generator.adversarial_texts import (
+    adversarial_texts,
+    get_phonemizer_model,
+    PhonemeAdversarialGenerator,
+    collapse_repeated_letters
+)
 from nanowakeword.data.generator.generate_samples import generate_samples
-
-from nanowakeword.utils.logger import print_step_header, print_info
-
-
+from nanowakeword.utils.logger import print_step_header, print_info, print_warning, print_error
 
 def generate_clips(base_config):
+    
+
+
+    """Activates the flexible, task-based synthetic data generation engine.
+
+    This function serves as the central orchestrator for creating synthetic audio
+    clips. It operates based on a list of "generation tasks" defined in the
+    main configuration file under the `data_generation_tasks` key. This
+    task-based approach grants the user fine-grained control over the entire
+    data generation process, allowing for the creation of multiple, diverse
+    datasets (e.g., positive, negative, validation) in a single run.
+
+    Each task is an independent job that specifies what text to synthesize, how
+    many samples to create, where to save them, and what Text-To-Speech (TTS)
+    settings to use. This modularity empowers users to build complex and robust
+    datasets tailored to their specific needs.
+
+    The primary workflow is as follows:
+    1.  Loads the list of tasks from the configuration.
+    2.  Pre-loads any globally required models (like the phonemizer) for efficiency.
+    3.  Iterates through each enabled task.
+    4.  For each task, it determines the text source and generates the list of
+        phrases to be synthesized.
+    5.  It then calls the `generate_samples` utility to create the audio files.
+    6.  Clears the GPU cache after heavy tasks to maintain performance.
+
+    Configuration Schema (`data_generation_tasks`):
+        The `data_generation_tasks` key in your config file should be a list of
+        dictionaries, where each dictionary represents a single task.
+
+        Task Keys:
+            name (str): A descriptive name for the task (e.g., "Positive Wake Words").
+            enabled (bool): If `False`, this task will be skipped. Defaults to `True`.
+            output_dir (str): The path to the directory where audio clips will be saved.
+            num_samples (int): The total number of audio clips to generate for this task.
+            file_prefix (str): A prefix for the generated audio filenames (e.g., "pos_").
+            tts_settings (dict, optional): Task-specific TTS settings that override
+                                           the global `tts_settings`.
+            text_source (dict): A dictionary defining the source of the text to be
+                                synthesized. This is the core of the task's logic.
+
+    The `text_source` Dictionary:
+        This dictionary must contain a `type` key, which determines how the text
+        is generated. Supported types are:
+
+        1.  `type: "fixed_phrase"`
+            Generates audio for a single, repeated phrase. Ideal for positive
+            wake word samples.
+            - `phrase` (str, optional): The exact phrase to use. If not provided,
+              it falls back to the global `target_phrase`.
+
+        2.  `type: "from_list"`
+            Generates audio from a user-provided list of phrases. Perfect for
+            curated lists of negative samples.
+            - `phrases` (list[str]): A list of custom text phrases.
+            - `repeat_each` (int, optional): How many times to repeat each phrase
+              in the list. Defaults to 1.
+
+        3.  `type: "auto_adversarial"`
+            Generates phonetically similar but common English words/phrases.
+            Excellent for creating a robust set of negative samples that challenge
+            the model with real-world, confusable words.
+            - `base_phrase` (str, optional): The phrase to generate variations
+              from. Falls back to the global `target_phrase`.
+            - Supports other keys like `include_partial_phrase`, `max_multi_word_len`, etc.
+
+        4.  `type: "phoneme_adversarial"`
+            Generates nonsensical but phonetically very similar text by manipulating
+            the phonemes of a base phrase. This creates extremely challenging
+            negative samples to drastically reduce false activations.
+            - `base_phrase` (str, optional): The phrase to generate variations
+              from. Falls back to the global `target_phrase`.
+            - `min_distance` (float, optional): Controls how different the generated
+              phoneme strings are from the original. Defaults to 0.35.
+
+    Example Usage (in a .yaml config file):
+        ```yaml
+        target_phrase: "hey nano"
+        phonemizer_model_path: "path/to/your/phonemizer.pt"
+
+        data_generation_tasks:
+          - name: "Positive Wake Words"
+            enabled: true
+            output_dir: "dataset/positive"
+            num_samples: 1000
+            text_source:
+              type: "fixed_phrase"
+              # Uses the global "hey nano" target_phrase
+
+          - name: "Phoneme-Based Hard Negatives"
+            enabled: true
+            output_dir: "dataset/negative"
+            num_samples: 1500
+            file_prefix: "neg_phoneme"
+            text_source:
+              type: "phoneme_adversarial"
+              min_distance: 0.4
+        ```
+
+    Args:
+        base_config (dict): The main configuration dictionary loaded from the
+            project's config file. It is expected to contain keys like
+            `data_generation_tasks`, `tts_settings`, etc.
+
+    Side Effects:
+        - Creates directories specified in `output_dir` for each task.
+        - Writes `.wav` audio files into these directories.
+        - Prints progress and status information to the console.
+    """
+
+
     print_step_header("Activating Synthetic Data Generation Engine")
 
-    # Acquire the Target Phrase
-    target_phrase = base_config.get("target_phrase")
-    if not target_phrase:
-        print_info("\n[CONFIGURATION NOTICE]: 'target_phrase' is not set in your config file. This is required to generate audio samples.")
-        try:
-            user_input = input(">>> Please enter the target phrase to proceed: ").strip()
-            if not user_input:
-                print_info("\n[ABORT] A target phrase is mandatory for generation. Exiting.")
-                sys.exit(1)
-            target_phrase = [user_input]
-            print_info(f"Using runtime target phrase: '{user_input}'")
-        except (KeyboardInterrupt, EOFError):
-            print_info("\n\nOperation cancelled by user.")
-            sys.exit()
+    generation_tasks = base_config.get("data_generation_tasks")
+    if not generation_tasks or not isinstance(generation_tasks, list):
+        print_info("No 'data_generation_tasks' found in the configuration. Skipping generation.")
+        return
 
-    # 1. Retrieve Sample Counts (Handle missing values safely)
-    raw_pos_samples = base_config.get('generate_positive_samples')
-    raw_neg_samples = base_config.get('generate_negative_samples')
+    global_tts_settings = base_config.get("tts_settings", {})
+    global_target_phrase = base_config.get("target_phrase", None)
 
-    tts_settings = base_config.get("tts_settings", {})
-
-    # Convert to integers if present, else default to 0
-    n_pos_train = int(raw_pos_samples) if raw_pos_samples is not None else 0
-
-    # 2. Configure Negative Data Generation Strategy
-    enable_auto_adversarial = base_config.get("adversarial_text_generation", True)
-    custom_negatives = base_config.get("custom_negative_phrases", [])
-    repeats_per_phrase = int(base_config.get("custom_negative_per_phrase", 50))
-
-    include_partial_phrase= base_config.get("include_partial_phrase", 0.09)
-    include_input_words= base_config.get("include_input_words", 0.2)
-    multi_word_prob = base_config.get("multi_word_prob", 0.9)
-    max_multi_word_len= base_config.get("max_multi_word_len", 2)
-
-    final_negative_texts = []
-
-    # Custom Negative Phrases 
-    if custom_negatives:
-        print_info(f"Processing {len(custom_negatives)} custom negative phrases.")
-        print_info(f"Generating {repeats_per_phrase} copies for EACH custom phrase.")
-
-        # Expand the list: Each custom phrase is repeated 'repeats_per_phrase' times
-        for phrase in custom_negatives:
-            final_negative_texts.extend([phrase] * repeats_per_phrase)
-        
-        print_info(f"Total custom samples prepared: {len(final_negative_texts)}")
-
-    # Gap Filling with Auto-Adversarial Data 
-    if raw_neg_samples is not None:
-        # Scenario: User provided a specific target total (e.g., 600)
-        target_total_neg = int(raw_neg_samples)
-        current_count = len(final_negative_texts)
-        gap = max(0, target_total_neg - current_count)
-
-        if gap > 0:
-            if enable_auto_adversarial:
-                print_info(f"Target negative samples: {target_total_neg}. Current custom samples: {current_count}.")
-                print_info(f"Generating {gap} auto-adversarial phrases to fill the gap.")
-                
-                # Generate phonetically similar words to fill the remaining count
-                auto_adversarial = adversarial_texts(
-                                                                target_phrase[0], 
-                                                                N=gap, 
-                                                                include_input_words=include_input_words, 
-                                                                include_partial_phrase=include_partial_phrase, 
-                                                                multi_word_prob=multi_word_prob,
-                                                                max_multi_word_len=max_multi_word_len)
-                
-                final_negative_texts.extend(auto_adversarial)
-            else:
-                print_info(f"Target is {target_total_neg}, but auto-adversarial generation is DISABLED.")
-                print_info(f"Proceeding with only {current_count} custom samples.")
+    #  Pre-load phonemizer model if any task requires it (for efficiency) 
+    phonemizer_model = None
+    if any(task.get("text_source", {}).get("type") == "phoneme_adversarial" for task in generation_tasks):
+        phonemizer_path = os.path.join("NwwResourcesModel", "phonemize_model", "phonemize_m1.pt")
+        if phonemizer_path and os.path.exists(phonemizer_path):
+            print_info(f"Loading phonemizer model from: {phonemizer_path}")
+            phonemizer_model = get_phonemizer_model(phonemizer_path)
+            print_info("Phonemizer model loaded successfully.")
         else:
-            if current_count > target_total_neg:
-                print_info(f"Note: Custom samples ({current_count}) exceed the target ({target_total_neg}). Keeping all custom samples.")
+            print_warning("A 'phoneme_adversarial' task is defined, but 'phonemizer_model_path' is missing or invalid in the config.")
+            print_warning("Phoneme adversarial generation will be skipped.")
 
-    # Update final count
-    final_neg_count = len(final_negative_texts)
+    print_info(f"Found {len(generation_tasks)} generation tasks defined in the configuration.")
 
-    # Construct Unified Generation Plan
-    generation_plan = {}
-
-    if n_pos_train > 0:
-        generation_plan["Positive_Train"] = {
-            "count": n_pos_train,
-            "texts": target_phrase,
-            "output_dir": base_config["positive_data_path"],
-            "prefix": "pos" 
-        }
-    
-    if final_neg_count > 0:
-        generation_plan["Adversarial_Train"] = {
-            "count": final_neg_count,
-            "texts": final_negative_texts,
-            "output_dir": base_config["negative_data_path"],
-            "prefix": "neg" 
-        }
-
-    # Execute Generation Engine
-    if generation_plan:
-        print_info(f"Initiating data generation pipeline for phrase: '{target_phrase[0]}'")
+    # Execute Generation Engine 
+    for i, task in enumerate(generation_tasks):
+    # for task_name, task_params in generation_tasks_dict.items():
+        task_name = task.get("name", f"Unnamed Task {i+1}")
         
-        for task_name, params in generation_plan.items():
-            if params["count"] > 0 and params["texts"]:
-                print_info(f"Executing task '{task_name}': {params['count']} clips -> '{params['output_dir']}'")
-                os.makedirs(params["output_dir"], exist_ok=True)
-                
-                generate_samples(
-                    text=params["texts"],
-                    max_samples=params["count"],
-                    output_dir=params["output_dir"],
-                    file_prefix=params.get("prefix", "sample"),
-                    **tts_settings
-                )
-                
-                # Clear GPU cache after each heavy task to prevent fragmentation
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
+        if not task.get("enabled", True):
+            print_info(f"\n Skipping Task: '{task_name}' (disabled)")
+            continue
 
-    print_info("Synthetic data generation process finished successfully.\n")
+        print_info(f"Executing Task: '{task_name}'")
 
+        output_dir = task.get("output_dir")
+        num_samples = int(task.get("num_samples", 0))
+        text_source_config = task.get("text_source")
 
+        if not all([output_dir, num_samples > 0, text_source_config]):
+            print_warning(f"Task '{task_name}' is misconfigured. Skipping.")
+            continue
+
+        # Prepare the List of Texts for Generation 
+        final_texts = []
+        source_type = text_source_config.get("type")
+        
+        if not source_type:
+            source_type = 'fixed_phrase'
+
+        if source_type == "fixed_phrase":
+            phrase = text_source_config.get("phrase", global_target_phrase)
+            if not phrase:
+                print_error(f"Task '{task_name}' needs a 'phrase'. Skipping.")
+                continue
+            final_texts = [phrase]
+            print_info(f"Source: Fixed phrase -> '{phrase}'")
+
+        elif source_type == "from_list":
+            phrases = text_source_config.get("phrases", [])
+            repeats = int(text_source_config.get("repeat_each", 1))
+            if not phrases:
+                print_warning(f"Task '{task_name}' has an empty 'phrases' list. Skipping.")
+                continue
+            for p in phrases:
+                final_texts.extend([p] * repeats)
+            print_info(f"Source: Custom list of {len(phrases)} phrases, repeated {repeats} time(s) each.")
+
+        elif source_type == "auto_adversarial":
+            base_phrase = text_source_config.get("base_phrase", global_target_phrase)
+            if not base_phrase:
+                print_error(f"Task '{task_name}' needs a 'base_phrase'. Skipping.")
+                continue
+            print_info(f"Source: Auto-generating {num_samples} word-based adversarial phrases from '{base_phrase}'.")
+            adv_params = {k: text_source_config.get(k) for k in ["include_input_words", "include_partial_phrase", "multi_word_prob", "max_multi_word_len"] if text_source_config.get(k) is not None}
+            final_texts = adversarial_texts(base_phrase, N=num_samples, **adv_params)
+
+        elif source_type == "phoneme_adversarial":
+            if not phonemizer_model:
+                print_error(f"Phonemizer model not loaded, cannot execute task '{task_name}'. Skipping.")
+                continue
+            
+            base_phrase = text_source_config.get("base_phrase", global_target_phrase)
+            if not base_phrase:
+                print_error(f"Task '{task_name}' needs a 'base_phrase' for phoneme generation. Skipping.")
+                continue
+
+            min_distance = float(text_source_config.get("min_distance", 0.35))
+            print_info(f"Source: Generating {num_samples} phoneme-based adversarial texts from '{base_phrase}'.")
+            print_info(f"Using minimum phoneme distance: {min_distance}")
+
+            generator = PhonemeAdversarialGenerator(phonemizer_model, min_distance=min_distance)
+            variants = generator.generate(base_phrase, num_samples)
+            final_texts = [collapse_repeated_letters(v) for v in variants]
+            
+        else:
+            print_warning(f"Unknown text_source type: '{source_type}' in task '{task_name}'. Skipping.")
+            continue
+
+        if not final_texts:
+            print_warning(f"No texts were generated for task '{task_name}'. Skipping.")
+            continue
+
+        # Configure TTS & Run Generation 
+        task_tts_settings = global_tts_settings.copy()
+        task_tts_settings.update(task.get("tts_settings", {}))
+        
+        print_info(f"Generating {num_samples} clips -> '{output_dir}'")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        generate_samples(
+            text=final_texts,
+            max_samples=num_samples,
+            output_dir=output_dir,
+            file_prefix=task.get("file_prefix", "sample"),
+            **task_tts_settings
+        )
+        
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            print_info("GPU cache cleared.")
+
+    print_info("Synthetic Data Generation Process Finished Successfully")

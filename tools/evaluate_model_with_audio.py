@@ -12,21 +12,21 @@ from glob import glob
 from tqdm import tqdm
 
 # Import the interpreter class from the library
-from nanowakeword.nanointerpreter import NanoInterpreter
+from nanowakeword import NanoInterpreter
 
 # ==============================================================================
 #                           CONFIGURATION
 # ==============================================================================
-MODEL_PATH = r"trained_models/arcosoph_B_v3/model/arcosoph_B_v3.onnx"
-POSITIVE_DIR = r"data/generated_positive"
-NEGATIVE_SPEECH_DIR = r"data/generated_negative"
-NEGATIVE_NOISE_DIR = r"data/background_noise"
+MODEL_PATH = r"trained_models/jarvis/model/jarvis.onnx"
+POSITIVE_DIR = r"T_data/positive"
+NEGATIVE_SPEECH_DIR = r"data/negative"
+NEGATIVE_NOISE_DIR = r"notebooks/data/background_noise"
 THRESHOLD = 0.80
 CHUNK_SIZE = 1280
 
 # Set a number to limit how many files are tested from the START of each folder.
 # Set to None to test ALL files.
-MAX_SAMPLES_PER_FOLDER = 900 # ▽▽▽ CHANGE THIS VALUE OR SET TO None ▽▽▽
+MAX_SAMPLES_PER_FOLDER = 5000 # ▽▽▽ CHANGE THIS VALUE OR SET TO None ▽▽▽
 
 # ==============================================================================
 #                           HELPER FUNCTIONS
@@ -127,7 +127,8 @@ if __name__ == "__main__":
     print("\n>>> STEP 2: Evaluating NEGATIVE samples (checking for False Alarms)...")
     negative_speech_files = get_limited_files(NEGATIVE_SPEECH_DIR, MAX_SAMPLES_PER_FOLDER)
     negative_noise_files = get_limited_files(NEGATIVE_NOISE_DIR, MAX_SAMPLES_PER_FOLDER)
-    all_negative_files = negative_speech_files + negative_noise_files
+    # all_negative_files = negative_speech_files + negative_noise_files
+    all_negative_files = negative_speech_files 
     
     false_alarms = 0
     if all_negative_files:

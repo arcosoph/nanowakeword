@@ -16,6 +16,10 @@
 #      https://github.com/arcosoph/nanowakeword
 # ==============================================================================
 
+
+
+                            # - These are all temporarily closed - #
+
 import numpy as np
 import yaml
 import logging

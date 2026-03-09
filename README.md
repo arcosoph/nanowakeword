@@ -28,16 +28,16 @@ NanoWakeWord is a versatile framework offering a rich library of neural network 
 | Architecture | Recommended Use Case | Performance Profile | Start Training |
 | :--- | :--- | :--- | :--- |
 | **DNN** | General use on resource-constrained devices (e.g., MCUs). | **Fastest Training, Low Memory** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=dnn) |
+| **RNN** | Baseline experiments or educational purposes. | Better than DNN | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=rnn) |
 | **CNN** | Short, sharp, and explosive wake words. | Efficient Feature Extraction | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=cnn) |
 | **LSTM** | Noisy environments or complex, multi-syllable phrases. | **Best-in-Class Noise Robustness** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=lstm) |
 | **GRU** | A faster, lighter alternative to LSTM with similar high performance. | Balanced: Speed & Robustness | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=gru) |
 | **CRNN** | Challenging audio requiring both feature and context analysis. | Hybrid Power: CNN + RNN | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=crnn) |
-| **TCN** | Modern, high-speed sequential processing. | **Faster than RNNs** (Parallel) | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=tcn) |
+| **TCN** | Modern, high-speed sequential processing. | **Faster than RNN** (Parallel) | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=tcn) |
 | **QuartzNet**| Top accuracy with a small footprint on edge devices. | **Parameter-Efficient & Accurate** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=quartznet) |
 | **Transformer**| **Deep Contextual Understanding** via Self-Attention mechanism. | **SOTA Performance & Flexibility** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=transformer) |
 | **Conformer** | State-of-the-art hybrid for ultimate real-world performance. | **SOTA: Global + Local Features** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=conformer) |
 | **E-Branchformer**| Bleeding-edge research for potentially the highest accuracy. | Peak Accuracy Potential | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=e_branchformer) |
-| **RNN** | Baseline experiments or educational purposes. | Simple & Foundational | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=rnn) |
 
 ---
 > [!NOTE]
@@ -223,7 +223,7 @@ The command above automates a sophisticated, multi-stage pipeline:
 3.  **Synthetic Data Generation:** If the engine detects a data imbalance, it synthesizes new audio samples to create a robust dataset.
 4.  **Augmentation & Feature Extraction:** Creates thousands of augmented audio variations and extracts numerical features, saving them in a memory-efficient format.
 5.  **Autonomous Model Training:** Trains the model using the intelligently generated configuration, automatically stopping when peak performance is reached.
-6.  **Checkpoint Averaging & Export:** Averages the weights of the most stable models found during training and exports a final, production-ready `.onnx`/`.pytorch` model.
+6.  **Checkpoint Averaging & Export:** Averages the weights of the most stable models found during training and exports a final, production-ready `onnx`/`pytorch` model.
 
 ## Performance and Evaluation
 
@@ -242,8 +242,8 @@ Below is a typical training performance graph for a model trained on a standard 
 *   **Stable and Efficient Learning:** The "Training Loss (Stable/EMA)" curve demonstrates the model's rapid and stable convergence. The loss consistently decreases and flattens, indicating that the model has effectively learned the underlying patterns of the wake word without overfitting. The raw loss (light blue) shows the natural variance between batches, while the stable loss (dark blue) confirms a solid and reliable learning trend.
 
 *   **Exceptional Confidence and Separation:** The final report card is a testament to the model's quality. With an **Average Stable Loss of just 0.2065**, the model is highly accurate. More importantly, the high margin between the positive and negative confidence scores highlights its decision-making power:
-    *   **Avg. Positive Confidence (Logit): `17.006`** (Extremely confident when the wake word is spoken)
-    *   **Avg. Negative Confidence (Logit): `-18.647`** (Equally confident in rejecting incorrect words and noise)
+    *   **Avg. Positive Confidence (Logit): `10.000`** (Extremely confident when the wake word is spoken)
+    *   **Avg. Negative Confidence (Logit): `-17.578`** (Equally confident in rejecting incorrect words and noise)
     This large separation is crucial for minimizing false activations and ensuring the model responds only when it should.
 
 *   **Extremely Low False Positive Rate:** While real-world performance depends on the environment, our new training methodology, which heavily penalizes misclassifications, produces models with an exceptionally low rate of false activations. A well-trained model often achieves **less than one false positive every 8-12 hours** on average, making it ideal for a seamless user experience.
@@ -346,17 +346,17 @@ In a world of complex machine learning tools, Nanowakeword is built on a simple 
 > Training is best done on a machine with a dedicated `GPU`, as it can be computationally intensive. However, training on a `CPU` is also possible, although it will be slower. Inference (running the model) is very lightweight and can be run on almost any device, including a Raspberry Pi 3 or 4, etc.
 
 **3. How much data do I need to train a good model?**
-> For a good starting point, we recommend at least 400+ clean recordings of your wake words from a few different voices. The total duration of negative audio should be at least 3 times longer than positive audio. You can also create synthetic words using NanoWakeWord. The more data you have, the better your model will be. Our intelligent engine is designed to work well even with small datasets.
+> For a good starting point, we recommend at least 10000+ clean data of your wake words from a few different voices. The total duration of negative audio should be at least 3 times longer than positive audio. You can also create synthetic words using Nanowakeword. The more data you have, the better your model will be. Our intelligent engine is designed to work well even with small datasets.
 
 **4. Can I train a model for a language other than English?**
-> Yes! NanoWakeWord is language-agnostic. As long as you can provide audio samples for your wake words, you can train a model for any language.
+> Yes! Nanowakeword is language-agnostic. As long as you can provide audio samples for your wake words, you can train a model for any language.
 
 **5. Which version of Nanowakeword should I use?**
 > Always use the latest version of Nanowakeword. Version v1.3.0 is the minimum supported, but using the latest ensures full compatibility and best performance.
 
 ## Roadmap
 
-NanoWakeWord is an actively developed project. Here are some of the features and improvements we are planning for the future:
+Nanowakeword is an actively developed project. Here are some of the features and improvements we are planning for the future:
 
 -   **E2E:** End to End model
 -   **Model Quantization:** Tools to automatically quantize the final `.onnx` model for even better performance on edge devices.

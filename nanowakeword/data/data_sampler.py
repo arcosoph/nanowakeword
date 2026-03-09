@@ -17,10 +17,11 @@
 #  Project: https://github.com/arcosoph/nanowakeword
 # ==============================================================================
 
+import sys
 import torch
 import numpy as np
 from torch.utils.data import Dataset, Sampler
-from nanowakeword.utils.logger import print_info
+from nanowakeword.utils.logger import print_info, print_warning, print_error
 
 def stitch_batch_generator(source_registry, blueprints, batch_size, input_shape):
     """
@@ -28,12 +29,11 @@ def stitch_batch_generator(source_registry, blueprints, batch_size, input_shape)
     - Creates balanced batches of (features, labels).
     - Uses blueprints to create complex acoustic scenes for both positive and negative samples.
     """
-    import numpy as np
-    import torch
 
     memmaps = {}
     indices = {}
-    target_keys, negative_keys, background_keys = [], [], []
+    # target_keys, negative_keys, background_keys = [], [], []
+    target_keys, negative_keys = [], []
 
     for alias, meta in source_registry.items():
         try:
@@ -43,15 +43,16 @@ def stitch_batch_generator(source_registry, blueprints, batch_size, input_shape)
             t = meta['type']
             if t == 'target': target_keys.append(alias)
             elif t == 'negative': negative_keys.append(alias)
-            elif t == 'background': background_keys.append(alias)
+            # elif t == 'background': background_keys.append(alias)
         except Exception as e:
             import logging
             logging.warning(f"[Data Warning] Could not load source '{alias}': {e}")
 
     if not target_keys:
         raise ValueError("[CRITICAL] No Target sources found! Cannot train.")
-    if not (negative_keys or background_keys):
-        raise ValueError("[CRITICAL] No Negative or Background sources found! Cannot train.")
+    # if not (negative_keys or background_keys):
+    if not (negative_keys):
+        raise ValueError("[CRITICAL] No Negative sources found! Cannot train.")
 
     bp_list = [b['composition'] for b in blueprints]
     bp_weights = np.array([b.get('weight', 1.0) for b in blueprints], dtype=np.float32)
@@ -77,7 +78,7 @@ def stitch_batch_generator(source_registry, blueprints, batch_size, input_shape)
                 
                 if item == 'targets': source_pool = target_keys
                 elif item == 'negatives': source_pool = negative_keys
-                elif item == 'backgrounds': source_pool = background_keys
+                # elif item == 'backgrounds': source_pool = background_keys
                 elif item in memmaps: key = item
 
                 if source_pool:
@@ -183,9 +184,10 @@ class HardnessCurriculumDataset(Dataset):
                     cumulative_len += length
 
                 except FileNotFoundError:
-                    print(f"WARNING: File not found for key '{key}', skipping: {path}")
+                    print_error(f"File not found for key '{key}', skipping: {path}")
+                    sys.exit(1)
                 except Exception as e:
-                    print(f"WARNING: Could not load file for key '{key}'. Error: {e}")
+                    print_error(f"Could not load file for key '{key}'. Error: {e}")
 
         self.total_samples = cumulative_len
 
@@ -241,8 +243,6 @@ class DynamicClassAwareSampler(Sampler):
         self.num_samples_per_batch = sum(self.batch_composition.values())
         self.num_batches = self._calculate_num_batches()
 
-
-        # self.hardness_smoothing_factor = self.config.get("hardness_smoothing_factor", 0.75)
         self.hardness_smoothing_factor = 0.75
 
     def _calculate_num_batches(self):
@@ -344,12 +344,15 @@ class DynamicClassAwareSampler(Sampler):
 class ValidationDataset(Dataset):
     """
     A safe, standalone Dataset for validation. It loads data on-the-fly from file paths.
+    Memmaps are cached per unique file path so we don't re-open files on every
+    __getitem__ call (the original code called np.load every single access).
     """
     def __init__(self, feature_manifest: dict):
         super().__init__()
         self.file_paths = []
         self.local_indices = []
         self.labels = []
+        self._mmap_cache = {}
         
         for category, manifest_paths in feature_manifest.items():
             label = 1.0 if category == 'targets' else 0.0
@@ -357,6 +360,8 @@ class ValidationDataset(Dataset):
             for key, path in manifest_paths.items():
                 try:
                     data = np.load(path, mmap_mode='r')
+                    # Cache the memmap immediately
+                    self._mmap_cache[path] = data
                     length = len(data)
                     
                     for i in range(length):
@@ -365,9 +370,10 @@ class ValidationDataset(Dataset):
                         self.labels.append(label)
                         
                 except FileNotFoundError:
-                    print(f"[WARNING] Validation file not found, skipping: {path}")
+                    print_error(f"Validation file not found, skipping: {path}")
+                    sys.exit(1)
                 except Exception as e:
-                    print(f"[WARNING] Could not probe validation file '{path}'. Error: {e}")
+                    print_error(f"Could not probe validation file '{path}'. Error: {e}")
     
     def __len__(self):
         return len(self.file_paths)
@@ -377,7 +383,8 @@ class ValidationDataset(Dataset):
         local_index = self.local_indices[index]
         label = self.labels[index]
         
-        data = np.load(path, mmap_mode='r')
+        # Use cached memmap instead of re-opening the file
+        data = self._mmap_cache[path]
         feature = data[local_index]
 
         feature_tensor = torch.from_numpy(feature.astype(np.float32))

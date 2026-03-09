@@ -20,7 +20,7 @@
 # (✿◕‿◕✿)
 import os
 import torch
-from nanowakeword.utils.logger import print_info
+from nanowakeword.utils.logger import print_info, print_error
 
 
 def export_pytorch_model(model, model_name, output_dir):
@@ -36,11 +36,11 @@ def export_pytorch_model(model, model_name, output_dir):
     model.eval()
     pytorch_path = os.path.join(output_dir, model_name + '.pt')
     
-    print_info(f"Saving final PyTorch model (state_dict) to '{pytorch_path}'")
+    print_info(f"Saving PyTorch model (state_dict) to '{pytorch_path}'")
     
     try:
         torch.save(model.state_dict(), pytorch_path)
         print_info("PyTorch model saved successfully.")
         
     except Exception as e:
-        print_info(f"ERROR: PyTorch model save failed. Details: {e}")
+        print_error(f"PyTorch model save failed. Details: {e}")

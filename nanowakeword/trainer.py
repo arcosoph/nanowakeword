@@ -35,22 +35,25 @@ import collections
 import collections.abc
 from torch.utils.data import DataLoader
 
-from nanowakeword._config.config_generator import ConfigGenerator
 from nanowakeword._config.ConfigProxy import ConfigProxy
+from nanowakeword._config.config_generator import ConfigGenerator
 
+from nanowakeword._export.onnx import export_onnx_model
+from nanowakeword._export.pytorch import export_pytorch_model
 from nanowakeword._export.auto_gen_name import auto_gen_name as atoGeNm
 
 from nanowakeword.modules.model import Model
 
 from nanowakeword.train.train_model import Trainer
 
+from nanowakeword.data.data_sampler import ValidationDataset
 from nanowakeword.data.data_sampler import DynamicClassAwareSampler, HardnessCurriculumDataset
 
-from nanowakeword.utils.audio_preprocess import verify_and_process_directory
-from nanowakeword.utils.audio_analyzer import DatasetAnalyzer
 from nanowakeword.utils.DynamicTable import DynamicTable
+from nanowakeword.utils.audio_analyzer import DatasetAnalyzer
 from nanowakeword.utils.journal import update_training_journal
-from nanowakeword.utils.logger import print_banner, print_step_header, print_info, print_table
+from nanowakeword.utils.audio_preprocess import verify_and_process_directory
+from nanowakeword.utils.logger import print_banner, print_step_header, print_info, print_table, print_warning, print_error
 
 matplotlib.use('Agg')
 
@@ -229,33 +232,35 @@ def train(cli_args=None):
                 json.dump(current_state, f, indent=4)
 
         except FileNotFoundError:
-            logging.warning(f"Directory not found, skipping preprocessing: {path}")
+            print_warning(f"Directory not found, skipping preprocessing: {path}")
         except Exception as e:
             # Catch other potential errors during verification or writing the receipt
-            print_info(f"Warning: An unexpected error occurred for '{os.path.basename(path)}'. Error: {e}")
+            print_warning(f"An unexpected error occurred for '{os.path.basename(path)}'. Error: {e}")
 
+    convert_audio = user_config.get("convert_audio", False)
 
-    print_step_header("Verifying and Preprocessing Data Directories")
-    
-    data_paths_to_process = [
-        user_config.get("positive_data_path"),
-        user_config.get("negative_data_path")
-    ]
-
-    data_paths_to_process.extend(user_config.get("background_paths", []))
-    data_paths_to_process.extend(user_config.get("rir_paths", []))
-
-
-    unique_paths = set(p for p in data_paths_to_process if p)
-    
-    ISforce_verify= user_config.get("force_verify", False)
-    if args.force_verify or ISforce_verify:
-        print_info("User has forced re-verification of all data directories.")
-    
-    for path in unique_paths:
-        smart_verify(path, force=args.force_verify or ISforce_verify)
+    if convert_audio is True:
+        print_step_header("Verifying and Preprocessing Data Directories")
         
-    print_info("Data verification and preprocessing complete.\n")
+        data_paths_to_process = [
+            user_config.get("positive_data_path"),
+            user_config.get("negative_data_path")
+        ]
+
+        data_paths_to_process.extend(user_config.get("background_paths", []))
+        data_paths_to_process.extend(user_config.get("rir_paths", []))
+
+
+        unique_paths = set(p for p in data_paths_to_process if p)
+        
+        ISforce_verify= user_config.get("force_verify", False)
+        if args.force_verify or ISforce_verify:
+            print_info("User has forced re-verification of all data directories.")
+        
+        for path in unique_paths:
+            smart_verify(path, force=args.force_verify or ISforce_verify)
+            
+        print_info("Data verification and preprocessing complete.\n")
    
     # Hardware-Only Configuration (Express Pass) 
     print_info("Determining hardware-specific configurations...")
@@ -295,7 +300,7 @@ def train(cli_args=None):
         intelligent_config = generator.generate()
 
     except KeyError as e:
-        print_info(f"ERROR: Missing essential path in config file for auto-config: {e}")
+        print_error(f"Missing essential path in config file for auto-config: {e}")
         exit()
     except Exception as e:
         print_info(f"Could not generate intelligent config due to an error: {e}. Proceeding with user config only.")
@@ -350,14 +355,10 @@ def train(cli_args=None):
     if args.train_model is True or should_train:
         training_start_time = time.time()
 
-        # Get the feature manifest from the config
-        # manifest = config.get("feature_manifest", {})
-
-
-        training_manifest = config.get("feature_manifest", {})
+        user_feature_manifest = config.get("feature_manifest", {})
 
         manifest = {}
-        for category, paths in training_manifest.items():
+        for category, paths in user_feature_manifest.items():
             if not category.endswith('_val'):
                 manifest[category] = paths
 
@@ -375,49 +376,51 @@ def train(cli_args=None):
 
         if not composition_cfg:
             print_info("'batch_composition' not found in config. Generating a default balanced composition.")
+            composition_cfg['targets'] = 30
+            composition_cfg['negatives'] =  230
             
-            # Get the total batch size
-            total_batch_size = config.get('batch_size', 128)
-            
-            # Determine which categories are present in the manifest
-            has_targets = bool(manifest.get("targets"))
-            has_negatives = bool(manifest.get("negatives"))
-            has_backgrounds = bool(manifest.get("backgrounds"))
-            
-            num_categories_present = sum([has_targets, has_negatives, has_backgrounds])
-            
-            if num_categories_present == 0:
-                raise ValueError("CRITICAL: feature_manifest is empty. Cannot create a default batch composition.")
-
-
-            # A good default ratio: 25% targets, 50% negatives, 25% backgrounds
-            # If a category is missing, its share is distributed among the others.
-            
-            composition_cfg = {}
-            
-            # Calculate default quotas
-            if num_categories_present == 1:
-                # If only one category exists, it gets the full batch size
-                if has_targets: composition_cfg['targets'] = total_batch_size
-                if has_negatives: composition_cfg['negatives'] = total_batch_size
-                if has_backgrounds: composition_cfg['backgrounds'] = total_batch_size
-            elif num_categories_present == 2:
-                # Distribute among two, e.g., 50/50 or 33/67
-                if has_targets and has_negatives:
-                    composition_cfg['targets'] = total_batch_size // 3
-                    composition_cfg['negatives'] = total_batch_size - composition_cfg['targets']
-                elif has_targets and has_backgrounds:
-                    composition_cfg['targets'] = total_batch_size // 2
-                    composition_cfg['backgrounds'] = total_batch_size - composition_cfg['targets']
-                elif has_negatives and has_backgrounds:
-                    composition_cfg['negatives'] = total_batch_size // 2
-                    composition_cfg['backgrounds'] = total_batch_size - composition_cfg['negatives']
-            else: # All three are present
-                composition_cfg['targets'] = total_batch_size // 4       # 25%
-                composition_cfg['backgrounds'] = total_batch_size // 4  # 25%
-                composition_cfg['negatives'] = total_batch_size - (composition_cfg['targets'] + composition_cfg['backgrounds']) # Remaining 50%
-
             print_info(f"Using default composition: {composition_cfg}")
+        #     # Get the total batch size
+        #     total_batch_size = config.get('batch_size', 128)
+            
+        #     # Determine which categories are present in the manifest
+        #     has_targets = bool(manifest.get("targets"))
+        #     has_negatives = bool(manifest.get("negatives"))
+        #     # has_backgrounds = bool(manifest.get("backgrounds"))
+            
+        #     # num_categories_present = sum([has_targets, has_negatives, has_backgrounds])
+        #     num_categories_present = sum([has_targets, has_negatives])
+            
+        #     if num_categories_present == 0:
+        #         raise ValueError("CRITICAL: feature_manifest is empty. Cannot create a default batch composition.")
+
+
+        #     # A good default ratio: 25% targets, 50% negatives, 25% backgrounds
+        #     # If a category is missing, its share is distributed among the others.
+            
+        #     composition_cfg = {}
+            
+        #     # Calculate default quotas
+        #     if num_categories_present == 1:
+        #         # If only one category exists, it gets the full batch size
+        #         if has_targets: composition_cfg['targets'] = total_batch_size
+        #         if has_negatives: composition_cfg['negatives'] = total_batch_size
+        #         # if has_backgrounds: composition_cfg['backgrounds'] = total_batch_size
+        #     elif num_categories_present == 2:
+        #         # Distribute among two, e.g., 50/50 or 33/67
+        #         if has_targets and has_negatives:
+        #             composition_cfg['targets'] = total_batch_size // 3
+        #             composition_cfg['negatives'] = total_batch_size - composition_cfg['targets']
+        #         elif has_targets and has_backgrounds:
+        #             composition_cfg['targets'] = total_batch_size // 2
+        #             composition_cfg['backgrounds'] = total_batch_size - composition_cfg['targets']
+        #         elif has_negatives and has_backgrounds:
+        #             composition_cfg['negatives'] = total_batch_size // 2
+        #             composition_cfg['backgrounds'] = total_batch_size - composition_cfg['negatives']
+        #     else: # All three are present
+        #         composition_cfg['targets'] = total_batch_size // 4       # 25%
+        #         composition_cfg['backgrounds'] = total_batch_size // 4  # 25%
+        #         composition_cfg['negatives'] = total_batch_size - (composition_cfg['targets'] + composition_cfg['backgrounds']) # Remaining 50%
 
 
 
@@ -448,8 +451,6 @@ def train(cli_args=None):
                 new_category_name = category.replace('_val', '')
                 val_manifest[new_category_name] = manifest_paths
 
-        from nanowakeword.data.data_sampler import ValidationDataset
-
         balanced_val_loader = None
         if val_manifest:
             try:
@@ -472,7 +473,7 @@ def train(cli_args=None):
                     print_info("Validation manifest found, but the resulting dataset is empty. Skipping validation.")
 
             except Exception as e:
-                print_info(f"[WARNING] Failed to create validation dataloader. Error: {e}")
+                print_error(f"Failed to create validation dataloader. Error: {e}")
         else:
             print_info("No validation data keys (e.g., 'targets_val') found in feature_manifest. Skipping validation.")
 
@@ -484,7 +485,7 @@ def train(cli_args=None):
             seconds_per_example = (1280 * input_shape[0]) / 16000 
             print_info(f"Input Shape Detected: {input_shape} ({seconds_per_example:.2f}s context)")
         except Exception as e:
-            print_info(f"[ERROR] Data integrity check failed: {e}")
+            print_error(f"Data integrity check failed: {e}")
             sys.exit(1)
         
         # MODEL INITIALIZATION
@@ -521,7 +522,6 @@ def train(cli_args=None):
         training_end_time = time.time()
         training_duration_minutes = (training_end_time - training_start_time) / 60
 
-        from nanowakeword._export.onnx import export_onnx_model
         export_onnx_model(
             model=best_model, 
             input_shape=input_shape, 
@@ -530,7 +530,6 @@ def train(cli_args=None):
             output_dir=model_save_dir
         )
 
-        from nanowakeword._export.pytorch import export_pytorch_model
         export_pytorch_model(
             model=best_model,
             model_name=config.get("model_name", atoGeNm(config.get("model_type", "dnn"))),

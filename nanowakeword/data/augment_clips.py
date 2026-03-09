@@ -22,7 +22,7 @@ import random
 import torchaudio
 import numpy as np
 from typing import List
-
+from nanowakeword.utils.logger import print_warning
 
 def augment_clips(
         clip_paths: List[str],
@@ -63,6 +63,8 @@ def augment_clips(
                 - gain_prob (float): Probability of applying gain adjustment.
                 - min_gain_in_db (float): Minimum gain in decibels.
                 - max_gain_in_db (float): Maximum gain in decibels.
+                - bg_noise_prob
+                - colored_noise_prob
         background_clip_paths (List[str], optional):
             Paths to background noise audio files.
         RIR_paths (List[str], optional):
@@ -79,10 +81,17 @@ def augment_clips(
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
     cfg = {
-        "min_snr_in_db": 3.0, "max_snr_in_db": 30.0,
         "rir_prob": 0.2,
-        "pitch_prob": 0.3, "min_pitch_semitones": -2.0, "max_pitch_semitones": 2.0,
-        "gain_prob": 1.0, "min_gain_in_db": -6.0, "max_gain_in_db": 6.0, "ColoredNoise": 0.30
+        "gain_prob": 1.0, 
+        "pitch_prob": 0.3,
+        "bg_noise_prob": 0.8,
+        "colored_noise_prob": 0.30,
+        "min_pitch_semitones": -2.0, 
+        "max_pitch_semitones": 2.0,
+        "max_snr_in_db": 30.0,
+        "min_snr_in_db": -10.0,
+        "min_gain_in_db": -6.0, 
+        "max_gain_in_db": 6.0
     }
     if augmentation_settings:
         cfg.update(augmentation_settings)
@@ -93,7 +102,7 @@ def augment_clips(
 
     if background_clip_paths: 
         transforms.append(
-            AddBackgroundNoise(background_paths=background_clip_paths, min_snr_in_db=cfg["min_snr_in_db"], max_snr_in_db=cfg["max_snr_in_db"], p=0.8, sample_rate=sr)
+            AddBackgroundNoise(background_paths=background_clip_paths, min_snr_in_db=cfg["min_snr_in_db"], max_snr_in_db=cfg["max_snr_in_db"], p=cfg["bg_noise_prob"], sample_rate=sr)
         )
 
     if RIR_paths: 
@@ -106,7 +115,7 @@ def augment_clips(
     )    
     
     transforms.append(
-        AddColoredNoise(min_snr_in_db=20.0, max_snr_in_db=40.0, p=0.30, sample_rate=sr)
+        AddColoredNoise(min_snr_in_db=35.0, max_snr_in_db=40.0, p=cfg["colored_noise_prob"], sample_rate=sr)
     )
 
     augmenter = Compose(transforms=transforms, output_type="dict")
@@ -132,18 +141,19 @@ def augment_clips(
                 
                 current_len = waveform.shape[1]
                 if current_len > total_length:
-                    start = random.randint(0, current_len - total_length)
-                    waveform = waveform[:, start:start+total_length]
+                    waveform = waveform[:, -total_length:]
+
                 elif current_len < total_length:
                     padding_needed = total_length - current_len
-                    start_pad = random.randint(0, padding_needed)
+                    end_jitter = int(random.uniform(0, 0.200) * sr)
+                    start_pad = max(0, padding_needed - end_jitter)
                     end_pad = padding_needed - start_pad
                     waveform = torch.nn.functional.pad(waveform, (start_pad, end_pad))
                 
                 batch_audio.append(waveform)
 
             except Exception as e:
-                print(f"Warning: Skipping corrupted file {clip_path}: {e}")
+                print_warning(f"Skipping corrupted file {clip_path}: {e}")
                 continue
         
         if not batch_audio:
