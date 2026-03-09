@@ -348,17 +348,14 @@ feature_manifest: # You can add Multiple Sources
     # others.. 
   negatives:         # Negative samples (non-wake-words)
     key1: "path/to/negatives.npy"
-    
-  backgrounds:       # Background noise samples
-    key1: "path/to/noise.npy"
+    key2: "path/to/noise.npy" # Background noise samples
     # others..
   # Optional: Validation data (if _val key suffix used)
   targets_val:
     key1: "path/to/val_positive.npy"
   negatives_val:
     key1: "path/to/val_negatives.npy"
-  backgrounds_val:
-    key1: "path/to/val_noise.npy"
+    key2: "path/to/val_noise.npy"
 ```
 
 ### Key Naming Convention (It will use `batch_composition`)
@@ -377,10 +374,7 @@ feature_manifest:
     common_words: "./features/common_words.npy"
     hard_negatives: "./features/similar_words.npy"
     external_dataset: "./external/negatives_1m.npy"
-    
-  backgrounds:
     office: "./features/office_noise.npy"
-    street: "./features/street_noise.npy"
     home: "./features/home_noise.npy"
 ```
 
@@ -402,10 +396,11 @@ batch_composition:
 ```yaml
 batch_size: 128        # Total samples per batch
 
+# or batch_composition if not set batch_size
+
 batch_composition:
-  targets: 32          # 25% positive samples
-  negatives: 64        # 50% negative/hard samples
-  backgrounds: 32      # 25% background noise
+  targets: 32          
+  negatives: 230
 ```
 
 
@@ -437,7 +432,7 @@ This means that each training batch will contain:
 * **10 samples** from the `targets` datasets (all datasets inside the `targets`)
 * **68 samples** from the `negatives.n` dataset
 * **10 samples** from the `negatives.hn` dataset
-* **40 samples** from the `backgrounds.b` dataset
+* **40 samples** from the `negatives.b` dataset
 
 ---
 
@@ -455,8 +450,6 @@ feature_manifest:
   negatives:
     n: negative_features.npy
     hn: hard_negative_features.npy
-
-  backgrounds:
     b: noise_features.npy
 ```
 
