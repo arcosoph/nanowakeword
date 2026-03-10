@@ -158,13 +158,9 @@ def generate_clips(base_config):
     phonemizer_model = None
     if any(task.get("text_source", {}).get("type") == "phoneme_adversarial" for task in generation_tasks):
         phonemizer_path = os.path.join("NwwResourcesModel", "phonemize_model", "phonemize_m1.pt")
-        if phonemizer_path and os.path.exists(phonemizer_path):
-            print_info(f"Loading phonemizer model from: {phonemizer_path}")
-            phonemizer_model = get_phonemizer_model(phonemizer_path)
-            print_info("Phonemizer model loaded successfully.")
-        else:
-            print_warning("A 'phoneme_adversarial' task is defined, but 'phonemizer_model_path' is missing or invalid in the config.")
-            print_warning("Phoneme adversarial generation will be skipped.")
+        print_info(f"Loading phonemizer model from: {phonemizer_path}")
+        phonemizer_model = get_phonemizer_model(phonemizer_path)
+        print_info("Phonemizer model loaded successfully.")
 
     print_info(f"Found {len(generation_tasks)} generation tasks defined in the configuration.")
 
