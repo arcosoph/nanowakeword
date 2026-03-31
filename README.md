@@ -8,7 +8,11 @@
     <a href="https://pypi.org/project/nanowakeword/"><img alt="PyPI" src="https://img.shields.io/pypi/v/nanowakeword.svg?color=6C63FF&logo=pypi&logoColor=white"></a>
     <a href="https://pypi.org/project/nanowakeword/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/nanowakeword.svg?color=3776AB&logo=python&logoColor=white"></a>
     <a href="https://pepy.tech/projects/nanowakeword"><img alt="PyPI Downloads" src="https://static.pepy.tech/personalized-badge/nanowakeword?period=total&units=INTERNATIONAL_SYSTEM&left_color=GRAY&right_color=BLACK&left_text=downloads"></a>
-    <a href="https://pypi.org/project/nanowakeword/"><img alt="License" src="https://img.shields.io/pypi/l/nanowakeword?color=white&logo=apache&logoColor=black"></a>
+    <!-- <a href="https://pypi.org/project/nanowakeword/"><img alt="License" src="https://img.shields.io/pypi/l/nanowakeword?color=white&logo=apache&logoColor=black"></a> -->
+    <a href="https://github.com/arcosoph/nanowakeword">
+      <img alt="License" src="https://img.shields.io/github/license/arcosoph/nanowakeword?color=white&logo=github&logoColor=black">
+    </a>
+  
 </p>
 
 **NanoWakeWord is a next-generation, adaptive framework designed to build high-performance, custom wake word models. More than just a tool, it’s an intelligent engine that understands your data and optimizes the entire training process to deliver exceptional accuracy and efficiency.**
@@ -191,7 +195,7 @@ The primary method for controlling the NanoWakeWord framework is through a `.yam
       limit: 3
     # Other...
     ```
-*For a full explanation of all parameters, please see the [`training_config`](https://github.com/arcosoph/nanowakeword/blob/main/examples/training_config.yaml) or [`CONFIGURATION_GUIDE`](https://github.com/arcosoph/nanowakeword/blob/main/CONFIGURATION_GUIDE.md).*
+*For a full explanation of all parameters, please see the [`training_config`](https://github.com/arcosoph/nanowakeword/blob/main/examples/training_config.yaml) or [`CONFIGURATION_GUIDE`](https://arcosoph.com/blog/nanowakeword_config_guide).*
 
 
 3.  **Execute the Pipeline:**
@@ -367,6 +371,8 @@ Nanowakeword is an actively developed project. Here are some of the features and
 Contributions are the lifeblood of open source. We welcome contributions of all forms, from bug reports and documentation improvements to new features.
 
 To get started, please see our **[Contribution Guide](https://github.com/arcosoph/nanowakeword/blob/main/CONTRIBUTING.md)**, which includes information on setting up a development environment, running trsts, and our code of conduct.
+
+Visit our [website](https://arcosoph.com)
 
 ## License
 
