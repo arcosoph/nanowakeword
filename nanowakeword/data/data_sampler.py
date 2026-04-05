@@ -191,6 +191,9 @@ class HardnessCurriculumDataset(Dataset):
 
         self.total_samples = cumulative_len
 
+        # Build a sorted list of start indices for O(log n) lookup in __getitem__
+        self._start_indices = [info['start_index'] for info in self.source_info]
+
         # This tensor tracks the "hardness" of each individual sample across the entire dataset.
         # It is initialized to 1.0 for all samples.
         self.sample_hardness = torch.ones(self.total_samples, dtype=torch.float32)
@@ -203,29 +206,24 @@ class HardnessCurriculumDataset(Dataset):
     def __getitem__(self, index):
         """
         Fetches a single data sample and its label using a global index.
+        Uses binary search (bisect) for O(log n) source file lookup instead of
+        the previous O(n) linear scan.
         """
         if index < 0 or index >= self.total_samples:
             raise IndexError(f"Index {index} out of bounds for dataset with size {self.total_samples}")
 
-        # Find the correct file and local index for the given global index.
-        file_idx = -1
-        for i, info in enumerate(self.source_info):
-            # The file's range is [start_index, start_index + length - 1]
-            if info['start_index'] <= index < (info['start_index'] + info['length']):
-                file_idx = i
-                break
-        
-        if file_idx == -1:
-            # This should theoretically never happen if the initial index check passes
+        import bisect
+        # bisect_right gives the insertion point AFTER any existing entry equal to index,
+        # so subtracting 1 gives the last source whose start_index <= index.
+        file_idx = bisect.bisect_right(self._start_indices, index) - 1
+
+        if file_idx < 0:
             raise RuntimeError(f"Could not find a data source for index {index}")
 
-        # Calculate the local index within the found file
         local_index = index - self.source_info[file_idx]['start_index']
-        
         feature = self.memmaps[file_idx][local_index]
         label = torch.tensor(self.source_info[file_idx]['label'], dtype=torch.float32)
 
-        # Return the feature, its label, and its global index
         return torch.from_numpy(feature.astype(np.float32)), label, index
 
 
@@ -322,8 +320,12 @@ class DynamicClassAwareSampler(Sampler):
                 weights = smoothed_weights + 1e-6 
                 
                 
-                # Perform weighted sampling
-                selected_local_indices = torch.multinomial(weights, num_samples, replacement=True)
+                # Perform weighted sampling.
+                # Use replacement=False when we have enough samples to avoid
+                # the same hard example appearing multiple times in one batch,
+                # which would cause overfitting on hard samples.
+                use_replacement = len(combined_indices) < num_samples
+                selected_local_indices = torch.multinomial(weights, num_samples, replacement=use_replacement)
                 selected_global_indices = combined_indices[selected_local_indices]
                 
                 final_batch_indices.append(selected_global_indices)

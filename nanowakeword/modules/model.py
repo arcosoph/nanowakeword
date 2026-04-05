@@ -143,7 +143,12 @@ class Model(nn.Module):
         else:
             raise ValueError(f"Unsupported model_type: '{model_type}'.")
 
-        self.classifier = nn.Linear(embedding_dim, n_classes)
+        self.classifier = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim // 2),
+            self.activation_fn, 
+            nn.Dropout(dropout_prob),
+            nn.Linear(embedding_dim // 2, n_classes)
+        )
 
         # Define logging dict (in-memory)
         self.history = collections.defaultdict(list)

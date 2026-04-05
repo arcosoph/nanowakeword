@@ -209,10 +209,19 @@ def generate_clips(base_config):
             print_info(f"Source: Custom list of {len(phrases)} phrases, repeated {repeats} time(s) each.")
 
         elif source_type == "auto_adversarial":
-            base_phrase = text_source_config.get("base_phrase", global_target_phrase)
+            # base_phrase = text_source_config.get("base_phrase", global_target_phrase)
+            # if not base_phrase:
+            #     base_phrase = text_source_config.get("phrase")
+            #     continue
+        
+            base_phrase = text_source_config.get("base_phrase") or \
+                        text_source_config.get("phrase") or \
+                        global_target_phrase
+
             if not base_phrase:
-                print_error(f"Task '{task_name}' needs a 'base_phrase'. Skipping.")
-                continue
+                print_error(f"Task '{task_name}' needs a 'base_phrase' for adversarial generation. Skipping.")
+                continue        
+
             print_info(f"Source: Auto-generating {num_samples} word-based adversarial phrases from '{base_phrase}'.")
             adv_params = {k: text_source_config.get(k) for k in ["include_input_words", "include_partial_phrase", "multi_word_prob", "max_multi_word_len"] if text_source_config.get(k) is not None}
             final_texts = adversarial_texts(base_phrase, N=num_samples, **adv_params)
@@ -222,7 +231,15 @@ def generate_clips(base_config):
                 print_error(f"Phonemizer model not loaded, cannot execute task '{task_name}'. Skipping.")
                 continue
             
-            base_phrase = text_source_config.get("base_phrase", global_target_phrase)
+            # base_phrase = text_source_config.get("base_phrase", global_target_phrase)
+            # if not base_phrase:
+            #     base_phrase = text_source_config.get("phrase")
+            #     continue
+
+            base_phrase = text_source_config.get("base_phrase") or \
+                        text_source_config.get("phrase") or \
+                        global_target_phrase
+
             if not base_phrase:
                 print_error(f"Task '{task_name}' needs a 'base_phrase' for phoneme generation. Skipping.")
                 continue

@@ -154,9 +154,7 @@ class ConfigGenerator:
         # SNR_MAX_EASY = 20  
 
         # self.config['min_snr_in_db'] = SNR_MIN_EASY + (SNR_MIN_HARD - SNR_MIN_EASY) * signal_strength # It has been temporarily turn of
-        # self.config['max_snr_in_db'] = SNR_MAX_EASY + (SNR_MAX_HARD - SNR_MAX_EASY) * signal_strength # It has been temporarily turn of
-
-        # 
+        # self.config['max_snr_in_db'] = SNR_MAX_EASY + (SNR_MAX_HARD - SNR_MAX_EASY) * signal_strength # It has been temporarily turn of        # 
         num_cycles = clamp(effective_data_volume / 25, 2, 4)
         total_cycle_steps = self.config['steps'] / num_cycles
         self.config['clr_step_size_up'] = int(total_cycle_steps * 0.4)

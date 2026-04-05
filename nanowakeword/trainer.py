@@ -221,7 +221,7 @@ def train(cli_args=None):
             except (json.JSONDecodeError, KeyError) as e:
                 print_info(f"Could not read or parse receipt for '{os.path.basename(path)}'. Re-verifying... Error: {e}")
         
-        # 3. Perform the actual verification and processing
+        # Perform the actual verification and processing
         # This part runs if verification is forced, receipt doesn't exist, or state has changed.
         try:
             verify_and_process_directory(path)
@@ -281,32 +281,32 @@ def train(cli_args=None):
     ISgenaret_data = base_config.get("generate_clips", False)
     if args.generate_clips or ISgenaret_data:
         from nanowakeword.generate_clips import generate_clips
-        # gen_sample = generate_clips(base_config)
         generate_clips(base_config)
 
 
-    print_step_header("Activating Intelligent Configuration Engine")
-    try:
-        analyzer = DatasetAnalyzer(
-            positive_path=user_config["positive_data_path"],
-            negative_path=user_config["negative_data_path"],
-            noise_path=user_config.get("background_paths", []), 
-            rir_path=user_config["rir_paths"][0]
-        ) 
-        dataset_stats = analyzer.analyze()
-        print_table(dataset_stats, "Dataset Statistics")
+    # print_step_header("Activating Intelligent Configuration Engine")
+    # try:
+    #     analyzer = DatasetAnalyzer(
+    #         positive_path=user_config["positive_data_path"],
+    #         negative_path=user_config["negative_data_path"],
+    #         noise_path=user_config.get("background_paths", []), 
+    #         rir_path=user_config["rir_paths"][0]
+    #     ) 
+    #     dataset_stats = analyzer.analyze()
+    #     print_table(dataset_stats, "Dataset Statistics")
 
-        generator = ConfigGenerator(dataset_stats)
-        intelligent_config = generator.generate()
+    #     generator = ConfigGenerator(dataset_stats)
+    #     intelligent_config = generator.generate()
 
-    except KeyError as e:
-        print_error(f"Missing essential path in config file for auto-config: {e}")
-        exit()
-    except Exception as e:
-        print_info(f"Could not generate intelligent config due to an error: {e}. Proceeding with user config only.")
-        intelligent_config = {} 
+    # except KeyError as e:
+    #     print_error(f"Missing essential path in config file for auto-config: {e}")
+    #     exit()
+    # except Exception as e:
+    #     print_info(f"Could not generate intelligent config due to an error: {e}. Proceeding with user config only.")
+    #     intelligent_config = {} 
 
-    final_config = intelligent_config.copy()
+    # final_config = intelligent_config.copy()
+    final_config = base_config
     
     # Deep merge the user's configuration on top of it.
     # This will correctly merge nested dictionaries like 'augmentation_settings'.
@@ -380,49 +380,6 @@ def train(cli_args=None):
             composition_cfg['negatives'] =  230
             
             print_info(f"Using default composition: {composition_cfg}")
-        #     # Get the total batch size
-        #     total_batch_size = config.get('batch_size', 128)
-            
-        #     # Determine which categories are present in the manifest
-        #     has_targets = bool(manifest.get("targets"))
-        #     has_negatives = bool(manifest.get("negatives"))
-        #     # has_backgrounds = bool(manifest.get("backgrounds"))
-            
-        #     # num_categories_present = sum([has_targets, has_negatives, has_backgrounds])
-        #     num_categories_present = sum([has_targets, has_negatives])
-            
-        #     if num_categories_present == 0:
-        #         raise ValueError("CRITICAL: feature_manifest is empty. Cannot create a default batch composition.")
-
-
-        #     # A good default ratio: 25% targets, 50% negatives, 25% backgrounds
-        #     # If a category is missing, its share is distributed among the others.
-            
-        #     composition_cfg = {}
-            
-        #     # Calculate default quotas
-        #     if num_categories_present == 1:
-        #         # If only one category exists, it gets the full batch size
-        #         if has_targets: composition_cfg['targets'] = total_batch_size
-        #         if has_negatives: composition_cfg['negatives'] = total_batch_size
-        #         # if has_backgrounds: composition_cfg['backgrounds'] = total_batch_size
-        #     elif num_categories_present == 2:
-        #         # Distribute among two, e.g., 50/50 or 33/67
-        #         if has_targets and has_negatives:
-        #             composition_cfg['targets'] = total_batch_size // 3
-        #             composition_cfg['negatives'] = total_batch_size - composition_cfg['targets']
-        #         elif has_targets and has_backgrounds:
-        #             composition_cfg['targets'] = total_batch_size // 2
-        #             composition_cfg['backgrounds'] = total_batch_size - composition_cfg['targets']
-        #         elif has_negatives and has_backgrounds:
-        #             composition_cfg['negatives'] = total_batch_size // 2
-        #             composition_cfg['backgrounds'] = total_batch_size - composition_cfg['negatives']
-        #     else: # All three are present
-        #         composition_cfg['targets'] = total_batch_size // 4       # 25%
-        #         composition_cfg['backgrounds'] = total_batch_size // 4  # 25%
-        #         composition_cfg['negatives'] = total_batch_size - (composition_cfg['targets'] + composition_cfg['backgrounds']) # Remaining 50%
-
-
 
         sampler = DynamicClassAwareSampler(
             dataset=dataset,

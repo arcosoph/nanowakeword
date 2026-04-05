@@ -210,11 +210,25 @@ def augment_clips(
                 fg_wf = fg_wf[start_fg : start_fg + total_length]
                 fg_len = total_length
             
-            # Mix at a random position with a random SNR
-            start_index = random.randint(0, total_length - fg_len)
+            # Mix at a random position with a random SNR.
+            # When background is silence (no bg_paths provided), place at position 0
+            # so the foreground always starts at the beginning of the clip.
+            # This matches the raw audio generator which crops from a random position
+            # but always fills the full clip with audio content.
+            has_real_background = background_clip_paths and bg_wf.abs().max() > 1e-4
+            if has_real_background:
+                start_index = random.randint(0, total_length - fg_len)
+            else:
+                start_index = 0
             snr_db = random.uniform(cfg["min_snr_in_db"], cfg["max_snr_in_db"])
             
-            mixed_clip = _mix_snr(fg_wf, bg_wf, start_index, snr_db)
+            if has_real_background:
+                mixed_clip = _mix_snr(fg_wf, bg_wf, start_index, snr_db)
+            else:
+                # No real background — place foreground directly without SNR mixing.
+                # SNR formula breaks down with near-zero background RMS.
+                mixed_clip = torch.zeros(total_length)
+                mixed_clip[start_index : start_index + fg_len] = fg_wf
             mixed_batch.append(mixed_clip)
 
         if not mixed_batch: continue

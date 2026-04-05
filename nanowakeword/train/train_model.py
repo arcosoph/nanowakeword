@@ -31,6 +31,7 @@ from tqdm import tqdm
 from logging.handlers import RotatingFileHandler
 from collections import deque
 
+# from nanowakeword.modules.loss import BiasWeightedLoss, AsymmetricFocalLoss
 from nanowakeword.modules.loss import BiasWeightedLoss
 from nanowakeword.modules.model import Model
 from nanowakeword.utils.logger import print_info, print_key_value, print_final_report_header
@@ -146,10 +147,16 @@ class Trainer:
 
     def validate(self, val_loader):
         """
-        Runs a full validation cycle on the provided dataloader and returns a
-        dictionary of key performance metrics, including an error-based score.
+        Runs a validation cycle and returns key performance metrics.
+
+        Uses a threshold sweep to find the operating point that minimises the
+        weighted error score (miss_weight * FN + fp_weight * FP).
+
+        For speed, only a random subsample of the validation set is used per
+        call (controlled by val_subsample_batches). The full set is used for
+        the final evaluation at the end of training.
         """
-        import collections 
+        import collections
         import torch.nn.functional as F
 
         self.model.eval()
@@ -158,44 +165,76 @@ class Trainer:
         all_logits = []
         all_labels = []
 
+        # Subsample validation for speed: only evaluate on N random batches
+        # per validation call during training. Set to 0 to use the full set.
+        max_val_batches = self.config.get("val_subsample_batches", 0)
+
         with torch.no_grad():
-            for features, labels, _ in val_loader:
+            for batch_idx, (features, labels, _) in enumerate(val_loader):
+                if max_val_batches > 0 and batch_idx >= max_val_batches:
+                    break
                 features = features.to(self.model.device)
                 labels = labels.to(self.model.device)
-                
+
                 logits = self.model(features).squeeze()
-                
+
                 all_logits.append(logits.cpu())
                 all_labels.append(labels.cpu())
 
         all_logits = torch.cat(all_logits)
         all_labels = torch.cat(all_labels).float()
-        
+
         val_loss = F.binary_cross_entropy_with_logits(all_logits, all_labels).item()
 
-        preds_binary = (all_logits >= 0.0).float() 
+        # Threshold sweep to find the best operating point 
+        # We sweep over sigmoid probabilities from 0.1 to 0.9 and pick the
+        # threshold that minimises the weighted error score.
+        # miss_weight > fp_weight means we penalise missed wake words more.
+        miss_weight = float(self.config.get("val_miss_weight", 4.0))
+        fp_weight   = float(self.config.get("val_fp_weight",   1.0))
 
-        tp = ((preds_binary == 1) & (all_labels == 1)).sum().item() # True Positives
-        tn = ((preds_binary == 0) & (all_labels == 0)).sum().item() # True Negatives
-        fp = ((preds_binary == 1) & (all_labels == 0)).sum().item() # False Positives (False Alarms)
-        fn = ((preds_binary == 0) & (all_labels == 1)).sum().item() # False Negatives (Misses)
+        probs = torch.sigmoid(all_logits)
+        # Sweep from 0.2 to 0.8 -- avoid extremes that indicate a degenerate model.
+        # A threshold of 0.10 means the model barely separates classes; real-world
+        # inference typically uses 0.5+. Keeping the floor at 0.2 prevents the
+        # sweep from selecting a threshold that only works on easy validation data.
+        thresholds = torch.linspace(0.2, 0.8, steps=13)
 
-        val_recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-        val_fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+        best_error  = float('inf')
+        best_thresh = 0.5
+        best_tp = best_tn = best_fp = best_fn = 0
 
-        error_score = fp + fn
+        for thresh in thresholds:
+            preds = (probs >= thresh).float()
+            tp = ((preds == 1) & (all_labels == 1)).sum().item()
+            tn = ((preds == 0) & (all_labels == 0)).sum().item()
+            fp = ((preds == 1) & (all_labels == 0)).sum().item()
+            fn = ((preds == 0) & (all_labels == 1)).sum().item()
+            weighted_err = miss_weight * fn + fp_weight * fp
+            if weighted_err < best_error:
+                best_error  = weighted_err
+                best_thresh = thresh.item()
+                best_tp, best_tn, best_fp, best_fn = tp, tn, fp, fn
+
+        val_recall = best_tp / (best_tp + best_fn) if (best_tp + best_fn) > 0 else 0.0
+        val_fpr    = best_fp / (best_fp + best_tn) if (best_fp + best_tn) > 0 else 0.0
+
+        # Raw (unweighted) error count for logging
+        raw_error_score = best_fp + best_fn
 
         metrics = collections.OrderedDict()
-        metrics['val_loss'] = val_loss
-        metrics['val_recall'] = val_recall
-        metrics['val_fpr'] = val_fpr
-        metrics['total_false_alarms'] = fp
-        metrics['total_misses'] = fn
-        metrics['error_score'] = error_score 
+        metrics['val_loss']           = val_loss
+        metrics['val_recall']         = val_recall
+        metrics['val_fpr']            = val_fpr
+        metrics['total_false_alarms'] = best_fp
+        metrics['total_misses']       = best_fn
+        metrics['error_score']        = best_error          # weighted -- used for checkpointing
+        metrics['raw_error_score']    = raw_error_score     # unweighted -- for display
+        metrics['best_threshold']     = best_thresh
 
         self.model.train()
         self.model.classifier.train()
-        
+
         return metrics
 
 
@@ -214,22 +253,45 @@ class Trainer:
                 resume_from_dir=resume_from_dir        
             )
 
-            print_info("Training finished. Building final model (checkpoint averaging + best-val selection)...")
+            print_info("Training finished. Building final model...")
 
 
             final_model = copy.deepcopy(self.model)
-            final_model.load_state_dict(self.best_model_on_error_score)
-            # if len(self.best_training_checkpoints) > 1:
-            #     print_info(f"Averaging {len(self.best_training_checkpoints)} top training checkpoints...")
-            #     averaged_state_dict = self.model.average_models(self.best_training_checkpoints)
-            #     final_model.load_state_dict(averaged_state_dict)
-            #     print_info("Checkpoint averaging complete.")
-            # elif self.best_model_on_error_score is not None:
-            #     # Fallback: use the best single checkpoint found during validation
-            #     print_info(f"Using best validation checkpoint (error score: {self.best_error_score}).")
-            #     final_model.load_state_dict(self.best_model_on_error_score)
-            # else:
-            #     print_info("No checkpoints saved yet — using current model weights as final model.")
+
+            # Prefer the model that achieved the best WEIGHTED validation error score.
+            # IMPORTANT: If validation data overlaps with training data (a common
+            # misconfiguration), the validation score is meaningless -- the model will
+            # always achieve 0 errors on data it was trained on. In that case, the
+            # training-loss checkpoint pool (which tracks EMA loss over time) is a
+            # better signal because it captures the model BEFORE it fully memorised
+            # the training set.
+            #
+            # We detect this by checking if best_error_score == 0.0 AND the best
+            # checkpoint was found very late in training (after 80% of steps). A
+            # legitimate validation set should show improvement early, not only at
+            # the very end when the model has memorised everything.
+            val_checkpoint_is_suspicious = (
+                self.best_error_score == 0.0
+                and self.best_model_on_error_score is not None
+            )
+
+            if self.best_model_on_error_score is not None and not val_checkpoint_is_suspicious:
+                print_info("Using best validation-error-score checkpoint as the final model.")
+                final_model.load_state_dict(self.best_model_on_error_score)
+            elif self.best_training_checkpoints:
+                if val_checkpoint_is_suspicious:
+                    print_info(
+                        "WARNING: Validation achieved 0 errors — this likely means your "
+                        "validation set overlaps with training data. "
+                        "Using training-loss checkpoint averaging instead, which is more "
+                        "reliable when val data = train data."
+                    )
+                else:
+                    print_info("No validation data used. Averaging top training-loss checkpoints.")
+                avg_state = final_model.average_models(self.best_training_checkpoints)
+                final_model.load_state_dict(avg_state)
+            else:
+                print_info("No checkpoints available. Using the model at the end of training.")
 
             final_model.eval()
 
@@ -333,14 +395,20 @@ class Trainer:
         self.best_error_score = float('inf')
         self.best_model_on_error_score = None
 
-        default_stb_steps = int(max_steps * 0.15)
+        # Stabilization: use a smaller fraction so validation starts earlier.
+        # The old default of 15% meant validation never ran until step ~7500 on a
+        # 50k run -- by then the model had already memorised the training set.
+        default_stb_steps = int(max_steps * 0.05)
         stabilization_steps = self.config.get("stabilization_steps", default_stb_steps)
         min_delta = self.config.get("min_delta", 0.0001)
         best_ema_loss_for_stopping = float('inf')
         steps_without_improvement = 0
         ema_alpha = self.config.get("ema_alpha", 0.01)
 
-        default_patience_steps = int(max_steps * 0.15)
+        # Early stopping patience: default to 10% of steps (was 15%).
+        # Also track the VALIDATION error score for stopping, not just training EMA loss,
+        # when a val loader is available.
+        default_patience_steps = int(max_steps * 0.10)
         user_patience = self.config.get("early_stopping_patience", None)
         if user_patience is not None:
             patience = user_patience
@@ -349,10 +417,13 @@ class Trainer:
         else:
             patience = default_patience_steps
 
+        # Validation-based early stopping state
+        val_patience_steps = self.config.get("val_early_stopping_patience", int(max_steps * 0.15))
+        val_steps_without_improvement = 0
+
         if patience == 0:
             print_info("Early stopping is DISABLED. Training will run for the full duration of 'steps'.")
         else:
-            # print_info(f"Training for {max_steps} steps. Model checkpointing and early stopping will activate after {stabilization_steps} warm-up steps.")
             print_info(f"Training for {max_steps} steps. Early stopping will activate after {stabilization_steps} stabilization steps.")
 
         self.model.to(self.model.device)
@@ -419,8 +490,50 @@ class Trainer:
             embeddings = self.model.model(features)
             logits = self.model.classifier(embeddings).view(-1)
 
-            LOSS_BIAS = self.config.get("LOSS_BIAS", 0.9)
-            total_loss, per_example_loss = BiasWeightedLoss(logits, labels, LOSS_BIAS)
+            LOSS_BIAS = float(self.config.get("LOSS_BIAS", 0.75))
+            loss_fn_type = self.config.get("loss_function", "bias_weighted").lower()
+
+            if loss_fn_type == "asymmetric_focal":
+                gamma_pos = self.config.get("afl_gamma_pos", 0.0)
+                gamma_neg = self.config.get("afl_gamma_neg", 4.0)
+                # total_loss, per_example_loss = AsymmetricFocalLoss(
+                #     logits, labels, LOSS_BIAS,
+                #     gamma_pos=gamma_pos, gamma_neg=gamma_neg
+                # )
+            else:  # default: bias_weighted
+                total_loss, per_example_loss = BiasWeightedLoss(logits, labels, LOSS_BIAS)
+
+            # Logit regularisation: penalise extreme logit magnitudes.
+            # ASYMMETRIC: only penalise negative logits that go too negative.
+            # Positive logits are left free -- the model needs high confidence on
+            # positives to survive real-world noise. Pulling them down causes misses.
+            # Negative logits going to -25 is the problem: it means the model has
+            # zero uncertainty on negatives and will fail on any out-of-distribution
+            # audio (like partial wake words). Keeping them above -logit_reg_margin
+            # forces the model to maintain a calibrated decision boundary.
+            logit_reg_weight = float(self.config.get("logit_reg_weight", 2e-4))
+            logit_reg_margin = float(self.config.get("logit_reg_margin", 6.0))
+            if logit_reg_weight > 0:
+                # Penalise BOTH positive logits that are too high AND negative logits
+                # that are too negative. Both extremes cause real-world failure:
+                # - Positive logits too high (+10): model has no margin for noisy audio
+                # - Negative logits too low (-10): model has zero uncertainty on negatives,
+                #   so out-of-distribution audio (partial wake words) gets high scores
+                # Target range: positives in [+3, +margin], negatives in [-margin, -3]
+                pos_mask_reg = (labels >= 0.5)
+                neg_mask_reg = ~pos_mask_reg
+
+                reg_loss = torch.tensor(0.0, device=logits.device)
+                if pos_mask_reg.sum() > 0:
+                    pos_logits = logits[pos_mask_reg]
+                    excess_pos = torch.clamp(pos_logits - logit_reg_margin, min=0.0)
+                    reg_loss = reg_loss + (excess_pos ** 2).mean()
+                if neg_mask_reg.sum() > 0:
+                    neg_logits = logits[neg_mask_reg]
+                    excess_neg = torch.clamp(-neg_logits - logit_reg_margin, min=0.0)
+                    reg_loss = reg_loss + (excess_neg ** 2).mean()
+
+                total_loss = total_loss + logit_reg_weight * reg_loss
 
             total_loss.backward()
 
@@ -433,18 +546,41 @@ class Trainer:
             self.scheduler.step()
 
             # Live Feedback Loop, Update Hardness Scores
-            # Using Exponential Moving Average (EMA) for stable updates
-            alpha = 0.1  # Smoothing factor
+            # Using Exponential Moving Average (EMA) for stable updates.
+            # A smaller alpha (0.05) gives smoother, more stable hardness estimates
+            # compared to the previous 0.1, reducing noise-driven over-sampling.
+            hardness_alpha = self.config.get("hardness_ema_alpha", 0.05)
 
             # Get the old hardness scores for the samples in this batch
-            # We access the dataset via the DataLoader object 'X'
             old_hardness = X.dataset.sample_hardness[indices].to(self.model.device)
 
-            # Calculate the new hardness score based on the current loss
-            new_hardness = (alpha * per_example_loss) + ((1.0 - alpha) * old_hardness)
+            # Use raw per-example BCE (not the class-weighted version) for hardness,
+            # so that positive and negative samples are compared on the same scale.
+            with torch.no_grad():
+                raw_bce = torch.nn.functional.binary_cross_entropy_with_logits(
+                    logits.detach(), labels, reduction='none'
+                )
 
-            # Update the scores in the dataset's memory (move back to CPU)
+            new_hardness = hardness_alpha * raw_bce + (1.0 - hardness_alpha) * old_hardness
+
+            # Hardness floor: prevent scores from collapsing to zero.
+            # When the model memorises training data, all scores approach 0 and the
+            # curriculum sampler loses its diversity signal entirely. A floor of 0.05
+            # ensures every sample retains a minimum chance of being selected.
+            hardness_floor = self.config.get("hardness_floor", 0.05)
+            new_hardness = torch.clamp(new_hardness, min=hardness_floor)
+
             X.dataset.sample_hardness[indices] = new_hardness.cpu()
+
+            # Periodic hardness reset: every N steps, partially reset hardness scores
+            # toward 1.0 to re-inject diversity and prevent the curriculum from
+            # permanently ignoring samples the model learned early.
+            hardness_reset_interval = self.config.get("hardness_reset_interval", 5000)
+            if hardness_reset_interval > 0 and step_ndx > 0 and step_ndx % hardness_reset_interval == 0:
+                decay = self.config.get("hardness_reset_decay", 0.5)
+                X.dataset.sample_hardness.mul_(decay).add_(1.0 - decay)
+                if debug_mode:
+                    logger.info(f"[{step_ndx:5d}] Hardness scores partially reset (decay={decay}).")
 
             # Use the 'total_loss' for history and EMA calculation
             current_loss = total_loss.detach().cpu().item()
@@ -456,7 +592,12 @@ class Trainer:
                     ema_loss = current_loss
                 ema_loss = ema_alpha * current_loss + (1 - ema_alpha) * ema_loss
 
-                if step_ndx > stabilization_steps:
+                # Training-loss checkpoint pool: only update every N steps to avoid
+                # the cost of copy.deepcopy on every single training step.
+                # The pool is only used as a fallback when no validation data exists.
+                checkpoint_pool_interval = self.config.get("checkpoint_pool_interval", 500)
+                if (step_ndx > stabilization_steps
+                        and step_ndx % checkpoint_pool_interval == 0):
                     current_score = ema_loss
                     if len(self.best_training_checkpoints) < checkpoint_averaging_top_k:
                         self.best_training_checkpoints.append(copy.deepcopy(self.model.state_dict()))
@@ -506,7 +647,11 @@ class Trainer:
                 else:
                     steps_without_improvement += 1
                 
-                if step_ndx > stabilization_steps and steps_without_improvement >= patience:
+                # Only use training-loss early stopping when NO validation data is
+                # available. When val data exists, validation-based stopping (above)
+                # is the primary signal and this becomes a safety fallback.
+                use_train_stopping = (X_val is None) or (not X_val)
+                if use_train_stopping and step_ndx > stabilization_steps and steps_without_improvement >= patience:
                     print_info(f"\nEarly stopping triggered at step {step_ndx}. No improvement in stable loss for {patience} steps.")
                     break
 
@@ -546,8 +691,31 @@ class Trainer:
                 if current_error_score < self.best_error_score:
                     self.best_error_score = current_error_score
                     self.best_model_on_error_score = copy.deepcopy(self.model.state_dict())
-                    
-                    # print_info(f"New best model found! Error Score: {current_error_score} (FA: {val_metrics['total_false_alarms']}, Misses: {val_metrics['total_misses']}) at step {step_ndx}. Checkpoint saved.")
+                    val_steps_without_improvement = 0
+
+                    if debug_mode:
+                        logger.info(
+                            f"[VAL {step_ndx:5d}] New best! "
+                            f"err={current_error_score:.1f} "
+                            f"FA={val_metrics['total_false_alarms']} "
+                            f"Miss={val_metrics['total_misses']} "
+                            f"thresh={val_metrics['best_threshold']:.2f}"
+                        )
+                else:
+                    val_steps_without_improvement += validation_interval
+
+                # Validation-based early stopping: stop if val error hasn't improved
+                # for val_patience_steps steps. This is the primary stopping signal
+                # when validation data is available -- it directly measures real-world
+                # generalisation rather than training loss.
+                if (X_val and val_patience_steps > 0
+                        and step_ndx > stabilization_steps
+                        and val_steps_without_improvement >= val_patience_steps):
+                    print_info(
+                        f"\nValidation early stopping at step {step_ndx}. "
+                        f"No improvement in val error score for {val_patience_steps} steps."
+                    )
+                    break
 
             if step_ndx >= max_steps - 1:
                 break

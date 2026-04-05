@@ -5,63 +5,52 @@
 # Parameters are grouped logically for clarity and ease of use.
 # ==========================================================
 
-## Project & Data Paths
-# Define the project name and the locations of all data assets.
-model_name: "arcosoph_A_v1"
+# ⚠️ FULL config Explanation: https://arcosoph.com/blog/nanowakeword_config_guide#nanowakeword-configuration-guide
+
+model_name: "tadano_A_v1"
 output_dir: "./trained_models"
 
-# Source audio data paths (raw .wav files)
-positive_data_path: "./data/positive"
-negative_data_path: "./data/negative"
-background_paths: ["./data/noise"]
-rir_paths: ["./data/rir"]
+positive_data_path: "./T_data/positive"
+negative_data_path: "./T_data/negative"
+background_paths: ["./final_clips"]
+rir_paths: ["notebooks/data/rir"]
 
+# ============================================================
 # Model Architecture
-# Configure the structure and properties of the neural network.
+# ============================================================
 model_type: "dnn"
-layer_size: 32
-n_blocks: 3
-dropout_prob: 0.2     # To reduce overfitting
+layer_size: 32    
+n_blocks: 3           
+embedding_dim: 128  
+dropout_prob: 0.3  
+activation_function: "relu"
 
-## Training & Optimizer Settings
-# Hyperparameters that control the training loop and optimization process.
-steps: 20000
-stabilization_steps: 10000
-# batch_size: 128
+# ============================================================
+# Loss Function
+# ============================================================
+
+margin_pos: 2.0       # Positives must score > sigmoid(2.0) ≈ 0.88
+margin_neg: -2.0      # Negatives must score < sigmoid(-2.0) ≈ 0.12
+
+LOSS_BIAS: 0.65
+
+# Tighter logit regularization to prevent saturation
+logit_reg_weight: 0.0005
+logit_reg_margin: 4.0  
+logit_min_margin: 1.5  
+
+# ============================================================
+# Training Settings
+# ============================================================
+steps: 50000
+stabilization_steps: 20000 
+
 optimizer_type: "adamw"
-learning_rate_max: 0.001
+learning_rate_max: 0.0008  
 lr_scheduler_type: "onecycle"
 weight_decay: 0.01
 momentum: 0.9
-num_workers: 3
-
-
-## Feature Manifest
-# Paths to the generated .npy feature files. The Acoustic Compositor uses these keys.
-# You can add unlimited additional negative sources with unique keys
-feature_manifest:
-  targets:
-    t: './trained_models/arcosoph_A_v1/features/positive_features.npy'
-  negatives:
-    n: "./trained_models/arcosoph_A_v1/features/negative_features.npy"
-    hn: "./trained_models/arcosoph_A_v1/features/hard_nagative_features.npy"
-    b: './trained_models/arcosoph_A_v1/features/pure_noise_features.npy'
-    # For example, adding a large external noise dataset:
-    # openwakeword_noise: './openwakeword_features_ACAV100M_2000_hrs_16bit.npy'
-
-  targets_val:
-    t_v: './trained_models/arcosoph_A_v1/features/positive_features_train.npy'
-  negatives_val:
-    n_v: "./trained_models/arcosoph_A_v1/features/negative_features.npy"
-    b_v: './trained_models/arcosoph_A_v1/features/pure_noise_features.npy'
-
-
-batch_composition:
-  t: 30
-  n: 173
-  hn: 20
-  b: 40
-
+num_workers: 0
 
 ## Synthetic Data Generation
 target_phrase: "hello arcosoph"
@@ -79,6 +68,18 @@ data_generation_tasks:
 
     text_source:
       type: "fixed_phrase"
+      phrase: "hello arcosoph"
+
+
+  - name: "pos_val"
+    enabled: true
+    output_dir: "data/positive_val"
+    num_samples: 2000
+    file_prefix: "pos"
+
+    text_source:
+      type: "fixed_phrase"
+      phrase: "hello arcosoph"
 
 
   # ===============================
@@ -86,13 +87,13 @@ data_generation_tasks:
   # ===============================
   - name: "Adversarial Negatives"
     enabled: true
-    output_dir: "data/negative_auto"
+    output_dir: "data/negative"
     num_samples: 5000
     file_prefix: "neg_auto"
 
     text_source:
       type: "auto_adversarial"
-      # base_phrase: "hello arcosoph"
+      base_phrase: "hello arcosoph"
       include_input_words: true
       include_partial_phrase: true
       multi_word_prob: 0.5
@@ -110,7 +111,7 @@ data_generation_tasks:
 
     text_source:
       type: "phoneme_adversarial"
-      # base_phrase: "hello arcosoph"
+      base_phrase: "hello arcosoph"
       min_distance: 0.3
 
 
@@ -135,22 +136,53 @@ data_generation_tasks:
       repeat_each: 10
 
 
-augmentation_settings: 
-  min_snr_in_db: -10.0 
-  max_snr_in_db: 20.0
-  rir_prob: 0
-  pitch_prob: 0.2
-  min_pitch_semitones: -2.0 
-  max_pitch_semitones: 2.0
-  gain_prob: 0.9
-  min_gain_in_db: -6.0 
-  max_gain_in_db: 6.0 
-  colored_noise_prob: 0
-  bg_noise_prob: 0
+# ============================================================
+# Feature Manifest
+# ============================================================
 
+feature_manifest:
+  targets:
+    t: "./trained_models/tadano_A_v176/features/positive_features.npy"
 
+  negatives:
+    AE28H_float32: "./trained_models/tadano_A_v100/features/AE29H_float32.npy" # Download from here: https://huggingface.co/datasets/arcosoph/AE29H_float32
+    b: "RACON_11h_v1.npy"                  # background/ambient noise
+    n: "./trained_models/tadano_A_v5/features/negative_features.npy"
+    hn: "./trained_models/tadano_A_v48/features/hard_negative_features.npy"
+
+  targets_val:
+    t_v: './trained_models/arcosoph_A_v1/features/positive_features_val.npy'
+
+  negatives_val:
+    bv: "RACON_11h_v1.npy" # Download from here: https://huggingface.co/datasets/arcosoph/RACON_11h_v1
+
+# ============================================================
+# Batch Composition
+# ============================================================
+batch_composition:
+  AE28H_float32: 90
+  b: 50
+  hn: 20      
+  n: 100
+  t: 50
+
+# ============================================================
+# Augmentation
+# ============================================================
 augmentation_batch_size: 16
 feature_gen_cpu_ratio: 1.0
+
+augmentation_settings:
+  gain_prob: 1.0
+  max_gain_in_db: 2.0
+  max_pitch_semitones: 1.0
+  max_snr_in_db: 35.0
+  min_gain_in_db: -2.0
+  min_pitch_semitones: -1.0
+  min_snr_in_db: 15.0
+  pitch_prob: 0.3
+  rir_prob: 0.0
+
 
 feature_generation_manifest:
   # you can create more feature 
@@ -158,61 +190,94 @@ feature_generation_manifest:
   jast_a_name_like_pos_feature:
     input_audio_dirs: ["./data/positive"]
     output_filename: "positive_features.npy"
-    use_background_noise: false
+    use_background_noise: true
     use_rir: false
     
     augmentation_rounds: 10
     # augmentation_settings: (we will use default)
 
-  negatives:
-    input_audio_dirs: ["./data/negative_auto"]
+  pos_val_feature:
+    input_audio_dirs: ["./data/positive_val"]
+    output_filename: "positive_features_val.npy"
+    use_background_noise: true
+    use_rir: false
+    
+    augmentation_rounds: 10
+    # augmentation_settings: (we will use default)
+
+  negatives_1:
+    input_audio_dirs: ["./data/negative"]
     output_filename: "negative_features.npy"
-    use_background_noise: false
+    use_background_noise: true
     use_rir: false
 
     augmentation_rounds: 10
   
-  negatives:
+  negatives_2:
     input_audio_dirs: ["./data/negative_phoneme"]
     output_filename: "hard_negative_features.npy"
-    use_background_noise: false
+    use_background_noise: true
     use_rir: false
 
     augmentation_rounds: 1
   
-  pure_ambient_noise:
-    input_audio_dirs: ["./data/noise"]
-    output_filename: "pure_noise_features.npy"
-    use_background_noise: false
+  # pure_ambient_noise:
+  #   input_audio_dirs: ["./data/noise"]
+  #   output_filename: "pure_noise_features.npy"
+  #   use_background_noise: false
 
-    augmentation_rounds: 3
-    augmentation_settings: 
-        PitchShift: 0.6
-        Gain: 1.0
-        RIR: 0.5
+  #   augmentation_rounds: 3
+  #   augmentation_settings: 
+  #       PitchShift: 0.6
+  #       Gain: 1.0
+  #       RIR: 0.5
   
   # and others if you want to genarete
 
-## Advanced & Miscellaneous Settings
-# Checkpointing, logging, and other fine-tuning parameters.
+
+background_paths_duplication_rate:
+  - 1
+
+
+# ============================================================
+# Validation Settings
+# ============================================================
+# Penalize misses 4x more than false alarms during validation
+val_miss_weight: 4.0
+val_fp_weight: 1.0
+validation_batch_size: 256
+validation_smoothing_window: 3
+val_early_stopping_patience: 5000
+
+# ============================================================
+# Curriculum Learning
+# ============================================================
+hardness_ema_alpha: 0.05
+hardness_floor: 0.05
+hardness_reset_interval: 5000
+hardness_reset_decay: 0.5
 checkpoint_averaging_top_k: 5
 
-checkpointing: # For Resume Traning
-  enabled: True
+# ============================================================
+# Checkpointing & Debug
+# ============================================================
+checkpointing:
+  enabled: true
   interval_steps: 1000
   limit: 2
 
 early_stopping_patience: 0
-main_delta: 0.0001
+min_delta: 0.0001
+ema_alpha: 0.01
 
 onnx_opset_version: 17
 show_training_summary: true
 debug_mode: true
-ema_alpha: 0.01
 
-## Pipeline Control Switches
-# Master switches to enable or disable major stages of the pipeline.
+# ============================================================
+# Pipeline Control
+# ============================================================
+transform_clips: true
 generate_clips: true
-transform_clips: true # ⚠️ Don't forget to turn it off after finished.
 train_model: true
-overwrite: false
+overwrite: true

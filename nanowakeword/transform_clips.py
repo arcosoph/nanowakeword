@@ -26,11 +26,12 @@ import torchaudio
 import numpy as np
 from tqdm import tqdm
 from pathlib import Path
+from multiprocessing import Pool, cpu_count
 
+from nanowakeword.data.trim_mmap import trim_mmap
 from nanowakeword.data.augment_clips import augment_clips
 from nanowakeword.data.AudioFeatures import AudioFeatures
 from nanowakeword.utils.logger import print_step_header, print_info, print_warning
-from nanowakeword.data.trim_mmap import trim_mmap
 
 
 SEED=10
@@ -49,11 +50,6 @@ def set_seed(seed):
 
 set_seed(SEED)
 
-# In transform_clips.py
-
-# Make sure these imports are at the top of your transform_clips.py file
-from multiprocessing import Pool, cpu_count
-import torchaudio # This might be needed if not already imported
 
 # We need the same helper function here as well. 
 # For better code organization, you could move this helper to a shared utility file,
@@ -75,7 +71,14 @@ def _load_and_preprocess_clip(args):
         
         current_len = waveform.shape[1]
         if current_len > total_length:
-            waveform = waveform[:, -total_length:]
+            # Use a RANDOM crop, not the end of the clip.
+            # The augment_clips generator also uses a random crop, so both paths
+            # must be consistent. Taking the end of the clip causes a distribution
+            # mismatch: features generated without augmentation will contain
+            # different audio content than features generated with augmentation,
+            # producing embeddings in different regions of the embedding space.
+            start = random.randint(0, current_len - total_length)
+            waveform = waveform[:, start : start + total_length]
         elif current_len < total_length:
             padding_needed = total_length - current_len
             waveform = torch.nn.functional.pad(waveform, (0, padding_needed))
@@ -113,13 +116,17 @@ def _raw_audio_batch_generator(clip_paths, total_length, batch_size, sr=16000, n
                 if not batch_audio:
                     continue
                 
-                # Stack, normalize, and yield
-                batch_tensor = torch.stack(batch_audio)
-                final_batch_np = batch_tensor.cpu().numpy()
-                max_val = np.abs(final_batch_np).max(axis=-1, keepdims=True)
-                max_val[max_val < 1e-8] = 1.0 
-                output_batch = (final_batch_np / max_val).squeeze(1) 
-                yield (output_batch * 32767).astype(np.int16)
+                # Stack and convert to int16.
+                # torchaudio loads waveforms as float32 in [-1.0, 1.0].
+                # Scale to int16 range with mild random volume variation
+                # to match the amplitude distribution of augmented clips.
+                batch_tensor = torch.stack(batch_audio)  # [B, 1, T]
+                # Apply random volume in [0.5, 1.0] to match augment_clips distribution
+                volumes = torch.FloatTensor(batch_tensor.shape[0], 1, 1).uniform_(0.5, 1.0)
+                batch_tensor = batch_tensor * volumes
+                batch_tensor = torch.clamp(batch_tensor, -1.0, 1.0)
+                output_batch = (batch_tensor.cpu().numpy() * 32767).astype(np.int16).squeeze(1)
+                yield output_batch
     else:
         # Fallback to serial processing (safe mode for num_workers=0)
         for i in range(0, len(clip_paths), batch_size):
@@ -133,13 +140,13 @@ def _raw_audio_batch_generator(clip_paths, total_length, batch_size, sr=16000, n
             if not batch_audio:
                 continue
             
-            # Same processing logic
+            # Same processing — random volume to match augment_clips distribution.
             batch_tensor = torch.stack(batch_audio)
-            final_batch_np = batch_tensor.cpu().numpy()
-            max_val = np.abs(final_batch_np).max(axis=-1, keepdims=True)
-            max_val[max_val < 1e-8] = 1.0 
-            output_batch = (final_batch_np / max_val).squeeze(1) 
-            yield (output_batch * 32767).astype(np.int16)
+            volumes = torch.FloatTensor(batch_tensor.shape[0], 1, 1).uniform_(0.5, 1.0)
+            batch_tensor = batch_tensor * volumes
+            batch_tensor = torch.clamp(batch_tensor, -1.0, 1.0)
+            output_batch = (batch_tensor.cpu().numpy() * 32767).astype(np.int16).squeeze(1)
+            yield output_batch
 
 
 
@@ -334,8 +341,41 @@ def transform_clips(config, args, feature_save_dir):
         print_info("Feature generation is disabled via config/flag. Skipping.")
         return
 
-    # 1. Prepare shared resources
-    rir_paths = [i.path for j in config["rir_paths"] for i in os.scandir(j)]
+    # Process the feature generation manifest
+    generation_manifest = config.get("feature_generation_manifest")
+    if not generation_manifest:
+        print_warning("'feature_generation_manifest' not found. Skipping feature generation.")
+        return
+    # Prepare shared resources
+    # rir_paths = [i.path for j in config["rir_paths"] for i in os.scandir(j)]
+    # rir_paths = [i.path for j in config.get("rir_paths", []) for i in os.scandir(j)]
+
+    # x_config = generation_manifest.items
+
+    # use_rir = x_config.get("use_background_noise", [])
+
+    # if use_rir:
+    rir_config = config.get("rir_paths", [])
+
+    if not rir_config:
+        print_warning("No RIR is being used!")
+
+    rir_paths = []
+
+    for j in rir_config:
+        if not os.path.isdir(j):
+            continue
+        
+        try:
+            for i in os.scandir(j):
+                rir_paths.append(i.path)
+        except OSError as e:
+            print(f"Error reading {j}: {e}")
+
+    if rir_config and not rir_paths:
+        print_warning("RIR paths provided but no valid files found!")
+        
+
     background_paths = []
     bg_paths_config = config.get("background_paths", [])
     bg_rates_config = config.get("background_paths_duplication_rate", [])
@@ -345,14 +385,9 @@ def transform_clips(config, args, feature_save_dir):
     for path, rate in zip(bg_paths_config, bg_rates_config):
         background_paths.extend([i.path for i in os.scandir(path)] * rate)
 
-    # 2. Determine and set the clip length for this run
+    # Determine and set the clip length for this run
     config["total_length"] = _determine_clip_length(config)
     
-    # 3. Process the feature generation manifest
-    generation_manifest = config.get("feature_generation_manifest")
-    if not generation_manifest:
-        print_warning("'feature_generation_manifest' not found. Skipping feature generation.")
-        return
 
     is_overwrite = config.get("overwrite", False) or args.overwrite
 
