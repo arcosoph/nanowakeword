@@ -5,9 +5,9 @@
 # Parameters are grouped logically for clarity and ease of use.
 # ==========================================================
 
-# ⚠️ FULL config Explanation: https://arcosoph.com/blog/nanowakeword_config_guide#nanowakeword-configuration-guide
+# ⚠️ FULL config Explanation: https://arcosoph.com/blog/nanowakeword_config_guide
 
-model_name: "tadano_A_v1"
+model_name: "arcosoph_A_v1"
 output_dir: "./trained_models"
 
 positive_data_path: "./T_data/positive"
@@ -142,13 +142,13 @@ data_generation_tasks:
 
 feature_manifest:
   targets:
-    t: "./trained_models/tadano_A_v176/features/positive_features.npy"
+    t: "./trained_models/arcosoph_A_v1/features/positive_features.npy"
 
   negatives:
-    AE28H_float32: "./trained_models/tadano_A_v100/features/AE29H_float32.npy" # Download from here: https://huggingface.co/datasets/arcosoph/AE29H_float32
+    AE28H_float32: "features/AE29H_float32.npy" # Download from here: https://huggingface.co/datasets/arcosoph/AE29H_float32
     b: "RACON_11h_v1.npy"                  # background/ambient noise
-    n: "./trained_models/tadano_A_v5/features/negative_features.npy"
-    hn: "./trained_models/tadano_A_v48/features/hard_negative_features.npy"
+    n: "./trained_models/arcosoph_A_v1/features/negative_features.npy"
+    hn: "./trained_models/arcosoph_A_v1/features/hard_negative_features.npy"
 
   targets_val:
     t_v: './trained_models/arcosoph_A_v1/features/positive_features_val.npy'
