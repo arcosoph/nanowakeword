@@ -284,4 +284,4 @@ debug_mode: true
 transform_clips: true # ⚠️ Don't forget to turn it off after finished.
 generate_clips: true  # ⚠️ Don't forget to turn it off after finished.
 train_model: true
-overwrite: true
+overwrite: false
