@@ -10,10 +10,10 @@
 model_name: "arcosoph_A_v1"
 output_dir: "./trained_models"
 
-positive_data_path: "./T_data/positive"
-negative_data_path: "./T_data/negative"
-background_paths: ["./final_clips"]
-rir_paths: ["notebooks/data/rir"]
+positive_data_path: "./data/positive"
+negative_data_path: "./data/negative"
+background_paths: ["SonicWeave-v2"] # https://huggingface.co/datasets/arcosoph/SonicWeave-v2/resolve/main/SonicWeave-v2
+rir_paths: ["rir"] # https://huggingface.co/datasets/davidscripka/MIT_environmental_impulse_responses
 
 # ============================================================
 # Model Architecture
@@ -149,6 +149,8 @@ feature_manifest:
     b: "RACON_11h_v1.npy"                  # background/ambient noise
     n: "./trained_models/arcosoph_A_v1/features/negative_features.npy"
     hn: "./trained_models/arcosoph_A_v1/features/hard_negative_features.npy"
+    # oww: ./openwakeword_features_ACAV100M_2000_hrs_16bit.npy # Here: https://huggingface.co/datasets/davidscripka/openwakeword_features
+    # and others
 
   targets_val:
     t_v: './trained_models/arcosoph_A_v1/features/positive_features_val.npy'
@@ -165,6 +167,8 @@ batch_composition:
   hn: 20      
   n: 100
   t: 50
+  # oww: 1000
+  # and others
 
 # ============================================================
 # Augmentation
@@ -277,7 +281,7 @@ debug_mode: true
 # ============================================================
 # Pipeline Control
 # ============================================================
-transform_clips: true
-generate_clips: true
+transform_clips: true # ⚠️ Don't forget to turn it off after finished.
+generate_clips: true  # ⚠️ Don't forget to turn it off after finished.
 train_model: true
 overwrite: true
