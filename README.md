@@ -10,7 +10,7 @@
     <a href="https://pepy.tech/projects/nanowakeword"><img alt="PyPI Downloads" src="https://static.pepy.tech/personalized-badge/nanowakeword?period=total&units=INTERNATIONAL_SYSTEM&left_color=GRAY&right_color=BLACK&left_text=downloads"></a>
     <!-- <a href="https://pypi.org/project/nanowakeword/"><img alt="License" src="https://img.shields.io/pypi/l/nanowakeword?color=white&logo=apache&logoColor=black"></a> -->
     <a href="https://github.com/arcosoph/nanowakeword">
-      <img alt="License" src="https://img.shields.io/github/license/arcosoph/nanowakeword?color=white&logo=github&logoColor=black">
+      <img alt="License" src="https://img.shields.io/github/license/arcosoph/nanowakeword?color=white&logo=apache&logoColor=black">
     </a>
   
 </p>
@@ -24,6 +24,7 @@
 - [Using model](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#using-your-trained-model-inference)
 - [Performance](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#performance-and-evaluation)
 - [NOTIS](https://github.com/arcosoph/nanowakeword/blob/main/STATUS.md)
+- [Support](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#community-&-support)
 - [FAQ](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#faq)
 
 ## **Choose Your Architecture, Build Your Pro Model**
@@ -114,6 +115,11 @@ A model's true value is in its deployment. Nanowakeword's inference engine is de
 
 </details>
 
+### A Stable & Dependency-Free Workflow
+
+The framework is architected to eliminate the common dependency conflicts that often disrupt machine learning workflows. All required packages are carefully version-managed to guarantee a stable environment from initial setup through to the final training execution.
+
+This design ensures that users can proceed from installation to model generation without encountering environment-related errors, allowing them to focus entirely on building their wake word model.
 
 
 ## Getting Started
@@ -246,11 +252,11 @@ Below is a typical training performance graph for a model trained on a standard 
 *   **Stable and Efficient Learning:** The "Training Loss (Stable/EMA)" curve demonstrates the model's rapid and stable convergence. The loss consistently decreases and flattens, indicating that the model has effectively learned the underlying patterns of the wake word without overfitting. The raw loss (light blue) shows the natural variance between batches, while the stable loss (dark blue) confirms a solid and reliable learning trend.
 
 *   **Exceptional Confidence and Separation:** The final report card is a testament to the model's quality. With an **Average Stable Loss of just 0.2065**, the model is highly accurate. More importantly, the high margin between the positive and negative confidence scores highlights its decision-making power:
-    *   **Avg. Positive Confidence (Logit): `10.000`** (Extremely confident when the wake word is spoken)
-    *   **Avg. Negative Confidence (Logit): `-17.578`** (Equally confident in rejecting incorrect words and noise)
+    *   **Avg. Positive Confidence (Logit): `5.448`** (Extremely confident when the wake word is spoken)
+    *   **Avg. Negative Confidence (Logit): `-5.890`** (Equally confident in rejecting incorrect words and noise)
     This large separation is crucial for minimizing false activations and ensuring the model responds only when it should.
 
-*   **Extremely Low False Positive Rate:** While real-world performance depends on the environment, our new training methodology, which heavily penalizes misclassifications, produces models with an exceptionally low rate of false activations. A well-trained model often achieves **less than one false positive every 8-12 hours** on average, making it ideal for a seamless user experience.
+*   **Extremely Low False Positive Rate:** While real-world performance depends on the environment, our new training methodology, which heavily penalizes misclassifications, produces models with an exceptionally low rate of false activations. A well-trained model often achieves **less than one false positive every 16-28 hours** on average, making it ideal for a seamless user experience.
 
 ### The Role of the Intelligent Configuration Engine
 
@@ -347,7 +353,7 @@ In a world of complex machine learning tools, Nanowakeword is built on a simple 
 >  You can use **Python 3.8 to 3.13**. This setup has been tested and is fully supported.
 
 **2. What kind of hardware do I need for training?**
-> Training is best done on a machine with a dedicated `GPU`, as it can be computationally intensive. However, training on a `CPU` is also possible, although it will be slower. Inference (running the model) is very lightweight and can be run on almost any device, including a Raspberry Pi 3 or 4, etc.
+> Training can be performed on any modern device, including standard CPUs, without requiring specialized hardware. While a dedicated `GPU` can accelerate the process, it is not necessary. The training pipeline is optimized to run efficiently even on low-end systems.
 
 **3. How much data do I need to train a good model?**
 > For a good starting point, we recommend at least 10000+ clean data of your wake words from a few different voices. The total duration of negative audio should be at least 3 times longer than positive audio. You can also create synthetic words using Nanowakeword. The more data you have, the better your model will be. Our intelligent engine is designed to work well even with small datasets.
@@ -355,8 +361,22 @@ In a world of complex machine learning tools, Nanowakeword is built on a simple 
 **4. Can I train a model for a language other than English?**
 > Yes! Nanowakeword is language-agnostic. As long as you can provide audio samples for your wake words, you can train a model for any language.
 
-**5. Which version of Nanowakeword should I use?**
-> Always use the latest version of Nanowakeword. Version v1.3.0 is the minimum supported, but using the latest ensures full compatibility and best performance.
+<!-- **5. Which version of Nanowakeword should I use?**
+> Always use the latest version of Nanowakeword. Version v1.3.0 is the minimum supported, but using the latest ensures full compatibility and best performance. -->
+**5. What platforms are supported for running the trained model?**
+>  Inference (running the model) is extremely lightweight and can run smoothly on almost any device, including a Raspberry Pi 3/4, Linux systems, Android devices, and Apple platforms.
+
+## Community & Support
+
+Assistance for any issue—from data preparation to troubleshooting a stalled training process or an unexpected error—is readily available. The project prioritizes swift and effective solutions to ensure a smooth user experience.
+
+For support, users can get help through the most convenient channel:
+
+*   **[GitHub Issues](https://github.com/arcosoph/nanowakeword/issues):** For reporting bugs, technical issues, and making feature requests.
+*   **[Discord Server](https://discord.gg/rYfShVvacB):** Ideal for general questions, configuration help, and community discussion.
+*   **[Official Website](https://arcosoph.com):** Provides documentation and includes a [contact](https://arcosoph.com/#contact) interface for direct communication.
+
+*All inquiries are reviewed and addressed as promptly as possible.*
 
 ## Roadmap
 

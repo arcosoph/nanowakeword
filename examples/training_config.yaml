@@ -6,8 +6,9 @@
 # ==========================================================
 
 # ⚠️ FULL config Explanation: https://arcosoph.com/blog/nanowakeword_config_guide
+# 😄 Please read our comment & change your required before starting this section.
 
-model_name: "arcosoph_A_v1"
+model_name: "arcosoph_A_v1"  # ⚠️ Change this name when creating a new model (e.g., arcosoph_A_v2)
 output_dir: "./trained_models"
 
 positive_data_path: "./data/positive"
@@ -19,8 +20,8 @@ rir_paths: ["rir"] # https://huggingface.co/datasets/davidscripka/MIT_environmen
 # Model Architecture
 # ============================================================
 model_type: "dnn"
-layer_size: 32    
-n_blocks: 3           
+layer_size: 32    # You can increase it further to get better results (e.g., 64, 128)
+n_blocks: 3       # You can increase it further to get better results (e.g., 4, 6)
 embedding_dim: 128  
 dropout_prob: 0.3  
 activation_function: "relu"
@@ -53,7 +54,7 @@ momentum: 0.9
 num_workers: 0
 
 ## Synthetic Data Generation
-target_phrase: "hello arcosoph"
+target_phrase: "hello arcosoph" # ⚠️ your wake word
 
 data_generation_tasks:
 
@@ -68,7 +69,7 @@ data_generation_tasks:
 
     text_source:
       type: "fixed_phrase"
-      phrase: "hello arcosoph"
+      phrase: "hello arcosoph" # ⚠️ your wake word
 
 
   - name: "pos_val"
@@ -79,7 +80,7 @@ data_generation_tasks:
 
     text_source:
       type: "fixed_phrase"
-      phrase: "hello arcosoph"
+      phrase: "hello arcosoph"    # ⚠️ your wake word
 
 
   # ===============================
@@ -93,7 +94,7 @@ data_generation_tasks:
 
     text_source:
       type: "auto_adversarial"
-      base_phrase: "hello arcosoph"
+      base_phrase: "hello arcosoph"  # ⚠️ your wake word
       include_input_words: true
       include_partial_phrase: true
       multi_word_prob: 0.5
@@ -111,7 +112,7 @@ data_generation_tasks:
 
     text_source:
       type: "phoneme_adversarial"
-      base_phrase: "hello arcosoph"
+      base_phrase: "hello arcosoph"   # ⚠️ your wake word
       min_distance: 0.3
 
 
@@ -126,10 +127,10 @@ data_generation_tasks:
 
     text_source:
       type: "from_list"
-      phrases:
-        - "hello arcosoph"
+      phrases:                  # ⚠️ your wake word
+        - "arcosoph eloo"
         - "arcosop"
-        - "hi arcosoph"
+        - "hie arcosoph"
         - "arkhoshap"
         - "yarkasop"
 
