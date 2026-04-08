@@ -4,7 +4,7 @@ This document provides timely updates, performance notes, stability reports, and
 
 ---
 
-# Current Release: `v2.0.1`
+# Release: `v2.0.1`
 
 
 ## ⚠️ Known Issue: `ModuleNotFoundError: No module named 'pkg_resources'`

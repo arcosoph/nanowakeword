@@ -24,7 +24,7 @@
 - [Using model](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#using-your-trained-model-inference)
 - [Performance](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#performance-and-evaluation)
 - [NOTIS](https://github.com/arcosoph/nanowakeword/blob/main/STATUS.md)
-- [Support](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#community-&-support)
+- [Support](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#community--support)
 - [FAQ](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#faq)
 
 ## **Choose Your Architecture, Build Your Pro Model**
