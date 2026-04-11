@@ -31,7 +31,6 @@ from tqdm import tqdm
 from logging.handlers import RotatingFileHandler
 from collections import deque
 
-# from nanowakeword.modules.loss import BiasWeightedLoss, AsymmetricFocalLoss
 from nanowakeword.modules.loss import BiasWeightedLoss
 from nanowakeword.modules.model import Model
 from nanowakeword.utils.logger import print_info, print_key_value, print_final_report_header

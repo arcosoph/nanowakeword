@@ -377,39 +377,6 @@ feature_manifest:
     office: "./features/office_noise.npy"
     home: "./features/home_noise.npy"
 ```
-
----
-
-## Batch Composition
-
-Controls the ratio of different sample types in each training batch.
-
-### Structure
-```yaml
-batch_composition:
-  targets: 32          # Number of positive samples per batch
-  negatives: 64        # Number of negative samples per batch
-  backgrounds: 32      # Number of background noise samples per batch
-```
-
-### Example: Balanced Curriculum
-```yaml
-batch_size: 128        # Total samples per batch
-
-# or batch_composition if not set batch_size
-
-batch_composition:
-  targets: 32          
-  negatives: 230
-```
-
-
-
-
-
-
-Here is a **clear and professional English explanation** that makes it obvious to the user that `batch_composition` works **based on `feature_manifest` datasets**:
-
 ---
 
 ### Batch Composition
@@ -526,19 +493,6 @@ targets:
 * Keys in `batch_composition` must match keys or groups in `feature_manifest`
 
 
-
-
-
-
-
-
-
-### Auto-Composition (if not specified)
-If `batch_composition` is not provided, NanoWakeWord automatically generates balanced defaults:
-- All three categories present: 25% targets, 50% negatives, 25% backgrounds
-- Two categories: 33% / 67% split
-- One category: 100% to that category
-
 ---
 
 ## Data Generation
@@ -556,16 +510,15 @@ Audio augmentation parameters for training robustness.
 ### Structure
 ```yaml
 augmentation_settings:
-  min_snr_in_db: 3.0           # Minimum signal-to-noise ratio
-  max_snr_in_db: 30.0          # Maximum signal-to-noise ratio
-  rir_prob: 0.2                # Probability of applying RIR
-  pitch_prob: 0.3              # Probability of pitch shift
-  min_pitch_semitones: -2.0    # Minimum pitch shift
-  max_pitch_semitones: 2.0     # Maximum pitch shift
   gain_prob: 1.0               # Probability of gain adjustment
-  min_gain_in_db: -6.0         # Minimum gain in dB
-  max_gain_in_db: 6.0          # Maximum gain in dB
-  ColoredNoise: 0.30           # Probability of adding colored noise
+  min_gain_in_db: -2.0         # Minimum gain in dB
+  max_gain_in_db: 2.0          # Maximum gain in dB
+  pitch_prob: 0.3              # Probability of pitch shift
+  max_pitch_semitones: 1.0     # Maximum pitch shift
+  min_pitch_semitones: -1.0    # Minimum pitch shift
+  max_snr_in_db: 35.0          # Maximum signal-to-noise ratio
+  min_snr_in_db: 15.0          # Minimum signal-to-noise ratio
+  rir_prob: 0.0                # Probability of applying RIR
 ```
 
 ### Parameter Descriptions
@@ -687,9 +640,8 @@ feature_generation_manifest:
     use_background_noise: false
     use_rir: false
     augmentation_rounds: 5
-    augmentation_settings:
-      gain_prob: 0.5
-      pitch_prob: 0.3
+    
+    augmentation_settings: false  # There will be no argumentation.
 
   others_features:
     # your paramiters...

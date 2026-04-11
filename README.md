@@ -397,3 +397,23 @@ Visit our [website](https://arcosoph.com)
 ## License
 
 This project is licensed under the Apache 2.0 License - see the [LICENSE](https://github.com/arcosoph/nanowakeword/blob/main/LICENSE) file for details.
+
+
+<div align="center">
+  <p style="font-size:18px; font-weight:600;">
+    💙 If you find this helpful, please support us at 
+    <a href="https://arcosoph.com" style="text-decoration:none;">
+      <span style="color:#fefefe;">A</span>
+      <span style="color:#2cab4e;">r</span>
+      <span style="color:#029adb;">c</span>
+      <span style="color:#821720;">o</span>
+      <span style="color:#f9e91b;">s</span>
+      <span style="color:#821720;">o</span>
+      <span style="color:#fefefe;">p</span>
+      <span style="color:#f9e91b;">h</span>
+    </a>  or give our 
+    <a href="https://github.com/arcosoph/NanoWakeWord" style="color:#007BFF; font-weight:bold; text-decoration:none;">
+      repository
+    </a> a ⭐
+  </p>
+</div>

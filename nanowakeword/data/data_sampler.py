@@ -23,116 +23,6 @@ import numpy as np
 from torch.utils.data import Dataset, Sampler
 from nanowakeword.utils.logger import print_info, print_warning, print_error
 
-def stitch_batch_generator(source_registry, blueprints, batch_size, input_shape):
-    """
-    Standard Classification Batch Generator.
-    - Creates balanced batches of (features, labels).
-    - Uses blueprints to create complex acoustic scenes for both positive and negative samples.
-    """
-
-    memmaps = {}
-    indices = {}
-    # target_keys, negative_keys, background_keys = [], [], []
-    target_keys, negative_keys = [], []
-
-    for alias, meta in source_registry.items():
-        try:
-            path = meta['path']
-            memmaps[alias] = np.load(path, mmap_mode='r')
-            indices[alias] = len(memmaps[alias])
-            t = meta['type']
-            if t == 'target': target_keys.append(alias)
-            elif t == 'negative': negative_keys.append(alias)
-            # elif t == 'background': background_keys.append(alias)
-        except Exception as e:
-            import logging
-            logging.warning(f"[Data Warning] Could not load source '{alias}': {e}")
-
-    if not target_keys:
-        raise ValueError("[CRITICAL] No Target sources found! Cannot train.")
-    # if not (negative_keys or background_keys):
-    if not (negative_keys):
-        raise ValueError("[CRITICAL] No Negative sources found! Cannot train.")
-
-    bp_list = [b['composition'] for b in blueprints]
-    bp_weights = np.array([b.get('weight', 1.0) for b in blueprints], dtype=np.float32)
-    bp_probs = bp_weights / np.sum(bp_weights)
-    
-    required_samples, feature_dim = input_shape
-
-    while True:
-        batch_x = np.zeros((batch_size, required_samples, feature_dim), dtype=np.float32)
-        batch_y = np.zeros(batch_size, dtype=np.float32)
-
-        for i in range(batch_size):
-            template_idx = np.random.choice(len(bp_list), p=bp_probs)
-            template = bp_list[template_idx]
-            
-            stitched_clips = []
-            is_target_present = False
-            target_clip_len = 0 
-            
-            for item in template:
-                key = None
-                source_pool = []
-                
-                if item == 'targets': source_pool = target_keys
-                elif item == 'negatives': source_pool = negative_keys
-                # elif item == 'backgrounds': source_pool = background_keys
-                elif item in memmaps: key = item
-
-                if source_pool:
-                    key = np.random.choice(source_pool)
-
-                if key:
-                    idx = np.random.randint(0, indices[key])
-                    clip = memmaps[key][idx]
-                    stitched_clips.append(clip)
-                    if key in target_keys:
-                        is_target_present = True
-                        target_clip_len = clip.shape[0] 
-            
-            if not stitched_clips:
-                continue
-
-            full_audio = np.vstack(stitched_clips)
-            curr_len = full_audio.shape[0]
-
-            final_clip = np.zeros((required_samples, feature_dim), dtype=np.float32)
-
-            if is_target_present:
-                target_start_in_full = curr_len - target_clip_len
-                
-                if required_samples >= target_clip_len:
-                    max_start_pos_in_final = required_samples - target_clip_len
-                    start_pos_in_final = np.random.randint(0, max_start_pos_in_final + 1)                    
-                    start_copy_from_full = max(0, target_start_in_full - start_pos_in_final)                    
-                    start_paste_in_final = max(0, start_pos_in_final - target_start_in_full)
-                    len_to_copy = min(required_samples - start_paste_in_final, curr_len - start_copy_from_full)
-                    final_clip[start_paste_in_final : start_paste_in_final + len_to_copy] = \
-                        full_audio[start_copy_from_full : start_copy_from_full + len_to_copy]
-
-                else: 
-                    start = np.random.randint(0, target_clip_len - required_samples + 1)
-                    final_clip = full_audio[target_start_in_full + start : target_start_in_full + start + required_samples]
-            else: 
-                if curr_len > required_samples:
-                    start = np.random.randint(0, curr_len - required_samples + 1)
-                    final_clip = full_audio[start : start + required_samples]
-                else: 
-                    start = np.random.randint(0, required_samples - curr_len + 1)
-                    final_clip[start : start + curr_len, :] = full_audio
-
-            batch_x[i] = final_clip
-            if is_target_present:
-                batch_y[i] = 1.0
-        
-        yield (
-            torch.from_numpy(batch_x),
-            torch.from_numpy(batch_y)
-        )
-
-
 class HardnessCurriculumDataset(Dataset):
 
     def __init__(self, feature_manifests: dict):
@@ -393,3 +283,114 @@ class ValidationDataset(Dataset):
         label_tensor = torch.tensor(label, dtype=torch.float32)
         
         return feature_tensor, label_tensor, index
+
+
+# It is not used👇
+def stitch_batch_generator(source_registry, blueprints, batch_size, input_shape):
+    """
+    Standard Classification Batch Generator.
+    - Creates balanced batches of (features, labels).
+    - Uses blueprints to create complex acoustic scenes for both positive and negative samples.
+    """
+
+    memmaps = {}
+    indices = {}
+    # target_keys, negative_keys, background_keys = [], [], []
+    target_keys, negative_keys = [], []
+
+    for alias, meta in source_registry.items():
+        try:
+            path = meta['path']
+            memmaps[alias] = np.load(path, mmap_mode='r')
+            indices[alias] = len(memmaps[alias])
+            t = meta['type']
+            if t == 'target': target_keys.append(alias)
+            elif t == 'negative': negative_keys.append(alias)
+            # elif t == 'background': background_keys.append(alias)
+        except Exception as e:
+            import logging
+            logging.warning(f"[Data Warning] Could not load source '{alias}': {e}")
+
+    if not target_keys:
+        raise ValueError("[CRITICAL] No Target sources found! Cannot train.")
+    # if not (negative_keys or background_keys):
+    if not (negative_keys):
+        raise ValueError("[CRITICAL] No Negative sources found! Cannot train.")
+
+    bp_list = [b['composition'] for b in blueprints]
+    bp_weights = np.array([b.get('weight', 1.0) for b in blueprints], dtype=np.float32)
+    bp_probs = bp_weights / np.sum(bp_weights)
+    
+    required_samples, feature_dim = input_shape
+
+    while True:
+        batch_x = np.zeros((batch_size, required_samples, feature_dim), dtype=np.float32)
+        batch_y = np.zeros(batch_size, dtype=np.float32)
+
+        for i in range(batch_size):
+            template_idx = np.random.choice(len(bp_list), p=bp_probs)
+            template = bp_list[template_idx]
+            
+            stitched_clips = []
+            is_target_present = False
+            target_clip_len = 0 
+            
+            for item in template:
+                key = None
+                source_pool = []
+                
+                if item == 'targets': source_pool = target_keys
+                elif item == 'negatives': source_pool = negative_keys
+                # elif item == 'backgrounds': source_pool = background_keys
+                elif item in memmaps: key = item
+
+                if source_pool:
+                    key = np.random.choice(source_pool)
+
+                if key:
+                    idx = np.random.randint(0, indices[key])
+                    clip = memmaps[key][idx]
+                    stitched_clips.append(clip)
+                    if key in target_keys:
+                        is_target_present = True
+                        target_clip_len = clip.shape[0] 
+            
+            if not stitched_clips:
+                continue
+
+            full_audio = np.vstack(stitched_clips)
+            curr_len = full_audio.shape[0]
+
+            final_clip = np.zeros((required_samples, feature_dim), dtype=np.float32)
+
+            if is_target_present:
+                target_start_in_full = curr_len - target_clip_len
+                
+                if required_samples >= target_clip_len:
+                    max_start_pos_in_final = required_samples - target_clip_len
+                    start_pos_in_final = np.random.randint(0, max_start_pos_in_final + 1)                    
+                    start_copy_from_full = max(0, target_start_in_full - start_pos_in_final)                    
+                    start_paste_in_final = max(0, start_pos_in_final - target_start_in_full)
+                    len_to_copy = min(required_samples - start_paste_in_final, curr_len - start_copy_from_full)
+                    final_clip[start_paste_in_final : start_paste_in_final + len_to_copy] = \
+                        full_audio[start_copy_from_full : start_copy_from_full + len_to_copy]
+
+                else: 
+                    start = np.random.randint(0, target_clip_len - required_samples + 1)
+                    final_clip = full_audio[target_start_in_full + start : target_start_in_full + start + required_samples]
+            else: 
+                if curr_len > required_samples:
+                    start = np.random.randint(0, curr_len - required_samples + 1)
+                    final_clip = full_audio[start : start + required_samples]
+                else: 
+                    start = np.random.randint(0, required_samples - curr_len + 1)
+                    final_clip[start : start + curr_len, :] = full_audio
+
+            batch_x[i] = final_clip
+            if is_target_present:
+                batch_y[i] = 1.0
+        
+        yield (
+            torch.from_numpy(batch_x),
+            torch.from_numpy(batch_y)
+        )

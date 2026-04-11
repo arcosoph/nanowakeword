@@ -43,8 +43,8 @@ logit_min_margin: 1.5
 # ============================================================
 # Training Settings
 # ============================================================
-steps: 50000
-stabilization_steps: 20000 
+steps: 50000  # Traning steps
+stabilization_steps: 20000 # After how many steps will validation be activated?  (⚠️: stabilization_steps < steps)
 
 optimizer_type: "adamw"
 learning_rate_max: 0.0008  
@@ -52,6 +52,41 @@ lr_scheduler_type: "onecycle"
 weight_decay: 0.01
 momentum: 0.9
 num_workers: 0
+
+# ============================================================
+# Batch Composition
+# ============================================================
+batch_composition:
+  t: 50
+  b: 90
+  hn: 20      
+  n: 100
+  AE28H_float32: 100
+  # oww: 1000
+  # and others
+
+# ============================================================
+# Feature Manifest
+# ============================================================
+
+feature_manifest:
+  targets:
+    t: "./trained_models/arcosoph_A_v1/features/positive_features.npy"
+
+  negatives:
+    AE28H_float32: "features/AE29H_float32.npy" # Download from here: https://huggingface.co/datasets/arcosoph/AE29H_float32
+    b: "RACON_11h_v1.npy"                  # background/ambient noise
+    n: "./trained_models/arcosoph_A_v1/features/negative_features.npy"
+    hn: "./trained_models/arcosoph_A_v1/features/hard_negative_features.npy"
+    # oww: ./openwakeword_features_ACAV100M_2000_hrs_16bit.npy # Here: https://huggingface.co/datasets/davidscripka/openwakeword_features
+    # and others
+
+  targets_val:
+    t_v: './trained_models/arcosoph_A_v1/features/positive_features_val.npy'
+
+  negatives_val:
+    bv: "RACON_11h_v1.npy" # Download from here: https://huggingface.co/datasets/arcosoph/RACON_11h_v1
+
 
 ## Synthetic Data Generation
 target_phrase: "hello arcosoph" # ⚠️ your wake word
@@ -127,7 +162,7 @@ data_generation_tasks:
 
     text_source:
       type: "from_list"
-      phrases:                  # ⚠️ your wake word
+      phrases:                  # ⚠️ Use your own negative words if necessary
         - "arcosoph eloo"
         - "arcosop"
         - "hie arcosoph"
@@ -136,40 +171,6 @@ data_generation_tasks:
 
       repeat_each: 10
 
-
-# ============================================================
-# Feature Manifest
-# ============================================================
-
-feature_manifest:
-  targets:
-    t: "./trained_models/arcosoph_A_v1/features/positive_features.npy"
-
-  negatives:
-    AE28H_float32: "features/AE29H_float32.npy" # Download from here: https://huggingface.co/datasets/arcosoph/AE29H_float32
-    b: "RACON_11h_v1.npy"                  # background/ambient noise
-    n: "./trained_models/arcosoph_A_v1/features/negative_features.npy"
-    hn: "./trained_models/arcosoph_A_v1/features/hard_negative_features.npy"
-    # oww: ./openwakeword_features_ACAV100M_2000_hrs_16bit.npy # Here: https://huggingface.co/datasets/davidscripka/openwakeword_features
-    # and others
-
-  targets_val:
-    t_v: './trained_models/arcosoph_A_v1/features/positive_features_val.npy'
-
-  negatives_val:
-    bv: "RACON_11h_v1.npy" # Download from here: https://huggingface.co/datasets/arcosoph/RACON_11h_v1
-
-# ============================================================
-# Batch Composition
-# ============================================================
-batch_composition:
-  AE28H_float32: 90
-  b: 50
-  hn: 20      
-  n: 100
-  t: 50
-  # oww: 1000
-  # and others
 
 # ============================================================
 # Augmentation
