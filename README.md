@@ -8,7 +8,6 @@
     <a href="https://pypi.org/project/nanowakeword/"><img alt="PyPI" src="https://img.shields.io/pypi/v/nanowakeword.svg?color=6C63FF&logo=pypi&logoColor=white"></a>
     <a href="https://pypi.org/project/nanowakeword/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/nanowakeword.svg?color=3776AB&logo=python&logoColor=white"></a>
     <a href="https://pepy.tech/projects/nanowakeword"><img alt="PyPI Downloads" src="https://static.pepy.tech/personalized-badge/nanowakeword?period=total&units=INTERNATIONAL_SYSTEM&left_color=GRAY&right_color=BLACK&left_text=downloads"></a>
-    <!-- <a href="https://pypi.org/project/nanowakeword/"><img alt="License" src="https://img.shields.io/pypi/l/nanowakeword?color=white&logo=apache&logoColor=black"></a> -->
     <a href="https://github.com/arcosoph/nanowakeword">
       <img alt="License" src="https://img.shields.io/github/license/arcosoph/nanowakeword?color=white&logo=apache&logoColor=black">
     </a>
@@ -374,7 +373,7 @@ For support, users can get help through the most convenient channel:
 
 *   **[GitHub Issues](https://github.com/arcosoph/nanowakeword/issues):** For reporting bugs, technical issues, and making feature requests.
 *   **[Discord Server](https://discord.gg/rYfShVvacB):** Ideal for general questions, configuration help, and community discussion.
-*   **[Official Website](https://arcosoph.com):** Provides documentation and includes a [contact](https://arcosoph.com/#contact) interface for direct communication.
+*   **[Official Website](https://arcosoph.com):** Provides documentation and includes a [contact](https://arcosoph.com/#contactForm) interface for direct communication.
 
 *All inquiries are reviewed and addressed as promptly as possible.*
 

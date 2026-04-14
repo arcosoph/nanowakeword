@@ -21,7 +21,7 @@ MODEL_PATH = r"trained_models/jarvis/model/jarvis.onnx"
 POSITIVE_DIR = r"T_data/positive"
 NEGATIVE_SPEECH_DIR = r"data/negative"
 NEGATIVE_NOISE_DIR = r"notebooks/data/background_noise"
-THRESHOLD = 0.80
+THRESHOLD = 0.90
 CHUNK_SIZE = 1280
 
 # Set a number to limit how many files are tested from the START of each folder.
@@ -127,8 +127,8 @@ if __name__ == "__main__":
     print("\n>>> STEP 2: Evaluating NEGATIVE samples (checking for False Alarms)...")
     negative_speech_files = get_limited_files(NEGATIVE_SPEECH_DIR, MAX_SAMPLES_PER_FOLDER)
     negative_noise_files = get_limited_files(NEGATIVE_NOISE_DIR, MAX_SAMPLES_PER_FOLDER)
-    # all_negative_files = negative_speech_files + negative_noise_files
-    all_negative_files = negative_speech_files 
+    all_negative_files = negative_speech_files + negative_noise_files
+    # all_negative_files = negative_speech_files 
     
     false_alarms = 0
     if all_negative_files:

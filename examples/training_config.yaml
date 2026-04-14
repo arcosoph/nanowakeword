@@ -238,7 +238,7 @@ feature_generation_manifest:
   #       Gain: 1.0
   #       RIR: 0.5
   
-  # and others if you want to genarete
+  # and others if you want to genarete...
 
 
 background_paths_duplication_rate:
