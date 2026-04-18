@@ -614,3 +614,73 @@ class EBranchformerModel(nn.Module):
         out = self.output_proj(pooled_out)
         return out
 
+
+# BcResNet architecture
+class BcResNetBlock(nn.Module):
+    """
+    Depthwise separable convolution (3x3) + BatchNorm + Activation, Residual connection
+    """
+    def __init__(self, in_channels, out_channels, stride=1, activation_fn=nn.ReLU()):
+        super().__init__()
+        # Depthwise separable convolution
+        self.depthwise = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=stride,
+                                   padding=1, groups=in_channels, bias=False)
+        self.pointwise = nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.activation = activation_fn   # (e.g., nn.ReLU())
+        
+        # Residual connection
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+    
+    def forward(self, x):
+        residual = self.shortcut(x)
+        x = self.depthwise(x)
+        x = self.pointwise(x)
+        x = self.bn1(x)
+        x = self.activation(x)
+        x = x + residual
+        return x
+
+class BcResNetModel(nn.Module):
+    def __init__(self, input_shape, embedding_dim, dropout_prob=0.2, activation_fn=nn.ReLU()):
+        super().__init__()
+        freq_bins = input_shape[0]   # input_shape = (freq_bins, time_frames)
+        
+        # Initial convolution: reduces frequency and time
+        self.init_conv = nn.Sequential(
+            nn.Conv2d(1, 32, kernel_size=(3,3), padding=(1,1), bias=False),
+            nn.BatchNorm2d(32),
+            activation_fn,            # instance, not called again
+            nn.MaxPool2d(kernel_size=(2,2), stride=(2,2))
+        )
+        
+        # BcResNet blocks: channels increase, time dimension reduces
+        self.block1 = BcResNetBlock(32, 64, stride=(2,2), activation_fn=activation_fn)
+        self.block2 = BcResNetBlock(64, 128, stride=(2,2), activation_fn=activation_fn)
+        self.block3 = BcResNetBlock(128, 256, stride=(2,1), activation_fn=activation_fn)
+        
+        # Global average pooling and final projection
+        self.global_avg_pool = nn.AdaptiveAvgPool2d((1,1))
+        self.dropout = nn.Dropout(dropout_prob)
+        self.fc = nn.Linear(256, embedding_dim)
+    
+    def forward(self, x):
+        # Input x: (batch, freq, time) -> add channel dimension
+        if x.dim() == 3:
+            x = x.unsqueeze(1)          # (batch, 1, freq, time)
+        
+        x = self.init_conv(x)
+        x = self.block1(x)
+        x = self.block2(x)
+        x = self.block3(x)
+        
+        x = self.global_avg_pool(x)     # (batch, 256, 1, 1)
+        x = x.view(x.size(0), -1)       # (batch, 256)
+        x = self.dropout(x)
+        x = self.fc(x)                  # (batch, embedding_dim)
+        return x

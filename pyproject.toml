@@ -7,9 +7,9 @@ build-backend = "setuptools.build_meta"
 # pip install nanowakeword
 name = "nanowakeword"
 
-version = "2.0.3"
+version = "2.0.4"
 authors = [
-  { name="Arcosoph", email="a5tkabid@gmail.com" },
+  { name="Arcosoph", email="hello@arcosoph.com" },
 ]
 description = "A lightweight, wake word detection engine. Train custom, high-accuracy models with minimal effort."
 

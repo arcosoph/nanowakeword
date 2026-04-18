@@ -19,7 +19,7 @@ rir_paths: ["rir"] # https://huggingface.co/datasets/davidscripka/MIT_environmen
 # ============================================================
 # Model Architecture
 # ============================================================
-model_type: "dnn"
+model_type: "dnn" # You can try other architectures. Fast Time `DNN` is recommended.
 layer_size: 32    # You can increase it further to get better results (e.g., 64, 128)
 n_blocks: 3       # You can increase it further to get better results (e.g., 4, 6)
 embedding_dim: 128  

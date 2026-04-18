@@ -610,33 +610,42 @@ class Trainer:
 
             # info
             with torch.no_grad():
-                if logger and step_ndx % 100 == 0:
+                if step_ndx % 100 == 0:
                     yp = torch.sigmoid(logits)
                     yt = labels
                     
                     is_pos = (yt == 1)
                     is_neg = (yt == 0)
-                    current_lr = self.optimizer.param_groups[0]['lr']
-                    pos_avg = yp[is_pos].mean().item() if is_pos.sum() > 0 else 0.0
-                    neg_avg = yp[is_neg].mean().item() if is_neg.sum() > 0 else 0.0
-               
-                    FA = int((yp[is_neg] > 0.5).sum().item()) if is_neg.sum() > 0 else 0
-                    Ms = int((yp[is_pos] < 0.5).sum().item()) if is_pos.sum() > 0 else 0
 
-                    N_total = is_neg.sum().item()
-                    P_total = is_pos.sum().item()      
+                    # Training recall (TP / (TP + FN)) — cheap, reuses current batch
+                    tp_train = int((yp[is_pos] >= 0.5).sum().item()) if is_pos.sum() > 0 else 0
+                    fn_train = int((yp[is_pos] < 0.5).sum().item()) if is_pos.sum() > 0 else 0
+                    train_recall = tp_train / (tp_train + fn_train) if (tp_train + fn_train) > 0 else 0.0
+                    self.model.history['train_recall_steps'].append(step_ndx)
+                    self.model.history['train_recall'].append(train_recall)
 
-                    pos_term = per_example_loss[is_pos] / (1.0 - LOSS_BIAS) if (1.0 - LOSS_BIAS) > 0 else per_example_loss[is_pos]
-                    neg_term = per_example_loss[is_neg] / LOSS_BIAS if LOSS_BIAS > 0 else per_example_loss[is_neg]
-                    
-                    PosL = pos_term.mean().item() if is_pos.sum() > 0 else 0.0
-                    NegL = neg_term.mean().item() if is_neg.sum() > 0 else 0.0
+                    if logger:
+                        current_lr = self.optimizer.param_groups[0]['lr']
+                        pos_avg = yp[is_pos].mean().item() if is_pos.sum() > 0 else 0.0
+                        neg_avg = yp[is_neg].mean().item() if is_neg.sum() > 0 else 0.0
+                   
+                        FA = int((yp[is_neg] > 0.5).sum().item()) if is_neg.sum() > 0 else 0
+                        Ms = fn_train
 
-                    logger.info(
-                        f"[{step_ndx:5d}] L:{total_loss.item():.6f} "
-                        f"PL:{PosL:.6f} NL:{NegL:.6f} |PA:{pos_avg:.3f} NA:{neg_avg:.3f} "
-                        f"|FA:{FA}/{N_total} Ms:{Ms}/{P_total} |η:{current_lr:.2e} gNorm:{grad_norm:.8f}"
-                    )
+                        N_total = is_neg.sum().item()
+                        P_total = is_pos.sum().item()      
+
+                        pos_term = per_example_loss[is_pos] / (1.0 - LOSS_BIAS) if (1.0 - LOSS_BIAS) > 0 else per_example_loss[is_pos]
+                        neg_term = per_example_loss[is_neg] / LOSS_BIAS if LOSS_BIAS > 0 else per_example_loss[is_neg]
+                        
+                        PosL = pos_term.mean().item() if is_pos.sum() > 0 else 0.0
+                        NegL = neg_term.mean().item() if is_neg.sum() > 0 else 0.0
+
+                        logger.info(
+                            f"[{step_ndx:5d}] L:{total_loss.item():.6f} "
+                            f"PL:{PosL:.6f} NL:{NegL:.6f} |PA:{pos_avg:.3f} NA:{neg_avg:.3f} "
+                            f"|FA:{FA}/{N_total} Ms:{Ms}/{P_total} |Recall:{train_recall:.3f} |η:{current_lr:.2e} gNorm:{grad_norm:.8f}"
+                        )
 
 
             if patience > 0 and ema_loss is not None:
@@ -686,6 +695,9 @@ class Trainer:
 
                 self.model.history['val_loss_steps'].append(step_ndx)
                 self.model.history['val_loss'].append(current_val_loss)
+                self.model.history['val_recall_steps'].append(step_ndx)
+                self.model.history['val_recall'].append(val_metrics['val_recall'])
+                self.model.history['val_fpr'].append(val_metrics['val_fpr'])
             
                 if current_error_score < self.best_error_score:
                     self.best_error_score = current_error_score

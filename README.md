@@ -38,10 +38,11 @@ NanoWakeWord is a versatile framework offering a rich library of neural network 
 | **GRU** | A faster, lighter alternative to LSTM with similar high performance. | Balanced: Speed & Robustness | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=gru) |
 | **CRNN** | Challenging audio requiring both feature and context analysis. | Hybrid Power: CNN + RNN | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=crnn) |
 | **TCN** | Modern, high-speed sequential processing. | **Faster than RNN** (Parallel) | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=tcn) |
+| **BcResNet** | Broadcasting-residual network | **Accuracy Potential** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=bcresnet) |
 | **QuartzNet**| Top accuracy with a small footprint on edge devices. | **Parameter-Efficient & Accurate** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=quartznet) |
 | **Transformer**| **Deep Contextual Understanding** via Self-Attention mechanism. | **SOTA Performance & Flexibility** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=transformer) |
 | **Conformer** | State-of-the-art hybrid for ultimate real-world performance. | **SOTA: Global + Local Features** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=conformer) |
-| **E-Branchformer**| Bleeding-edge research for potentially the highest accuracy. | Peak Accuracy Potential | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=e_branchformer) |
+| **E-Branchformer**| Bleeding-edge research for potentially the highest accuracy. | Accuracy Potential | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=e_branchformer) |
 
 ---
 > [!NOTE]

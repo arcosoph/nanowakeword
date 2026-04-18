@@ -32,7 +32,7 @@ from nanowakeword.utils.logger import print_info
 
 from .architectures import (
     CNNModel, LSTMModel, Net, GRUModel, RNNModel, TransformerModel, 
-    CRNNModel, TCNModel, QuartzNetModel, ConformerModel, EBranchformerModel
+    CRNNModel, TCNModel, QuartzNetModel, ConformerModel, EBranchformerModel, BcResNetModel
 )
 
 matplotlib.use('Agg')
@@ -140,6 +140,15 @@ class Model(nn.Module):
                 input_dim=input_shape[1], d_model=branchformer_d_model, n_head=branchformer_n_head,
                 n_layers=n_blocks, embedding_dim=embedding_dim, dropout_prob=dropout_prob
             )
+
+        elif model_type == "bcresnet":
+            self.model = BcResNetModel(
+                input_shape=input_shape,
+                embedding_dim=embedding_dim,
+                dropout_prob=dropout_prob,
+                activation_fn=self.activation_fn
+            )
+
         else:
             raise ValueError(f"Unsupported model_type: '{model_type}'.")
 
@@ -156,7 +165,10 @@ class Model(nn.Module):
 
     def plot_history(self, output_dir):
         """
-        Creates a graph of training loss (raw + EMA) and validation loss.
+        Single-figure, single-axes plot with a twin y-axis:
+        - Left  axis (Loss):  Train Loss raw, Train Loss EMA, Val Loss
+        - Right axis (Rate):  Train Recall EMA, Val Recall, Val FPR
+        All lines share the same x-axis and plot box.
         """
         import os
         import numpy as np
@@ -166,67 +178,126 @@ class Model(nn.Module):
 
         graph_output_dir = os.path.join(output_dir, "graphs")
         os.makedirs(graph_output_dir, exist_ok=True)
-        loss_history = np.array(self.history['loss'])
 
-        # EMA computation
-        ema_loss_history = []
-        ema_loss = None
+        loss_history = np.array(self.history['loss'])
+        # Assuming self.config is available
         alpha = self.config.get("ema_alpha", 0.01)
 
-        for loss_val in loss_history:
-            if ema_loss is None:
-                ema_loss = loss_val
-            else:
-                ema_loss = alpha * loss_val + (1 - alpha) * ema_loss
-            ema_loss_history.append(ema_loss)
+        # EMA of training loss
+        ema_loss_history, ema_val = [], None
+        for v in loss_history:
+            ema_val = v if ema_val is None else alpha * v + (1 - alpha) * ema_val
+            ema_loss_history.append(ema_val)
 
-        plt.figure(figsize=(12, 6))
-        
-        plt.plot(
+        # EMA of training recall
+        train_recall_steps = self.history.get('train_recall_steps', [])
+        train_recall_vals  = self.history.get('train_recall', [])
+        ema_train_recall, ema_r = [], None
+        for r in train_recall_vals:
+            ema_r = r if ema_r is None else 0.05 * r + 0.95 * ema_r
+            ema_train_recall.append(ema_r)
+
+        has_val_loss     = bool(self.history.get('val_loss'))
+        has_val_recall   = bool(self.history.get('val_recall'))
+        has_train_recall = bool(train_recall_vals)
+
+        fig, ax_loss = plt.subplots(figsize=(13, 6))
+        ax_rate = ax_loss.twinx()
+
+        lines = []
+
+        # Left axis Loss 
+        l, = ax_loss.plot(
             loss_history,
-            label="Train Loss (raw)",
-            color="tab:blue",
-            alpha=0.45,
-            linewidth=1.2
+            color="#7EB6E8", alpha=0.30, linewidth=1.0,
+            label="Train Loss (Raw)"
         )
-        # EMA training loss (main signal)
-        plt.plot(
+        lines.append(l)
+
+        l, = ax_loss.plot(
             ema_loss_history,
-            label="Train Loss (EMA)",
-            color="tab:blue",
-            linewidth=2.5
+            color="#1A5FA6", linewidth=2.2,
+            label="Train Loss (EMA)"
         )
-        # Validation loss (authoritative checkpoints)
-        if (
-            'val_loss_steps' in self.history
-            and 'val_loss' in self.history
-            and self.history['val_loss']
-        ):
-            plt.plot(
+        lines.append(l)
+
+        if has_val_loss:
+            l, = ax_loss.plot(
                 self.history['val_loss_steps'],
                 self.history['val_loss'],
-                label="Validation Loss",
-                color="tab:orange",
-                linestyle="--",
-                marker="o",
-                markersize=4,
-                linewidth=2
+                color="#B85C00", linestyle="--",
+                marker="o", markersize=4, linewidth=2.2,
+                label="Val Loss"
             )
+            lines.append(l)
 
-        plt.title("Training & Validation Loss", fontsize=15, weight="bold")
-        plt.xlabel("Training Steps", fontsize=12)
-        plt.ylabel("Loss", fontsize=12)
-        plt.legend(frameon=False)
-        plt.grid(True, which="major", linestyle="--", alpha=0.25)
-        plt.grid(True, which="minor", linestyle=":", alpha=0.1)
-        plt.minorticks_on()
-        plt.ylim(bottom=0)
+        ax_loss.set_ylabel("Loss", fontsize=11, color="#1A5FA6")
+        ax_loss.tick_params(axis='y', labelcolor="#1A5FA6")
+        ax_loss.set_ylim(bottom=0)
+
+        # Right axis Recall & FPR
+        if has_train_recall:
+            l, = ax_rate.plot(
+                train_recall_steps, train_recall_vals,
+                color="#82E0AA", alpha=0.40, linewidth=1.0,
+                label="Train Recall (Raw)"
+            )
+            lines.append(l)
+
+            l, = ax_rate.plot(
+                train_recall_steps, ema_train_recall,
+                color="#1A8A44", linewidth=2.2,
+                label="Train Recall (EMA)"
+            )
+            lines.append(l)
+
+        if has_val_recall:
+            val_steps = self.history['val_recall_steps']
+            l, = ax_rate.plot(
+                val_steps, self.history['val_recall'],
+                color="#C0392B", linestyle="--",
+                marker="o", markersize=4, linewidth=2.2,
+                label="Val Recall"
+            )
+            lines.append(l)
+
+            l, = ax_rate.plot(
+                val_steps, self.history['val_fpr'],
+                color="#7D3C98", linestyle=":",
+                marker="s", markersize=3, linewidth=2.0,
+                label="Val FPR"
+            )
+            lines.append(l)
+
+        ax_rate.set_ylabel("Recall / FPR", fontsize=11, color="#555555")
+        ax_rate.tick_params(axis='y', labelcolor="#555555")
+        ax_rate.set_ylim(-0.02, 1.05)
+
+        # Shared decorations
+        ax_loss.set_title("Training Performance", fontsize=14, weight="bold")
+        ax_loss.set_xlabel("Training Steps", fontsize=11)
+        ax_loss.grid(True, which="major", linestyle="--", alpha=0.25)
+        ax_loss.grid(True, which="minor", linestyle=":", alpha=0.10)
+        ax_loss.minorticks_on()
+
+        labels = [l.get_label() for l in lines]
+        
+        ax_loss.legend(
+            lines, labels,
+            loc='best',        
+            frameon=True,     
+            framealpha=0.7,     
+            facecolor='white',  
+            fontsize=9
+        )
+
         save_path = os.path.join(graph_output_dir, "training_performance_graph.png")
+        
         plt.tight_layout()
         plt.savefig(save_path, dpi=150)
         plt.close()
 
-        print_info(f"Performance graph saved to: {save_path}")
+        print_info(f"Performance graph saved to: {save_path}")    
 
     def forward(self, x):
             """
