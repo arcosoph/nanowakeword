@@ -497,9 +497,102 @@ targets:
 
 ## Data Generation
 
-Parameters for synthetic audio generation using Text-to-Speech (TTS).
+*Parameters for synthetic audio generation using Text-to-Speech (TTS).*
 
-*It will be updated later*
+This function serves as the central orchestrator for creating synthetic audio
+clips. It operates based on a list of "generation tasks" defined in the
+main configuration file under the `data_generation_tasks` key. This
+task-based approach grants the user fine-grained control over the entire
+data generation process, allowing for the creation of multiple, diverse
+datasets (e.g., positive, negative, validation) in a single run.
+
+Each task is an independent job that specifies what text to synthesize, how
+many samples to create, where to save them, and what Text-To-Speech (TTS)
+settings to use. This modularity empowers users to build complex and robust
+datasets tailored to their specific needs.
+
+The primary workflow is as follows:
+1.  Loads the list of tasks from the configuration.
+2.  Pre-loads any globally required models (like the phonemizer) for efficiency.
+3.  Iterates through each enabled task.
+4.  For each task, it determines the text source and generates the list of
+    phrases to be synthesized.
+5.  It then calls the `generate_samples` utility to create the audio files.
+6.  Clears the GPU cache after heavy tasks to maintain performance.
+
+Configuration Schema (`data_generation_tasks`):
+    The `data_generation_tasks` key in your config file should be a list of
+    dictionaries, where each dictionary represents a single task.
+
+    Task Keys:
+        name (str): A descriptive name for the task (e.g., "Positive Wake Words").
+        enabled (bool): If `False`, this task will be skipped. Defaults to `True`.
+        output_dir (str): The path to the directory where audio clips will be saved.
+        num_samples (int): The total number of audio clips to generate for this task.
+        file_prefix (str): A prefix for the generated audio filenames (e.g., "pos_").
+        tts_settings (dict, optional): Task-specific TTS settings that override
+                                        the global `tts_settings`.
+        text_source (dict): A dictionary defining the source of the text to be
+                            synthesized. This is the core of the task's logic.
+
+The `text_source` Dictionary:
+    This dictionary must contain a `type` key, which determines how the text
+    is generated. Supported types are:
+
+  1.  `type: "fixed_phrase"`
+      Generates audio for a single, repeated phrase. Ideal for positive
+      wake word samples.
+      - `phrase` (str, optional): The exact phrase to use. If not provided,
+        it falls back to the global `target_phrase`.
+
+  2.  `type: "from_list"`
+      Generates audio from a user-provided list of phrases. Perfect for
+      curated lists of negative samples.
+      - `phrases` (list[str]): A list of custom text phrases.
+      - `repeat_each` (int, optional): How many times to repeat each phrase
+        in the list. Defaults to 1.
+
+  3.  `type: "auto_adversarial"`
+      Generates phonetically similar but common English words/phrases.
+      Excellent for creating a robust set of negative samples that challenge
+      the model with real-world, confusable words.
+      - `base_phrase` (str, optional): The phrase to generate variations
+        from. Falls back to the global `target_phrase`.
+      - Supports other keys like `include_partial_phrase`, `max_multi_word_len`, etc.
+
+  4.  `type: "phoneme_adversarial"`
+      Generates nonsensical but phonetically very similar text by manipulating
+      the phonemes of a base phrase. This creates extremely challenging
+      negative samples to drastically reduce false activations.
+      - `base_phrase` (str, optional): The phrase to generate variations
+        from. Falls back to the global `target_phrase`.
+      - `min_distance` (float, optional): Controls how different the generated
+        phoneme strings are from the original. Defaults to 0.35.
+
+Example Usage (in a .yaml config file):
+
+  ```yaml
+  target_phrase: "hey nano"
+
+  data_generation_tasks:
+    - name: "Positive Wake Words"
+      enabled: true
+      output_dir: "dataset/positive"
+      num_samples: 1000
+      text_source:
+        type: "fixed_phrase"
+        # Uses the global "hey nano" target_phrase
+
+    - name: "Phoneme-Based Hard Negatives"
+      enabled: true
+      output_dir: "dataset/negative"
+      num_samples: 1500
+      file_prefix: "neg_phoneme"
+      text_source:
+        type: "phoneme_adversarial"
+        min_distance: 0.4
+  ```
+
 
 ---
 

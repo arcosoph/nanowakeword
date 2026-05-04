@@ -35,8 +35,7 @@ def generate_clips(base_config):
     
 
 
-    """Activates the flexible, task-based synthetic data generation engine.
-
+    """
     This function serves as the central orchestrator for creating synthetic audio
     clips. It operates based on a list of "generation tasks" defined in the
     main configuration file under the `data_generation_tasks` key. This
