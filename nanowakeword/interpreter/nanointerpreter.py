@@ -137,7 +137,16 @@ class NanoInterpreter:
 
         current_raw_preds = {}
         for mdl_name, session in self.models.items():
-            features = self.preprocessor.get_features(self.model_feature_length[mdl_name])
+            required_frames = self.model_feature_length[mdl_name]
+
+            # Skip inference if the feature buffer hasn't warmed up enough yet.
+            # This prevents a shape mismatch when the model needs more frames than
+            # the buffer currently holds (e.g., a 45-frame model on the first few chunks).
+            if self.preprocessor.feature_buffer.shape[0] < required_frames:
+                current_raw_preds[mdl_name] = 0.0
+                continue
+
+            features = self.preprocessor.get_features(required_frames)
             
             input_feed = {'input': features}
 
