@@ -13,7 +13,12 @@ output_dir: "./trained_models"
 
 positive_data_path: "./data/positive"
 negative_data_path: "./data/negative"
-background_paths: ["SonicWeave-v2"] # https://huggingface.co/datasets/arcosoph/SonicWeave-v2/resolve/main/SonicWeave-v2
+
+background_paths: ["SonicWeave-v2/part1",
+                   "SonicWeave-v2/part2",
+                   "SonicWeave-v2/part3"
+                  ] # ⚠️ Download from here: https://huggingface.co/datasets/arcosoph/SonicWeave-v2
+
 rir_paths: ["rir"] # https://huggingface.co/datasets/davidscripka/MIT_environmental_impulse_responses
 
 # ============================================================
@@ -74,7 +79,7 @@ feature_manifest:
     t: "./trained_models/arcosoph_A_v1/features/positive_features.npy"
 
   negatives:
-    AE28H_float32: "features/AE29H_float32.npy" # Download from here: https://huggingface.co/datasets/arcosoph/AE29H_float32
+    AE28H_float32: "AE29H_float32.npy" # Download from here: https://huggingface.co/datasets/arcosoph/AE29H_float32
     b: "RACON_11h_v1.npy"                  # background/ambient noise
     n: "./trained_models/arcosoph_A_v1/features/negative_features.npy"
     hn: "./trained_models/arcosoph_A_v1/features/hard_negative_features.npy"
@@ -243,7 +248,6 @@ feature_generation_manifest:
 
 background_paths_duplication_rate:
   - 1
-
 
 # ============================================================
 # Validation Settings

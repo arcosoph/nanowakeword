@@ -70,3 +70,7 @@ A proper fix will be provided as soon as possible once dependency compatibility 
 ### Future Development Notes
 
 *   Our immediate priority is improving the out-of-the-box stability for all experimental architectures.
+
+
+
+Set `transform_clips: False`, `generate_clips: False` and re-run this cell when you want to crate a new model unless data(audio) or feature (.npy) re-generation is required

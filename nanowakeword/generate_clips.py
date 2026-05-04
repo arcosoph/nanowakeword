@@ -17,12 +17,11 @@
 #  Project: https://github.com/arcosoph/nanowakeword
 # ==============================================================================
 
-# (✿◕‿◕✿) - Your wish for even more power is granted!
+# (✿◕‿◕✿)
 
 import os
 import torch
 
-# New imports for the Phoneme Adversarial Generator
 from nanowakeword.data.generator.adversarial_texts import (
     adversarial_texts,
     get_phonemizer_model,

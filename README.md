@@ -14,7 +14,7 @@
   
 </p>
 
-**NanoWakeWord is a next-generation, adaptive framework designed to build high-performance, custom wake word models. More than just a tool, it’s an intelligent engine that understands your data and optimizes the entire training process to deliver exceptional accuracy and efficiency.**
+**Nanowakeword is a next-generation, adaptive framework designed to build high-performance, custom wake word models. More than just a tool, it’s an intelligent engine that understands your data and optimizes the entire training process to deliver exceptional accuracy and efficiency.**
 
 **Quick Access**
 - [Installation](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#installation)
@@ -365,6 +365,9 @@ In a world of complex machine learning tools, Nanowakeword is built on a simple 
 > Always use the latest version of Nanowakeword. Version v1.3.0 is the minimum supported, but using the latest ensures full compatibility and best performance. -->
 **5. What platforms are supported for running the trained model?**
 >  Inference (running the model) is extremely lightweight and can run smoothly on almost any device, including a Raspberry Pi 3/4, Linux systems, Android devices, and Apple platforms.
+
+**6. Is there an official C# port for nanowakeword?**
+> There are no official ports for C#
 
 ## Community & Support
 
