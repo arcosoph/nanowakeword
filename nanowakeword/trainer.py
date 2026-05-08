@@ -94,8 +94,27 @@ def deep_merge(d1, d2):
 def collate_fn_with_indices(batch):
     """
     Custom collate function that handles features, labels, and indices.
+    Pads or truncates all features to the most common frame length in the
+    batch, preventing crashes when .npy files have slightly different shapes.
     """
-    features = torch.stack([item[0] for item in batch])
+    all_features = [item[0] for item in batch]
+
+    # Find the most common frame length and use it as the target
+    lengths = [f.shape[0] for f in all_features]
+    target_len = max(set(lengths), key=lengths.count)
+
+    normalized = []
+    for f in all_features:
+        curr_len = f.shape[0]
+        if curr_len > target_len:
+            normalized.append(f[:target_len])           # truncate
+        elif curr_len < target_len:
+            pad = torch.zeros(target_len - curr_len, f.shape[1], dtype=f.dtype)
+            normalized.append(torch.cat([f, pad], dim=0))  # pad with zeros
+        else:
+            normalized.append(f)
+
+    features = torch.stack(normalized)
     labels = torch.stack([item[1] for item in batch])
     indices = torch.tensor([item[2] for item in batch], dtype=torch.long)
     return features, labels, indices

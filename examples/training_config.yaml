@@ -245,7 +245,7 @@ feature_generation_manifest:
   
   # and others if you want to genarete...
 
-
+# clip_length_samples: # ⚠️⚠️ ༼ つ ◕_◕ ༽つ  It is very good to use the clip_length_samples parameter (e.g., 32000, etc Which is for you)
 background_paths_duplication_rate:
   - 1
 

@@ -251,22 +251,12 @@ Below is a typical training performance graph for a model trained on a standard 
 
 *   **Stable and Efficient Learning:** The "Training Loss (Stable/EMA)" curve demonstrates the model's rapid and stable convergence. The loss consistently decreases and flattens, indicating that the model has effectively learned the underlying patterns of the wake word without overfitting. The raw loss (light blue) shows the natural variance between batches, while the stable loss (dark blue) confirms a solid and reliable learning trend.
 
-*   **Exceptional Confidence and Separation:** The final report card is a testament to the model's quality. With an **Average Stable Loss of just 0.2065**, the model is highly accurate. More importantly, the high margin between the positive and negative confidence scores highlights its decision-making power:
-    *   **Avg. Positive Confidence (Logit): `5.448`** (Extremely confident when the wake word is spoken)
-    *   **Avg. Negative Confidence (Logit): `-5.890`** (Equally confident in rejecting incorrect words and noise)
+*   **Exceptional Confidence and Separation:** The final report card is a testament to the model's quality. With an **Average Stable Loss of just 0.0086**, the model is highly accurate. More importantly, the high margin between the positive and negative confidence scores highlights its decision-making power:
+    *   **Avg. Positive Confidence (Logit): `5.447`** (Extremely confident when the wake word is spoken)
+    *   **Avg. Negative Confidence (Logit): `-5.721`** (Equally confident in rejecting incorrect words and noise)
     This large separation is crucial for minimizing false activations and ensuring the model responds only when it should.
 
 *   **Extremely Low False Positive Rate:** While real-world performance depends on the environment, our new training methodology, which heavily penalizes misclassifications, produces models with an exceptionally low rate of false activations. A well-trained model often achieves **less than one false positive every 16-28 hours** on average, making it ideal for a seamless user experience.
-
-### The Role of the Intelligent Configuration Engine
-
-The outstanding performance shown above is a direct result of the data-driven decisions made automatically by the Intelligent Configuration Engine. For the dataset used in this example, the engine made the following critical choices:
-
-*   **Adaptive Model Complexity:** It analyzed the 2.6 hours of effective data volume (after augmentation) and determined that an **3 blocks and a layer size of 256** would be optimal. This provided enough capacity to learn complex temporal patterns without being excessive for the dataset size.
-*   **Data-Driven Augmentation Strategy:** Based on the high amount of noise and reverberation data provided (`H_noise: 5.06`, `N_rir: 1668`), it set aggressive augmentation probabilities (`RIR: 0.8`, `background_noise_probability: 0.9`) to ensure the model would be robust in challenging real-world environments.
-*   **Balanced Batch Composition:** It intelligently adjusted the training batch to include **27% `pure_noise`**. This decision was based on its analysis of the user-provided data, allowing the model to focus more on differentiating the wake word from both ambient noise and other human speech (`negative_speech: 44%`).
-
-This intelligent, automated, and data-centric approach is the core of Nanowakeword, enabling it to consistently produce robust, efficient, and highly reliable wake-word detection models without requiring manual tuning from the user.
 
 ## Using Your Trained Model (Inference)
 
