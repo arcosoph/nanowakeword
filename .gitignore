@@ -211,13 +211,14 @@ nww_model_test_from_mic.py
 nanowakeword/interpreter/models/mel_spectrogram/
 nanowakeword/interpreter/models/embedding/
 
+NwwResourcesModel/
+SonicWeave-v2/
 trained_models/
-T_data/
+data/
 RACON_11h_v1.npy
 openwakeword_features_ACAV100M_2000_hrs_16bit.npy
-copy_X_config.yaml
-mlx.py
-coreml.py
+AE29H_float32.npy
+My_config.yaml
 
 
 

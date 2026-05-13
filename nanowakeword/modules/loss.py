@@ -42,7 +42,7 @@ def BiasWeightedLoss(logits, labels, LOSS_BIAS, smoothing=0.05):
 
 # def AsymmetricFocalLoss(logits, labels, LOSS_BIAS, gamma_pos=0.0, gamma_neg=4.0, smoothing=0.05):
 #     """
-#     Asymmetric Focal Loss — a powerful alternative to BiasWeightedLoss.
+#     Asymmetric Focal Loss - a powerful alternative to BiasWeightedLoss.
 
 #     Applies different focusing parameters to positives and negatives:
 #     - gamma_pos=0: No focusing on positives (treat all positive samples equally).
@@ -67,7 +67,7 @@ def BiasWeightedLoss(logits, labels, LOSS_BIAS, smoothing=0.05):
 #     p_pos = torch.clamp(p, min=epsilon)
 #     pos_loss = -soft_labels * (1.0 - p_pos) ** gamma_pos * torch.log(p_pos)
 
-#     # Negative branch: asymmetric focusing — clip probabilities to reduce easy-negative dominance
+#     # Negative branch: asymmetric focusing - clip probabilities to reduce easy-negative dominance
 #     p_neg = torch.clamp(1.0 - p, min=epsilon)
 #     neg_loss = -(1.0 - soft_labels) * p_neg ** gamma_neg * torch.log(p_neg)
 

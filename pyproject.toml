@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0,<69.6"]
+requires = ["setuptools>=61.0,<70.0.0"]
 # requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 # pip install nanowakeword
 name = "nanowakeword"
 
-version = "2.0.5"
+version = "2.1.0"
 authors = [
   { name="Arcosoph", email="hello@arcosoph.com" },
 ]
@@ -94,4 +94,5 @@ where = ["."]
 include = ["nanowakeword*"] # nanowakeword 
 
 [project.scripts]
-nanowakeword-train = "nanowakeword.trainer:train"
+nanowakeword       = "nanowakeword.cli:main"
+nanowakeword-train = "nanowakeword.trainer:train"  # kept for backward compatibility

@@ -1,5 +1,5 @@
 # ==============================================================================
-#  NanoWakeWord — Lightweight and Intelligent Wake Word Detection System
+#  NanoWakeWord - Lightweight and Intelligent Wake Word Detection System
 #  © 2025 Arcosoph. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");

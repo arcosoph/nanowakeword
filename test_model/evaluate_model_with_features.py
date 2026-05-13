@@ -12,14 +12,17 @@ import warnings
 # MODEL_PATHS = glob.glob(os.path.join(MODEL_FOLDER, "**/*.onnx"), recursive=True)
 # MODEL_FOLDER = "trained_models"
 MODEL_PATHS = [
-    './trained_models/tadano_A_v192/model/tadano_A_v192.onnx',
-    './trained_models/tadano_A_v193/model/tadano_A_v193.onnx',
-    './trained_models/tadano_A_v194/model/tadano_A_v194.onnx',
-    './trained_models/tadano_A_v195/model/tadano_A_v195.onnx',
+    # './trained_models/tadano_A_v192/model/tadano_A_v192.onnx',
+    # './trained_models/tadano_A_v193/model/tadano_A_v193.onnx',
+    # './trained_models/tadano_A_v194/model/tadano_A_v194.onnx',
+    # './trained_models/tadano_A_v195/model/tadano_A_v195.onnx',
+    # 'E:\nanowakeword\trained_models\tadano_A_v211',
+    "trained_models/arcosoph_A_v8/model/arcosoph_A_v8_lite.onnx",
+    "trained_models/arcosoph_A_v8/model/arcosoph_A_v8.onnx"
 
 ]
 
-POSITIVE_NPY = './trained_models/tadano_A_v176/features/positive_features_train.npy'
+POSITIVE_NPY = './trained_models/arcosoph_A_v8/features/positive_features.npy'
 NEGATIVE_NPY = "RACON_11h_v1.npy"
 
 THRESHOLD = 0.90

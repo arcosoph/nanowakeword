@@ -280,7 +280,7 @@ class Trainer:
             elif self.best_training_checkpoints:
                 if val_checkpoint_is_suspicious:
                     print_info(
-                        "WARNING: Validation achieved 0 errors — this likely means your "
+                        "WARNING: Validation achieved 0 errors - this likely means your "
                         "validation set overlaps with training data. "
                         "Using training-loss checkpoint averaging instead, which is more "
                         "reliable when val data = train data."
@@ -617,7 +617,7 @@ class Trainer:
                     is_pos = (yt == 1)
                     is_neg = (yt == 0)
 
-                    # Training recall (TP / (TP + FN)) — cheap, reuses current batch
+                    # Training recall (TP / (TP + FN)) - cheap, reuses current batch
                     tp_train = int((yp[is_pos] >= 0.5).sum().item()) if is_pos.sum() > 0 else 0
                     fn_train = int((yp[is_pos] < 0.5).sum().item()) if is_pos.sum() > 0 else 0
                     train_recall = tp_train / (tp_train + fn_train) if (tp_train + fn_train) > 0 else 0.0

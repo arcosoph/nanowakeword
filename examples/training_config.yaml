@@ -70,6 +70,20 @@ batch_composition:
   # oww: 1000
   # and others
 
+# ================================
+# Builds a tiny student Model
+# ================================
+distillation:
+  enabled: true           # default - runs after every training
+  steps: 8000
+  temperature: 4.0        # higher = softer teacher distribution
+  alpha: 0.7              # 0.7 soft loss + 0.3 hard loss
+  learning_rate: 0.0005
+  student_layer_size: 8
+  student_n_blocks: 1
+  student_embedding_dim: 8
+
+
 # ============================================================
 # Feature Manifest
 # ============================================================

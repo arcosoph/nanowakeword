@@ -50,7 +50,7 @@ from nanowakeword.data.data_sampler import ValidationDataset
 from nanowakeword.data.data_sampler import DynamicClassAwareSampler, HardnessCurriculumDataset
 
 from nanowakeword.utils.DynamicTable import DynamicTable
-from nanowakeword.utils.audio_analyzer import DatasetAnalyzer
+# from nanowakeword.utils.audio_analyzer import DatasetAnalyzer
 from nanowakeword.utils.journal import update_training_journal
 from nanowakeword.utils.audio_preprocess import verify_and_process_directory
 from nanowakeword.utils.logger import print_banner, print_step_header, print_info, print_table, print_warning, print_error
@@ -152,6 +152,17 @@ def train(cli_args=None):
         help="Activates the final 'Training' stage to build the model.",
         action="store_true"
     )
+    parser.add_argument(
+        "-d", "--distill",
+        help=(
+            "Generate a lightweight lite model via knowledge distillation.\n"
+            "Can be used together with -T (runs after training) or standalone\n"
+            "(distills from an already-exported ONNX without retraining).\n"
+            "Example standalone: nanowakeword-train -c config.yaml --distill"
+        ),
+        action="store_true"
+    )
+    
 
     # Modifiers 
     parser.add_argument(
@@ -172,7 +183,7 @@ def train(cli_args=None):
         default=None,
         metavar="PATH"
     )
-    
+
     args = parser.parse_args(cli_args)
 
 
@@ -498,17 +509,48 @@ def train(cli_args=None):
         training_end_time = time.time()
         training_duration_minutes = (training_end_time - training_start_time) / 60
 
+        model_name = config.get("model_name", atoGeNm(config.get("model_type", "dnn")))
+
         export_onnx_model(
             model=best_model, 
             input_shape=input_shape, 
             config=config, 
-            model_name=config.get("model_name", atoGeNm(config.get("model_type", "dnn"))), 
+            model_name=model_name, 
             output_dir=model_save_dir
         )
 
+        # Distillation: build a lightweight gatekeeper model 
+        # Deduplicate: CLI --distill and config distillation.enabled both trigger
+        # distillation, but we only run it once regardless of which is set.
+        dist_cfg         = config.get("distillation", {})
+        distill_via_cfg  = dist_cfg.get("enabled", True)
+        distill_via_cli  = args.distill
+        should_distill   = distill_via_cfg or distill_via_cli
+
+        if should_distill:
+            try:
+                print_step_header("Distillation: Building Lite Model")
+                from nanowakeword.train.distill import distill_model
+                student = distill_model(
+                    teacher=best_model,
+                    X_train=X_train,
+                    config=config,
+                    input_shape=input_shape,
+                )
+                export_onnx_model(
+                    model=student,
+                    input_shape=input_shape,
+                    config=config,
+                    model_name=model_name + "_lite",
+                    output_dir=model_save_dir,
+                )
+                print_info(f"Lite model saved alongside main model in: {model_save_dir}")
+            except Exception as e:
+                print_error(f"Distillation failed and was skipped. Details: {e}")
+
         export_pytorch_model(
             model=best_model,
-            model_name=config.get("model_name", atoGeNm(config.get("model_type", "dnn"))),
+            model_name=model_name,
             output_dir=model_save_dir
         )
 
@@ -525,10 +567,93 @@ def train(cli_args=None):
 
             update_training_journal(
                 base_output_dir=base_output_directory,
-                model_name=config.get("model_name", atoGeNm(config.get("model_type", "dnn"))),
+                model_name=model_name,
                 metrics=final_metrics,
                 current_config=config.report()
             )
+
+    # Standalone distillation (no retraining) 
+    # Triggered by --distill without -T, or config distillation.enabled=true
+    # without train_model=true. Loads the already-exported ONNX and distills from it.
+    elif args.distill and not (args.train_model or config.get("train_model", False)):
+        print_step_header("Standalone Distillation: Building Lite Model from Existing ONNX")
+
+        model_name = config.get("model_name", atoGeNm(config.get("model_type", "dnn")))
+        project_dir = os.path.join(
+            os.path.abspath(base_config["output_dir"]),
+            model_name,
+        )
+        model_save_dir = os.path.join(project_dir, "model")
+        onnx_path      = os.path.join(model_save_dir, model_name + ".onnx")
+
+        if not os.path.exists(onnx_path):
+            print_error(
+                f"No trained ONNX model found at '{onnx_path}'.\n"
+                f"Train the model first with -T, then run --distill standalone."
+            )
+            sys.exit(1)
+
+        # We need a DataLoader to distill from - reuse the feature manifest
+        user_feature_manifest = config.get("feature_manifest", {})
+        manifest = {
+            cat: paths
+            for cat, paths in user_feature_manifest.items()
+            if not cat.endswith("_val")
+        }
+
+        if not manifest:
+            print_error("No feature_manifest entries found in config. Cannot run standalone distillation.")
+            sys.exit(1)
+
+        dataset = HardnessCurriculumDataset(feature_manifests=manifest)
+        if len(dataset) == 0:
+            print_error("Dataset is empty. Check your feature file paths in the manifest.")
+            sys.exit(1)
+
+        # composition_cfg = config.get("batch_composition", {"targets": 30, "negatives": 230})
+        # Get the batch composition from the config
+
+        composition_cfg = config.get("batch_composition")
+
+        if not composition_cfg:
+            print_info("Distillation: 'batch_composition' not found in config. Generating a default balanced composition.")
+            composition_cfg['targets'] = 30
+            composition_cfg['negatives'] =  230
+            
+            print_info(f"Using default composition: {composition_cfg}")
+
+        sampler = DynamicClassAwareSampler(
+            dataset=dataset,
+            batch_composition=composition_cfg,
+            feature_manifests=manifest,
+        )
+        num_workers = config.get("num_workers", 2)
+        X_train = DataLoader(
+            dataset,
+            batch_sampler=sampler,
+            num_workers=num_workers,
+            pin_memory=True if num_workers > 0 else False,
+            persistent_workers=True if num_workers > 0 else False,
+            collate_fn=collate_fn_with_indices,
+        )
+
+        # Detect input shape from data
+        sample_feature, _, _ = dataset[0]
+        input_shape = sample_feature.shape
+
+        try:
+            from nanowakeword.train.distill import distill_from_onnx
+            distill_from_onnx(
+                onnx_path=onnx_path,
+                X_train=X_train,
+                config=config,
+                input_shape=input_shape,
+                output_dir=model_save_dir,
+                model_name=model_name,
+            )
+        except Exception as e:
+            print_error(f"Standalone distillation failed. Details: {e}")
+            sys.exit(1)
 
 if __name__ == '__main__':
     train()

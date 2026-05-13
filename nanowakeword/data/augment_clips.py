@@ -225,7 +225,7 @@ def augment_clips(
             if has_real_background:
                 mixed_clip = _mix_snr(fg_wf, bg_wf, start_index, snr_db)
             else:
-                # No real background — place foreground directly without SNR mixing.
+                # No real background - place foreground directly without SNR mixing.
                 # SNR formula breaks down with near-zero background RMS.
                 mixed_clip = torch.zeros(total_length)
                 mixed_clip[start_index : start_index + fg_len] = fg_wf

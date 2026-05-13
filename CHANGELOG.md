@@ -2,98 +2,168 @@
 
 All notable changes to this project will be documented in this file.
 
+---
+
+## [2.1.0] - 2026-05-13
+
+### Added
+
+- **Unified CLI (`nanowakeword`)** — single entry point for the entire pipeline. No more separate commands for different tasks. Context is inferred from the flags you provide:
+  ```bash
+  nanowakeword -c config.yaml -T          # train
+  nanowakeword -c config.yaml -d          # distill standalone
+  nanowakeword --model my_model.onnx      # start server
+  nanowakeword --info my_model.onnx       # inspect model
+  ```
+  The old `nanowakeword-train` command is kept as a backward-compatible alias.
+
+- **Knowledge Distillation (`--distill` / `-d`)** — automatically generates a lightweight `_lite.onnx` gate model from any trained teacher using temperature-scaled KL divergence. Two modes:
+  - Post-training: add `-d` alongside `-T` and the lite model is built right after training
+  - Standalone: run `nanowakeword -c config.yaml -d` on an already-trained model, no retraining needed
+  - Default student: ~12K parameters, ~50KB ONNX (~5–10x smaller than a typical teacher)
+  - Fully configurable via `distillation:` config block (`steps`, `temperature`, `alpha`, `student_layer_size`, `student_embedding_dim`, etc.)
+
+- **2-Stage Cascade Inference** — the lite model acts as a lightweight gatekeeper (Stage 1). The full model only runs when the gate fires, saving CPU on always-on systems:
+  ```python
+  # Auto-discovers my_model_lite.onnx in the same folder
+  interpreter = NanoInterpreter.load_model("my_model.onnx", cascade=True)
+
+  # Explicit gate path
+  interpreter = NanoInterpreter.load_model(
+      model="my_model.onnx",
+      gate_model="my_model_lite.onnx",
+      gate_threshold=0.25,
+  )
+  ```
+
+- **RemoteVerifier WebSocket server** — host the full model (or the entire pipeline) on any machine and have edge devices connect to it. Three pipeline modes:
+  - `verifier_only` (default) — edge sends pre-computed features, server runs only the wake word model
+  - `full` — edge sends raw audio, server runs mel + embedding + wake word model
+  ```bash
+  nanowakeword --model my_model.onnx --pipeline full --port 8765
+  ```
+
+- **Distributed inference in `NanoInterpreter.load_model()`** — new `remote_verifier` and `remote_pipeline` parameters:
+  ```python
+  # Gate local, verifier remote
+  NanoInterpreter.load_model(
+      model="my_model_lite.onnx",
+      remote_verifier="ws://192.168.1.100:8765",
+      gate_threshold=0.25,
+  )
+
+  # Gate local, full pipeline remote (edge runs only the gate)
+  NanoInterpreter.load_model(
+      model="my_model_lite.onnx",
+      remote_verifier="ws://server:8765",
+      remote_pipeline="full",
+  )
+
+  # No local model — server handles everything
+  NanoInterpreter.load_model(remote_verifier="ws://server:8765", remote_pipeline="full")
+  ```
+
+- **`NanoInterpreter` API improvements:**
+  - `model` parameter replaces `model_path` (backward compatible — positional usage still works)
+  - New properties: `score`, `verifier_score`, `gate_score`, `model_name`, `gate_name`, `is_cascade`, `info`
+  - `detected(threshold)` method — clean boolean check
+  - `listen()` now supports `blocking=False` (background thread), `on_audio` callback, and `on_score` callback
+  - `stop()` — terminates a non-blocking `listen()` loop
+  - `__repr__` — `print(interpreter)` shows useful state
+
+- **`DetectionResult` object** — `predict()` now returns a rich result object instead of a plain dict. Supports both attribute access (`.score`, `.gate_score`, `.detected`) and dict-compatible access (`.get()`, `result["name"]`) for full backward compatibility.
+
+- **`--info` flag** — inspect any `.onnx` model without loading the interpreter:
+  ```bash
+  nanowakeword --info my_model.onnx
+  # Shows: name, type (lite/full), file size, parameter count, architecture type, input/output shapes
+  ```
+
+- **Collate function robustness** — training no longer crashes when `.npy` feature files have slightly different frame counts. The collate function now pads/truncates to the most common length in each batch.
+
+- **Buffer warmup guard** — the interpreter no longer crashes on the first few audio chunks when a model requires more feature frames than the buffer currently holds (e.g., a 45-frame model on startup).
+
+### Changed
+
+- `nanowakeword-train` is now a backward-compatible alias. The primary command is `nanowakeword`.
+- Distillation is enabled by default (`distillation.enabled: true`). Set to `false` to skip it.
+- `predict()` return type changed from `dict` to `DetectionResult`. Existing code using `.get()` or `["key"]` access continues to work unchanged.
+
+---
+
+## [2.0.1–2.0.6] - 2026-02-02 to 2026-05-09
+
+- Preprocessing stability improvements for edge-case audio formats
+- Training loop stability fixes under low-data conditions
+- Validation dataloader robustness improvements
+- Documentation and configuration guide updates
+
+---
+
 ## [2.0.0] - 2026-01-12
+
 ### Breaking Changes
-- All import paths reorganized; scripts from any **1.x** version will **not work** without modification.
-- Users should update their scripts to match the new v2.0.0 API.
 
+- All import paths reorganized. Scripts from any **1.x** version will **not work** without modification.
+- Update imports to match the new v2.0.0 package structure.
 
-## [1.4.0...1.4.3] - 2025-12-13 to 2026-1-9
-### Added / Fixed / Changed
-- Multiple updates including preprocessing improvements, training stability enhancements, and documentation corrections.
+---
 
+## [1.4.0–1.4.3] - 2025-12-13 to 2026-01-09
+
+- Preprocessing pipeline improvements
+- Training stability enhancements for recurrent architectures
+- Documentation corrections
+
+---
 
 ## [1.3.3] - 2025-11-14
 
 ### Added
 
--   **Massive Expansion of the Model Architecture Library:** Nanowakeword now supports a comprehensive suite of state-of-the-art neural network architectures, transforming it into a versatile and powerful speech modeling toolkit. The new additions include:
-    -   **CRNN (Convolutional Recurrent Neural Network):** A robust hybrid model combining the strengths of CNNs and RNNs.
-    -   **TCN (Temporal Convolutional Network):** A modern, high-speed alternative to RNNs for sequence modeling.
-    -   **QuartzNet:** A highly parameter-efficient architecture for achieving top performance with a small model footprint.
-    -   **Transformer:** The foundational attention-based model for deep contextual understanding.
-    -   **Conformer & E-Branchformer:** State-of-the-art and bleeding-edge architectures that fuse Transformers and CNNs for ultimate performance.
+- **6 new architectures:** CRNN, TCN, QuartzNet, Transformer, Conformer, E-Branchformer
 
 ### Fixed
 
--   **ONNX Export Failure for Modern Architectures:**
-    -   Resolved a critical `RuntimeError` that prevented modern architectures (Transformer, Conformer, etc.) from being exported to the ONNX format.
-    -   The issue was traced to an outdated default ONNX opset version. The framework now defaults to a modern, backward-compatible opset version (17), ensuring that all models, from classic to state-of-the-art, can be exported successfully.
--   **Model Averaging Error with BatchNorm:**
-    -   Fixed a `RuntimeError` (`result type Float can't be cast to... Long`) that occurred during the checkpoint averaging process for models containing `BatchNorm` layers (e.g., CRNN).
-    -   The `average_models` function has been improved to intelligently handle and average only floating-point parameters, ignoring integer-based counters like `num_batches_tracked`.
--   **TCN Model Initialization Bug:**
-    -   Corrected a `TypeError` that prevented the TCN architecture from being initialized correctly due to an issue with `nn.Sequential` handling non-module `lambda` functions. The TCN block has been refactored for robust performance.
+- ONNX export failure for modern architectures — upgraded default opset to 17
+- `average_models` crash with BatchNorm layers (`num_batches_tracked` type mismatch)
+- TCN initialization `TypeError` with `nn.Sequential` and lambda functions
 
 ### Improved
 
--   **Intelligent Configuration Engine:** The `ConfigGenerator` has been refined for more realistic and efficient hyperparameter selection. The default maximum `augmentation_rounds` has been lowered to reduce feature computation time while maintaining high model quality.
--   **Codebase Structure & Maintainability:** In a major refactoring effort, all model architecture definitions have been moved from the monolithic `trainer.py` file into a dedicated, well-organized `architectures.py` file. This significantly improves code clarity, modularity, and future maintainability.
+- `ConfigGenerator` refined for more realistic augmentation round defaults
+- All architecture definitions moved to dedicated `architectures.py` module
+
+---
 
 ## [1.3.2] - 2025-11-08
 
 ### Added
 
--   **Powerful Training Resumption Capability**:
-    -   Introduced a robust checkpointing system that allows users to resume interrupted training sessions seamlessly.
-    -   Added a new `--resume <path_to_project>` command-line argument to load the latest checkpoint and continue training.
-    -   New `checkpointing` section in `config.yaml` gives users full control over the feature, including enabling/disabling it, setting the save interval (`interval_steps`), and limiting the number of saved checkpoints (`limit`).
-    -   Checkpoints now save the complete training state, including the model, optimizer, scheduler, step number, and loss history, ensuring a flawless recovery.
+- **Training resumption** — `--resume <path>` CLI flag + `checkpointing:` config block. Saves full training state (model, optimizer, scheduler, step, loss history).
 
 ### Fixed
 
--   **Critical Bug in LSTM/GRU Training**:
-    -   Resolved a critical `AttributeError` (`'LSTMModel' object has no attribute 'layer1'`) that caused the training process to crash when using `LSTM`, `GRU`, or `CNN` model architectures.
-    -   The error was triggered by a debug code block that was not model-agnostic. The logic has been refactored to work reliably with all model types, making the training process stable across all architectures.
+- `AttributeError: 'LSTMModel' object has no attribute 'layer1'` crash during LSTM/GRU/CNN training
 
+---
 
-## [1.3.0] - 2025-11-5
+## [1.3.0] - 2025-11-05
 
-This release marks a fundamental re-architecture of the NanoWakeWord trainer, transforming it from a static script into a transparent, scalable, and highly sophisticated training framework. The focus is on engineering excellence, providing unparalleled control, and producing state-of-the-art models ready for production environments.
+Major re-architecture of the training framework.
 
-### Key Features & Architectural Innovations
+### Added
 
--   **Autonomous Training & Optimization Engine (`auto_train`)**
-    We have pioneered a fully autonomous training process that goes beyond simple step counting. The engine leverages an Exponential Moving Average (EMA) of the loss to understand model stability in real-time. It intelligently identifies and saves only the best-performing model checkpoints, then averages their weights to produce a final model with superior generalization and robustness against overfitting. This is a self-reliant system that delivers peak performance with minimal supervision.
-
--   **Hyper-Flexible, Configuration-Driven Core (`ConfigProxy`)**
-    At the heart of the new trainer is a revolutionary `ConfigProxy` engine. This system automatically discovers and makes every single training parameter—from nested optimizer settings and loss function weights to augmentation probabilities—controllable via a single `config.yaml` file. This transforms the trainer into a true framework, eliminating all "magic numbers" and providing you with absolute control over the entire architecture and training loop.
-
--   **Train on Virtually Unlimited Data with Memory-Mapping**
-    We have shattered the limitations of system RAM. The new `mmap_batch_generator` allows you to train on massive, terabyte-scale feature sets as easily as you would with small datasets. Data is streamed efficiently from disk directly to the model, enabling you to build models on a scale that was previously impossible without enterprise-grade hardware.
-
--   **Live In-Terminal Training Dashboard**
-    Experience a new level of insight and clarity. We have replaced static console outputs with a sophisticated, live-updating dashboard that renders directly in your terminal. It provides a real-time, comprehensive view of every active training parameter, while progress bars and logs flow cleanly beneath it. This professional UI keeps you fully informed without clutter.
-
--   **Strategic Batch Composition Engine**
-    Gain expert-level control over what your model learns. The `batch_composition` feature allows you to strategically define the precise ratio of positive, negative speech, and pure noise samples in every single batch. This powerful tool enables you to directly address challenges like class imbalance or difficult false-positive cases by fine-tuning the data the model sees at each step.
-
--   **Production-Ready, Standardized ONNX Export**
-    Deploy with absolute confidence. The export process now features a robust `InferenceWrapper` that guarantees the final ONNX model has a standardized, industry-compatible output shape of `[batch, 1, 1]`. This eliminates a common and frustrating source of downstream integration errors, ensuring your model works seamlessly in any production environment.
-
--   **Fully Configurable Optimizer and Scheduler Suite**:
-    The choice of optimizer (`adamw`, `adam`, `sgd`) and all its related hyperparameters (e.g., `weight_decay`, `momentum`) are now exposed in the configuration, providing complete control over the model's optimization process.
-
--   **Advanced Hybrid Loss & Pluggable Architecture**:
-    The model now learns highly discriminative features by optimizing a hybrid loss function, combining the strengths of Triplet Loss for embedding separation and a dedicated classification loss. The architecture is now pluggable, allowing users to select the optimal classification loss (`labelsmoothing`, `focalloss`, `bce`) and learning rate scheduler (`cyclic`, `onecycle`, `cosine`) directly from the configuration file.
-
-### Changed / Improved
-
--   **Professional API & CLI**: Command-line arguments and configuration parameters have been standardized for maximum clarity and ease of use (e.g., `--config_path`, `transform_clips`).
--   **Organized Project Structure**: All generated assets are now saved to a clean, numbered directory structure (`1_features/`, `2_training_artifacts/`, `3_model/`) for intuitive project management.
--   **Intelligent Data Verification**: The pre-processing step now intelligently caches the state of your data directories, skipping redundant verification for unchanged files to save you valuable time.
+- `auto_train` — autonomous training with EMA-based stability tracking and checkpoint ensembling (SWA)
+- `ConfigProxy` — every training parameter controllable from a single YAML file
+- Memory-mapped training — stream terabyte-scale feature sets from disk
+- Live terminal training dashboard
+- Strategic batch composition engine (`batch_composition` config)
+- Standardized ONNX export with `InferenceWrapper` (output shape `[B, 1, 1]`)
+- Configurable optimizer suite (AdamW, Adam, SGD) and LR schedulers (OneCycle, Cyclic, Cosine)
+- Hybrid loss architecture (Triplet + classification)
 
 ### Removed
 
--   **Brittle TFLite & TensorFlow Dependencies**: We have removed all dependencies on TensorFlow and TFLite to create a lightweight, stable framework focused entirely on the universal and high-performance **ONNX Runtime**.
--   **Requirement for External Validation Sets**: The new autonomous training engine is entirely self-reliant and no longer requires a separate validation set to achieve optimal results, simplifying the workflow.
+- All TensorFlow and TFLite dependencies
+- Requirement for a separate validation set

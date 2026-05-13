@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/arcosoph/nanowakeword/main/assets/logo/logo_0.png" alt="Logo" width="290">
+  <img src="https://pub-812e108f164d4805821c37cb3d3810f1.r2.dev/images/common/logo_0.png" alt="Logo" width="290">
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
   
 </p>
 
-**Nanowakeword is a next-generation, adaptive framework designed to build high-performance, custom wake word models. More than just a tool, it’s an intelligent engine that understands your data and optimizes the entire training process to deliver exceptional accuracy and efficiency.**
+**Nanowakeword is a next-generation, adaptive framework designed to build high-performance, custom wake word models. More than just a tool, it’s an intelligent engine that train custom models, deploy them anywhere, and integrate them into any project with minimal code. From a Raspberry Pi Zero to a cloud server, from a single device to a distributed edge/cloud system, it handles the full lifecycle.**
 
 **Quick Access**
 - [Installation](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#installation)
@@ -56,22 +56,8 @@ NanoWakeWord is a versatile framework offering a rich library of neural network 
 Nanowakeword is not merely a tool; it's a holistic, end-to-end ecosystem engineered to democratize the creation of state-of-the-art, custom wake word models. It moves beyond simple scripting by integrating a series of automated, production-grade systems that orchestrate the entire lifecycle—from data analysis and feature engineering to advanced training and deployment-optimized inference.
 
 <details>
-<summary><strong>1. Automated ML Engineering for Peak Performance</strong></summary>
-
-The cornerstone and "brain" of the framework is its data-driven configuration engine. This system performs a holistic analysis of your unique dataset and hardware environment to replace hours of manual, error-prone hyper-parameter tuning with a single, intelligent process. It crafts a powerful, optimized training baseline by synergistically determining:
-
-*   **Adaptive Architectural Scaling:** It doesn't just use a fixed architecture; it sculpts one for you. The engine dynamically scales the model's complexity—tuning its depth, width, and regularization (e.g., layers, neurons, dropout) to perfectly match the volume and complexity of your training data. This core function is critical for preventing both underfitting on small datasets and overfitting on large ones.
-
-*   **Optimized Training & Convergence Strategy:** Based on data characteristics, it formulates a multi-stage, dynamic learning rate schedule and determines the precise training duration required to reach optimal convergence. This ensures the model is trained to its full potential without wasting computational resources on diminishing returns.
-
-*   **Hardware-Aware Performance Tuning:** The engine profiles your entire hardware stack (CPU cores, system RAM, and GPU VRAM) to maximize throughput at every stage. It calculates the maximum efficient batch sizes for data generation, augmentation, and model training, ensuring that your hardware's full potential is unlocked.
-
-*   **Automatic Pre-processing:** Just drop your raw audio files (`.mp3`, `.flac`, `.pcm`, etc.) into the data folders — NanoWakeWord automatically handles resampling, channel conversion, and format standardization.
-
-*   **Data-Driven Augmentation Policy:** Rather than applying a generic augmentation strategy, the engine crafts a custom augmentation policy. It analyzes the statistical properties of your provided noise and reverberation files to tailor the intensity, probability, and type of on-the-fly augmentations, creating a training environment that mirrors real-world challenges.
-
-While this engine provides a state-of-the-art baseline, it does not sacrifice flexibility. **Advanced users retain full, granular control and can override any of the dozens of automatically generated parameters by simply specifying their desired value in the `.yaml` file.**
-
+<summary><strong>1. Builds a tiny student Model</strong></summary>
+Built-in knowledge distillation - automatically generates a lightweight gate model from any trained model.
 </details>
 
 <details>
@@ -201,39 +187,33 @@ The primary method for controlling the NanoWakeWord framework is through a `.yam
       limit: 3
     # Other...
     ```
-*For a full explanation of all parameters, please see the [`training_config`](https://github.com/arcosoph/nanowakeword/blob/main/examples/training_config.yaml) or [`CONFIGURATION_GUIDE`](https://arcosoph.com/blog/nanowakeword_config_guide).*
+*For a full explanation & all parameters, please see the [`training_config`](https://github.com/arcosoph/nanowakeword/blob/main/examples/training_config.yaml) or [`CONFIGURATION_GUIDE`](https://arcosoph.com/blog/nanowakeword_config_guide).*
 
 
 3.  **Execute the Pipeline:**
     Launch the trainer by pointing it to your configuration file. The stages enabled in your config will run automatically.
     ```bash
-    nanowakeword-train -c ./path/to/config.yaml
+    nanowakeword -c ./path/to/config.yaml
     ```
 
-### Command-Line Arguments (Overrides)
+## Command-Line Arguments (Overrides)
 
 For on-the-fly experiments or to temporarily modify your pipeline without editing your configuration file, you can use the following command-line arguments. **Any flag used will take precedence over the corresponding setting in your `config.yaml` file.**
 
 | Argument            | Shorthand                 | Description                                                                                             |
 | ------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `--config_path`     | `-c`                      | **Required.** Path to the base `.yaml` configuration file.                                              |
-| `--generate_clips`  | `-G`                      | Activates the 'Generation' stage.                                                                       |
-| `--transform_clips` | `-t`                      | Activates the preparatory 'transform' stage (augmentation and feature extraction).                      |
-| `--train_model`     | `-T`                      | Activates the final 'Training' stage to build the model.                                                |
-| `--force-verify`    | `-f`                      | Forces re-verification of all data directories, ignoring the cache.                                     |
-| `--resume`          | *(none)*                  | Resumes training from the latest checkpoint in the specified project directory.                         |
-| `--overwrite`       | *(none by design)*       | Forces regeneration of feature files. **Use with caution as this deletes existing data.**                 |
+| `--config`     | `-c`                      | **Required.** Path to the base `.yaml` configuration file.                                              |
+| `--generate-clips`  | `-G`                      | Activates the 'Generation' stage.                                                                       |
+| `--transform` | `-t`                      | Activates the preparatory 'transform' stage (augmentation and feature extraction).                      |
+| `--train`     | `-T`                      | Activates the final 'Training' stage to build the model.                                                |
+| `--distill`         | `-d`                      | Generate a lightweight lite model via knowledge distillation.                                     |
+| `--resume`          | ✗                  | Resumes training from the latest checkpoint in the specified project directory.                         |
+| `--overwrite`       | ✗       | Forces regeneration of feature files. **Use with caution as this deletes existing data.**                 |
+| `--model` | ✗ | Start RemoteVerifier server |
+| `--pipeline` | ✗ | `verifier_only` or `full` |
+| `--port` | ✗ | Server port (default 8765) |
+| `--info` | ✗ | Inspect a .onnx model file |
 
-### The Intelligent Workflow
-
-The command above automates a sophisticated, multi-stage pipeline:
-
-1.  **Data Verification & Pre-processing:** Scans and converts all audio to a standardized format (16kHz, mono, WAV).
-2.  **Intelligent Configuration:** Analyzes the dataset to generate an optimal model architecture and training hyperparameters.
-3.  **Synthetic Data Generation:** If the engine detects a data imbalance, it synthesizes new audio samples to create a robust dataset.
-4.  **Augmentation & Feature Extraction:** Creates thousands of augmented audio variations and extracts numerical features, saving them in a memory-efficient format.
-5.  **Autonomous Model Training:** Trains the model using the intelligently generated configuration, automatically stopping when peak performance is reached.
-6.  **Checkpoint Averaging & Export:** Averages the weights of the most stable models found during training and exports a final, production-ready `onnx`/`pytorch` model.
 
 ## Performance and Evaluation
 
@@ -244,7 +224,7 @@ Below is a typical training performance graph for a model trained on a standard 
 ### 📈 Training Performance Graph
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/arcosoph/nanowakeword/main/assets/Graphs/training_performance_graph.png" width="600">
+  <img src="https://pub-812e108f164d4805821c37cb3d3810f1.r2.dev/images/common/training_performance_graph.png" width="600">
 </p>
 
 ### Key Performance Insights:
@@ -260,7 +240,7 @@ Below is a typical training performance graph for a model trained on a standard 
 
 ## Using Your Trained Model (Inference)
 
-Your trained `.onnx` model is ready for action! The easiest and most powerful way to run inference is with our lightweight `NanoInterpreter` class. It's designed for high performance and requires minimal code to get started.
+Your trained `.onnx` model is ready for action! The easiest and most powerful way to run inference is with our lightweight `NanoInterpreter`. It's designed for high performance and requires minimal code to get started.
 
 Here’s a practical example of how to use it:
 
@@ -269,18 +249,14 @@ import pyaudio
 import numpy as np
 import os
 import sys
-import time
-# Import the interpreter class from the library
-from nanowakeword.interpreter.nanointerpreter import NanoInterpreter  
+# Import the interpreter from the library
+from nanowakeword import NanoInterpreter  
 #                Simple Configuration 
 MODEL_PATH = r"model/path/your.onnx"
-THRESHOLD = 0.9  # A simple threshold for detection | ⚠️ This may need to be changed (eg, 0.999, 0.80) 
-COOLDOWN = 1     # A simple cooldown managed outside the interpreter
+THRESHOLD = 0.9  # A simple threshold for detection | ⚠️ This may need to be changed (eg, 0.999, 0.80)
 # If you want, you can use more advanced methods like VAD or PATIENCE_FRAMES.
 
 # Initialization 
-if not os.path.exists(MODEL_PATH):
-    sys.exit(f"Error: Model not found at '{MODEL_PATH}'")
 try:
     print(" Initializing NanoInterpreter (Simple Mode)...")
     
@@ -293,8 +269,6 @@ try:
     pa = pyaudio.PyAudio()
     stream = pa.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=1280)
 
-    last_detection_time = 0
-    
     # Main Loop 
     while True:
         audio_chunk = np.frombuffer(stream.read(1280, exception_on_overflow=False), dtype=np.int16)
@@ -303,10 +277,8 @@ try:
         score = interpreter.predict(audio_chunk).get(key, 0.0)
 
         # The detection logic is simple and external.
-        current_time = time.time()
-        if score > THRESHOLD and (current_time - last_detection_time > COOLDOWN):
+        if score > THRESHOLD:
             print(f"Detected '{key}'! (Score: {score:.2f})")
-            last_detection_time = current_time
             interpreter.reset()
         else:
             print(f"Score: {score:.3f}", end='\r', flush=True)
@@ -315,6 +287,17 @@ except KeyboardInterrupt:
     print("")
 ```
 
+## Deployment modes at a glance
+
+| Mode | Edge runs | Server runs | Best for |
+|---|---|---|---|
+| Fully local | mel + embedding + model | ✗ | Common use |
+| Local cascade | mel + embedding + gate + verifier | ✗ | Any device with a lite model |
+| Gate + remote verifier | mel + embedding + gate | verifier only | Medium-power edge |
+| Gate + remote full pipeline | gate only | mel + embedding + verifier | Low-power edge (Pi Zero, MCU) |
+| Fully remote | ✗ | mel + embedding + verifier | Ultra-minimal edge |
+
+༼ つ ◕_◕ ༽つ *[Learn more here NanoInterpreter](https://github.com/arcosoph/nanowakeword/blob/main/examples/inference_examples.md)*
 
 ## 🎙️ Pre-trained Models
 
