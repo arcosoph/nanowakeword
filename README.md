@@ -17,10 +17,10 @@
 **Nanowakeword is a next-generation, adaptive framework designed to build high-performance, custom wake word models. More than just a tool, it’s an intelligent engine that train custom models, deploy them anywhere, and integrate them into any project with minimal code. From a Raspberry Pi Zero to a cloud server, from a single device to a distributed edge/cloud system, it handles the full lifecycle.**
 
 **Quick Access**
-- [Installation](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#installation)
-- [Usage](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#usage)
 - [Features](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#state-of-the-art-features-and-architecture)
-- [Using model](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#using-your-trained-model-inference)
+- [Installation](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#installation)
+- [Train Model](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#train-model)
+- [Using model & Server](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#using-your-trained-model-inference)
 - [Performance](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#performance-and-evaluation)
 - [NOTIS](https://github.com/arcosoph/nanowakeword/blob/main/STATUS.md)
 - [Support](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#community--support)
@@ -45,15 +45,14 @@ NanoWakeWord is a versatile framework offering a rich library of neural network 
 | **E-Branchformer**| Bleeding-edge research for potentially the highest accuracy. | Accuracy Potential | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=e_branchformer) |
 
 ---
-> [!NOTE]
-> Nanowakeword is under active development. For important updates, version-specific notes, and the latest stability status of all features, please refer to our official status document.
+> NOTE: Nanowakeword is under active development. For important updates, version-specific notes, and the latest stability status of all features, please refer to our official status document.
 >
 > **[➡️ View Latest Release Notes & Project Status](https://github.com/arcosoph/nanowakeword/blob/main/STATUS.md)**
 
 
 ## State-of-the-Art Features and Architecture
 
-Nanowakeword is not merely a tool; it's a holistic, end-to-end ecosystem engineered to democratize the creation of state-of-the-art, custom wake word models. It moves beyond simple scripting by integrating a series of automated, production-grade systems that orchestrate the entire lifecycle—from data analysis and feature engineering to advanced training and deployment-optimized inference.
+Nanowakeword is not merely a tool; it's a holistic, end-to-end ecosystem engineered to democratize the creation of state-of-the-art, custom wake word models. It moves beyond simple scripting by integrating a series of automated, production-grade systems that orchestrate the entire lifecycle-from data analysis and feature engineering to advanced training and deployment-optimized inference.
 
 <details>
 <summary><strong>1. Builds a tiny student Model</strong></summary>
@@ -131,14 +130,14 @@ While the PyPI package offers the latest stable release, you can install the mos
 pip install git+https://github.com/arcosoph/nanowakeword.git
 ```
 
-## Usage
+## Train Model
 
 The primary method for controlling the NanoWakeWord framework is through a `.yaml` file. This file acts as the central hub for your entire project, defining data paths and controlling which pipeline stages are active.
 
 ### Simple Example Workflow
 
 1.  **Prepare Your Data Structure:**
-    Organize your raw audio files (`.wav`, `flac` etc.) into their respective subfolders.
+    Organize your raw audio files (`.wav`, `flac` etc.) into their respective subfolders or you can generate synthetic data.
     ```
     training_data/
     ├── positive/         # Your wake word samples ("hey_nano.wav")
@@ -209,11 +208,6 @@ For on-the-fly experiments or to temporarily modify your pipeline without editin
 | `--distill`         | `-d`                      | Generate a lightweight lite model via knowledge distillation.                                     |
 | `--resume`          | ✗                  | Resumes training from the latest checkpoint in the specified project directory.                         |
 | `--overwrite`       | ✗       | Forces regeneration of feature files. **Use with caution as this deletes existing data.**                 |
-| `--model` | ✗ | Start RemoteVerifier server |
-| `--pipeline` | ✗ | `verifier_only` or `full` |
-| `--port` | ✗ | Server port (default 8765) |
-| `--info` | ✗ | Inspect a .onnx model file |
-
 
 ## Performance and Evaluation
 
@@ -297,7 +291,29 @@ except KeyboardInterrupt:
 | Gate + remote full pipeline | gate only | mel + embedding + verifier | Low-power edge (Pi Zero, MCU) |
 | Fully remote | ✗ | mel + embedding + verifier | Ultra-minimal edge |
 
-༼ つ ◕_◕ ༽つ *[Learn more here NanoInterpreter](https://github.com/arcosoph/nanowakeword/blob/main/examples/inference_examples.md)*
+## Server Command-Line Arguments
+
+Available command-line options for configuring, securing, and running the *Nanowakeword* server.
+
+| Argument            | Shorthand                 | Description                                                                                             |
+| ------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `--model` | ✗ | Start RemoteVerifier server |
+| `--pipeline` | ✗ | `verifier_only` or `full` |
+| `--port` | ✗ | Server port (default 8765) |
+| `--info` | ✗ | Inspect a `.onnx` model file |
+| `--api-key` | ✗ | API keys for client authentication (repeat for multiple keys) |
+| `--enable-tokens` | ✗ | Allow clients to exchange API keys for short-lived tokens |
+| `--token-ttl` | ✗ | Token lifetime in seconds (default: 3600) |
+| `--rate-limit` | ✗ | Max requests per IP per window (`0` = disabled) |
+| `--rate-window` | ✗ | Rate limit window in seconds (default: 60) |
+| `--ip-allowlist` | ✗ | Allow only specific IPs/CIDR ranges |
+| `--ssl-certfile` / `--ssl-keyfile` | ✗ | WSS/TLS certificate files |
+| `--ssl-ca-certs` | ✗ | CA bundle for mutual TLS |
+| `--max-connections` | ✗ | Maximum simultaneous clients |
+| `--ban-duration` | ✗ | Ban time after rate limit breach (default: 300) |
+
+
+༼ つ ◕_◕ ༽つ *[Learn more about running models, NanoInterpreter, and Server here](https://github.com/arcosoph/nanowakeword/blob/main/examples/inference_examples.md)*
 
 ## 🎙️ Pre-trained Models
 

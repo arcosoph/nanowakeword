@@ -52,6 +52,15 @@ Usage - start the server
     from nanowakeword.interpreter.remote_verifier import serve
     serve("my_model.onnx", pipeline="full", host="0.0.0.0", port=8765)
 
+    # Secure server example
+    from nanowakeword.interpreter import build_security
+    security = build_security(
+        api_keys=["my-secret-key"],
+        ssl_certfile="server.crt",
+        ssl_keyfile="server.key",
+    )
+    serve("my_model.onnx", security=security)
+
 Usage - edge device
 -------------------
     from nanowakeword import NanoInterpreter
@@ -103,7 +112,17 @@ import struct
 import logging
 import argparse
 import numpy as np
-from typing import Optional
+from typing import Optional, Union
+
+from nanowakeword.interpreter.server_security import (
+    SecurityConfig,
+    SecurityManager,
+    build_security,
+    is_token_request,
+    decode_token_request,
+    encode_token_response,
+    encode_error_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +163,7 @@ def serve(
     host: str = "0.0.0.0",
     port: int = 8765,
     log_level: str = "INFO",
+    security: Optional[Union[SecurityConfig, SecurityManager]] = None,
 ) -> None:
     """
     Start the RemoteVerifier WebSocket server.
@@ -159,12 +179,25 @@ def serve(
         host:        Bind address. "0.0.0.0" accepts all connections.
         port:        Port number. Default 8765.
         log_level:   Logging verbosity.
+        security:    Optional SecurityConfig or SecurityManager for API key,
+                     token, TLS, rate limiting, and allowlist support.
     """
     if pipeline not in _VALID_PIPELINES:
         raise ValueError(
             f"Invalid pipeline '{pipeline}'. "
             f"Choose from: {sorted(_VALID_PIPELINES)}"
         )
+
+    security_manager: Optional[SecurityManager] = None
+    if security is not None:
+        if isinstance(security, SecurityConfig):
+            security_manager = SecurityManager(security)
+        elif isinstance(security, SecurityManager):
+            security_manager = security
+        else:
+            raise TypeError(
+                "security must be a SecurityConfig or SecurityManager instance"
+            )
 
     try:
         import asyncio
@@ -202,6 +235,8 @@ def serve(
 
     logger.info(f"Wake word model: '{model_name}'  input={ww_inputs[0].shape}")
     logger.info(f"Pipeline mode:   '{pipeline}'")
+    if security_manager is not None:
+        logger.info(f"Security:        {security_manager.config.summary()}")
 
     # Load mel + embedding models only when the server needs them 
     # This is the key point: mel/embedding are only downloaded/loaded on the
@@ -323,14 +358,39 @@ def serve(
 
     async def handle_client(websocket):
         client_addr = websocket.remote_address
+        client_ip = client_addr[0] if isinstance(client_addr, tuple) else str(client_addr)
         logger.info(f"Client connected: {client_addr}  pipeline='{pipeline}'")
 
         # Per-connection streaming state (only needed for full pipeline)
         state = _StreamingState() if pipeline == PIPELINE_FULL else None
+        connected = False
 
         try:
+            if security_manager is not None:
+                allowed, reason = security_manager.check_handshake(websocket)
+                if not allowed:
+                    logger.warning(f"Rejected connection from {client_ip}: {reason}")
+                    await websocket.close(code=1008, reason=reason)
+                    return
+                security_manager.on_connect()
+                connected = True
+
             async for message in websocket:
                 if not isinstance(message, bytes) or len(message) < 1:
+                    continue
+
+                if security_manager is not None and not security_manager.record_request(client_ip):
+                    await websocket.close(code=1008, reason="rate limit exceeded")
+                    return
+
+                if security_manager is not None and security_manager.config.enable_tokens and is_token_request(message):
+                    api_key = decode_token_request(message)
+                    if security_manager.verify_api_key(api_key):
+                        token = security_manager.issue_token()
+                        await websocket.send(encode_token_response(token))
+                    else:
+                        await websocket.send(encode_error_response("invalid API key"))
+                        await websocket.close(code=1008, reason="invalid API key")
                     continue
 
                 tag   = message[0]
@@ -362,6 +422,8 @@ def serve(
         except Exception as e:
             logger.warning(f"Client {client_addr} error: {e}")
         finally:
+            if connected and security_manager is not None:
+                security_manager.on_disconnect()
             logger.info(f"Client disconnected: {client_addr}")
 
     # Run server
@@ -369,7 +431,12 @@ def serve(
     import asyncio
 
     async def _main():
-        async with websockets.serve(handle_client, host, port):
+        async with websockets.serve(
+            handle_client,
+            host,
+            port,
+            ssl=security_manager.ssl_context if security_manager else None,
+        ):
             logger.info(f"RemoteVerifier ready on ws://{host}:{port}")
             await asyncio.Future()
 
@@ -401,6 +468,11 @@ class _RemoteSession:
         pipeline: str = PIPELINE_VERIFIER_ONLY,
         n_frames: int = 16,
         timeout: float = 2.0,
+        api_key: Optional[str] = None,
+        token: Optional[str] = None,
+        ssl_certfile: Optional[str] = None,
+        ssl_keyfile: Optional[str] = None,
+        ssl_ca_certs: Optional[str] = None,
     ):
         """
         Args:
@@ -409,6 +481,13 @@ class _RemoteSession:
             pipeline:   Must match the server's pipeline mode.
             n_frames:   Expected feature frames (used for get_inputs() shape).
             timeout:    Seconds to wait for a response before returning 0.0.
+            api_key:    Optional API key to send as ``X-API-Key`` during the
+                        websocket handshake.
+            token:      Optional token to send as ``X-Token`` during the
+                        websocket handshake.
+            ssl_certfile: Optional client certificate bundle for mutual TLS.
+            ssl_keyfile: Optional private key file for client certificate auth.
+            ssl_ca_certs: Optional CA bundle path for WSS/TLS server verification.
         """
         try:
             import websockets  # noqa: F401
@@ -424,32 +503,56 @@ class _RemoteSession:
         import asyncio
         import threading
 
-        self.uri        = uri
-        self.model_name = model_name
-        self.pipeline   = pipeline
-        self.n_frames   = n_frames
-        self.timeout    = timeout
-        self._loop      = asyncio.new_event_loop()
-        self._ws        = None
-        self._lock      = threading.Lock()
+        self.uri         = uri
+        self.model_name  = model_name
+        self.pipeline    = pipeline
+        self.n_frames    = n_frames
+        self.timeout     = timeout
+        self.api_key     = api_key
+        self.token       = token
+        self.ssl_certfile = ssl_certfile
+        self.ssl_keyfile  = ssl_keyfile
+        self.ssl_ca_certs = ssl_ca_certs
+        self._loop       = asyncio.new_event_loop()
+        self._ws         = None
+        self._lock       = threading.Lock()
 
         self._connect()
-        logger.info(f"[RemoteSession] Connected to {uri}  pipeline='{pipeline}'")
+        logger.info(f"[Nanowakeword] Connected to {uri}  pipeline='{pipeline}'")
 
     def _connect(self):
+        import ssl
         import websockets
 
         async def _do():
-            return await websockets.connect(self.uri)
+            headers = None
+            if self.token:
+                headers = {"X-Token": self.token}
+            elif self.api_key:
+                headers = {"X-API-Key": self.api_key}
+
+            ssl_ctx = None
+            if self.uri.lower().startswith("wss://") or self.ssl_certfile or self.ssl_keyfile or self.ssl_ca_certs:
+                ssl_ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+                if self.ssl_ca_certs:
+                    ssl_ctx.load_verify_locations(cafile=self.ssl_ca_certs)
+                if self.ssl_certfile:
+                    ssl_ctx.load_cert_chain(certfile=self.ssl_certfile, keyfile=self.ssl_keyfile)
+
+            return await websockets.connect(
+                self.uri,
+                ssl=ssl_ctx,
+                additional_headers=headers,
+            )
 
         self._ws = self._loop.run_until_complete(_do())
 
     def _reconnect(self):
         try:
             self._connect()
-            logger.info(f"[RemoteSession] Reconnected to {self.uri}")
+            logger.info(f"[Nanowakeword] Reconnected to {self.uri}")
         except Exception as e:
-            logger.warning(f"[RemoteSession] Reconnect failed: {e}")
+            logger.warning(f"[Nanowakeword] Reconnect failed: {e}")
             self._ws = None
 
     # onnxruntime.InferenceSession interface
@@ -490,7 +593,7 @@ class _RemoteSession:
                 )
                 return float(json.loads(response).get("score", 0.0))
             except Exception as e:
-                logger.warning(f"[RemoteSession] Communication error: {e}")
+                logger.warning(f"[Nanowakeword] Communication error: {e}")
                 return None
 
         with self._lock:
@@ -547,7 +650,92 @@ if __name__ == "__main__":
     parser.add_argument("--host",  default="0.0.0.0", help="Bind address")
     parser.add_argument("--port",  default=8765, type=int, help="Port number")
     parser.add_argument("--log",   default="INFO", help="Log level")
+    parser.add_argument(
+        "--api-key",
+        dest="api_keys",
+        action="append",
+        default=[],
+        help="Add an API key for client authentication. Repeat to add multiple keys.",
+    )
+    parser.add_argument(
+        "--enable-tokens",
+        action="store_true",
+        help="Allow clients to exchange an API key for a short-lived access token.",
+    )
+    parser.add_argument(
+        "--token-ttl",
+        type=int,
+        default=3600,
+        help="Token lifetime in seconds. Default: 3600.",
+    )
+    parser.add_argument(
+        "--token-secret",
+        default=None,
+        help="Secret used to sign tokens. Auto-generated if omitted.",
+    )
+    parser.add_argument(
+        "--rate-limit",
+        type=int,
+        default=0,
+        help="Maximum messages per rate-window per IP. 0 disables rate limiting.",
+    )
+    parser.add_argument(
+        "--rate-window",
+        type=int,
+        default=60,
+        help="Rate-limit sliding window in seconds. Default: 60.",
+    )
+    parser.add_argument(
+        "--ip-allowlist",
+        action="append",
+        default=[],
+        help="Allow only connections from this IP or CIDR. Repeat for multiple entries.",
+    )
+    parser.add_argument(
+        "--ssl-certfile",
+        default=None,
+        help="Path to PEM certificate file for WSS/TLS.",
+    )
+    parser.add_argument(
+        "--ssl-keyfile",
+        default=None,
+        help="Path to PEM private key file for WSS/TLS.",
+    )
+    parser.add_argument(
+        "--ssl-ca-certs",
+        default=None,
+        help="Optional CA bundle path for mutual TLS.",
+    )
+    parser.add_argument(
+        "--max-connections",
+        type=int,
+        default=0,
+        help="Maximum number of simultaneous client connections. 0 = unlimited.",
+    )
+    parser.add_argument(
+        "--ban-duration",
+        type=int,
+        default=300,
+        help="Ban duration in seconds after rate-limit breach. 0 = no ban.",
+    )
     args = parser.parse_args()
+
+    from nanowakeword.interpreter import build_security
+
+    security = build_security(
+        api_keys=args.api_keys,
+        enable_tokens=args.enable_tokens,
+        token_ttl=args.token_ttl,
+        token_secret=args.token_secret,
+        rate_limit=args.rate_limit,
+        rate_window=args.rate_window,
+        ip_allowlist=args.ip_allowlist,
+        ssl_certfile=args.ssl_certfile,
+        ssl_keyfile=args.ssl_keyfile,
+        ssl_ca_certs=args.ssl_ca_certs,
+        max_connections=args.max_connections,
+        ban_duration=args.ban_duration,
+    )
 
     serve(
         model_path=args.model,
@@ -555,4 +743,5 @@ if __name__ == "__main__":
         host=args.host,
         port=args.port,
         log_level=args.log,
+        security=security,
     )

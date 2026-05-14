@@ -302,6 +302,11 @@ class NanoInterpreter:
         remote_verifier: Optional[str] = None,
         remote_pipeline: str = "verifier_only",
         remote_timeout: float = 2.0,
+        remote_api_key: Optional[str] = None,
+        remote_token: Optional[str] = None,
+        remote_ssl_certfile: Optional[str] = None,
+        remote_ssl_keyfile: Optional[str] = None,
+        remote_ssl_ca_certs: Optional[str] = None,
         **kwargs,
     ):
         """
@@ -332,6 +337,13 @@ class NanoInterpreter:
                                    complete pipeline (mel + embedding + verifier).
                                    Use this for very low-power edge devices.
             remote_timeout:    Seconds to wait for a server response. Default 2.0.
+            remote_api_key:    API key sent as ``X-API-Key`` during websocket
+                               handshake for server auth.
+            remote_token:      Token sent as ``X-Token`` during websocket
+                               handshake when the remote server requires token auth.
+            remote_ssl_certfile: Optional client certificate bundle for mutual TLS.
+            remote_ssl_keyfile: Optional private key file for client certificate auth.
+            remote_ssl_ca_certs: Optional CA bundle path for WSS/TLS server verification.
             **kwargs:          Passed through to NanoInterpreter (vad_threshold,
                                enable_noise_reduction, etc.)
 
@@ -374,7 +386,7 @@ class NanoInterpreter:
                 f"Choose from: {sorted(_VALID_PIPELINES)}"
             )
 
-        # ── Resolve local model paths ──────────────────────────────────────────
+        #  Resolve local model paths 
         paths: List[str] = []
         if model is not None:
             if isinstance(model, str):
@@ -387,7 +399,7 @@ class NanoInterpreter:
                 if not os.path.exists(path):
                     raise FileNotFoundError(f"Model file not found: {path}")
 
-        # ── Remote verifier mode ───────────────────────────────────────────────
+        # Remote verifier mode 
         remote_cfg: Optional[dict] = None
         if remote_verifier is not None:
             if len(paths) > 1:
@@ -415,6 +427,11 @@ class NanoInterpreter:
                 "uri":            remote_verifier,
                 "pipeline":       remote_pipeline,
                 "timeout":        remote_timeout,
+                "api_key":        remote_api_key,
+                "token":          remote_token,
+                "ssl_certfile":   remote_ssl_certfile,
+                "ssl_keyfile":    remote_ssl_keyfile,
+                "ssl_ca_certs":   remote_ssl_ca_certs,
             }
             logging.info(
                 f"[NanoInterpreter] Remote mode: "
@@ -423,7 +440,7 @@ class NanoInterpreter:
                 f"(remote @ {remote_verifier}, pipeline='{remote_pipeline}')"
             )
 
-        # ── Local cascade setup ────────────────────────────────────────────────
+        # Local cascade setup 
         cascade_cfg: dict = {}
         effective_cascade = cascade or (gate_model is not None)
 
@@ -469,7 +486,7 @@ class NanoInterpreter:
                     "gate_threshold": gate_threshold,
                 }
 
-        # ── Build instance ─────────────────────────────────────────────────────
+        # Build instance
         # When remote_pipeline="full" and no local model, we need an interpreter
         # with no local ONNX models — skip AudioFeatures download too.
         no_local_models = (remote_cfg is not None and not paths)
@@ -525,6 +542,11 @@ class NanoInterpreter:
             model_name=verifier_name,
             pipeline=pipeline,
             timeout=remote_cfg["timeout"],
+            api_key=remote_cfg.get("api_key"),
+            token=remote_cfg.get("token"),
+            ssl_certfile=remote_cfg.get("ssl_certfile"),
+            ssl_keyfile=remote_cfg.get("ssl_keyfile"),
+            ssl_ca_certs=remote_cfg.get("ssl_ca_certs"),
         )
 
         self.models[verifier_name]               = remote_session
@@ -596,7 +618,7 @@ class NanoInterpreter:
         if self.noise_reducer_enabled:
             x = self._reduce_noise(x)
 
-        # ── Full-remote mode: no local preprocessor ────────────────────────────
+        #  Full-remote mode: no local preprocessor 
         # When remote_pipeline="full" and no local model, send raw audio directly
         # to the remote session and return its score.
         if self.preprocessor is None:

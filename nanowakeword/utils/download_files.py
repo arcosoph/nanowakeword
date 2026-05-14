@@ -18,24 +18,30 @@
 # ==============================================================================
 
 
-import requests
-from tqdm import tqdm
+import urllib.request
 import os
 
-def download_file(url, target_directory, file_size=None):
-    """A simple function to download a file from a URL with a progress bar using only the requests library"""
+def download_file(url, target_directory):
     local_filename = url.split('/')[-1]
+    target_path = os.path.join(target_directory, local_filename)
 
-    with requests.get(url, stream=True) as r:
-        if file_size is not None:
-            progress_bar = tqdm(total=file_size, unit='iB', unit_scale=True, desc=f"{local_filename}")
-        else:
-            total_size = int(r.headers.get('content-length', 0))
-            progress_bar = tqdm(total=total_size, unit='iB', unit_scale=True, desc=f"{local_filename}")
+    with urllib.request.urlopen(url) as response:
+        total_size = int(response.headers.get("Content-Length", 0))
+        downloaded = 0
 
-        with open(os.path.join(target_directory, local_filename), 'wb') as f:
-            for chunk in r.iter_content(chunk_size=8192):
+        with open(target_path, "wb") as f:
+            while True:
+                chunk = response.read(8192)
+                if not chunk:
+                    break
+
                 f.write(chunk)
-                progress_bar.update(len(chunk))
+                downloaded += len(chunk)
 
-    progress_bar.close()
+                if total_size:
+                    percent = downloaded / total_size * 100
+                    print(
+                        f"\rDownloading {local_filename}: {percent:.1f}% "
+                        f"({downloaded}/{total_size} bytes)",
+                        end=""
+                    )

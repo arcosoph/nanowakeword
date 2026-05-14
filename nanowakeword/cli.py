@@ -249,6 +249,85 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="LEVEL",
         help="Server log verbosity. Default: INFO",
     )
+    server_group.add_argument(
+        "--api-key",
+        dest="api_keys",
+        action="append",
+        default=[],
+        metavar="KEY",
+        help="Add an API key for client authentication. Repeat to add multiple keys.",
+    )
+    server_group.add_argument(
+        "--enable-tokens",
+        action="store_true",
+        help="Allow clients to exchange an API key for a short-lived access token.",
+    )
+    server_group.add_argument(
+        "--token-ttl",
+        type=int,
+        default=3600,
+        metavar="SECONDS",
+        help="Token lifetime in seconds. Default: 3600.",
+    )
+    server_group.add_argument(
+        "--token-secret",
+        default=None,
+        metavar="SECRET",
+        help="Secret used to sign tokens. Auto-generated if omitted.",
+    )
+    server_group.add_argument(
+        "--rate-limit",
+        type=int,
+        default=0,
+        metavar="COUNT",
+        help="Maximum messages per rate-window per IP. 0 disables rate limiting.",
+    )
+    server_group.add_argument(
+        "--rate-window",
+        type=int,
+        default=60,
+        metavar="SECONDS",
+        help="Rate-limit sliding window in seconds. Default: 60.",
+    )
+    server_group.add_argument(
+        "--ip-allowlist",
+        action="append",
+        default=[],
+        metavar="IP_OR_CIDR",
+        help="Allow only connections from this IP or CIDR. Repeat for multiple entries.",
+    )
+    server_group.add_argument(
+        "--ssl-certfile",
+        default=None,
+        metavar="PATH",
+        help="Path to PEM certificate file for WSS/TLS.",
+    )
+    server_group.add_argument(
+        "--ssl-keyfile",
+        default=None,
+        metavar="PATH",
+        help="Path to PEM private key file for WSS/TLS.",
+    )
+    server_group.add_argument(
+        "--ssl-ca-certs",
+        default=None,
+        metavar="PATH",
+        help="Optional CA bundle path for mutual TLS.",
+    )
+    server_group.add_argument(
+        "--max-connections",
+        type=int,
+        default=0,
+        metavar="COUNT",
+        help="Maximum number of simultaneous client connections. 0 = unlimited.",
+    )
+    server_group.add_argument(
+        "--ban-duration",
+        type=int,
+        default=300,
+        metavar="SECONDS",
+        help="Ban duration in seconds after rate-limit breach. 0 = no ban.",
+    )
 
     # Info flags
     parser.add_argument(
@@ -306,12 +385,30 @@ def _run_training(args, config_stages=None):
 
 def _run_server(args):
     from nanowakeword.interpreter.remote_verifier import serve
+    from nanowakeword.interpreter.server_security import build_security
+
+    security = build_security(
+        api_keys=args.api_keys,
+        enable_tokens=args.enable_tokens,
+        token_ttl=args.token_ttl,
+        token_secret=args.token_secret,
+        rate_limit=args.rate_limit,
+        rate_window=args.rate_window,
+        ip_allowlist=args.ip_allowlist,
+        ssl_certfile=args.ssl_certfile,
+        ssl_keyfile=args.ssl_keyfile,
+        ssl_ca_certs=args.ssl_ca_certs,
+        max_connections=args.max_connections,
+        ban_duration=args.ban_duration,
+    )
+
     serve(
         model_path=args.model,
         pipeline=args.pipeline,
         host=args.host,
         port=args.port,
         log_level=args.log,
+        security=security,
     )
 
 
