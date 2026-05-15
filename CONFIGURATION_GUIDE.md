@@ -884,22 +884,22 @@ Running training with configuration overrides:
 
 ```bash
 # Basic training
-python -m nanowakeword.trainer -c your_config_path.yaml 
+nanowakeword -c your_config_path.yaml 
 
 # Generate + Transform + Train
-python -m nanowakeword.trainer -c config.yaml -G -t -T
-
-# Force re-verification of data
-python -m nanowakeword.trainer -c config.yaml --force-verify
+nanowakeword -c config.yaml -G -t -T
 
 # Force regeneration of features
-python -m nanowakeword.trainer -c config.yaml --overwrite
+nanowakeword -c config.yaml --overwrite
 
 # Resume from previous training
-python -m nanowakeword.trainer -c config.yaml --resume ./trained_models/my_model_v1
+nanowakeword -c config.yaml --resume ./trained_models/my_model_v1
 
 # Only transform (no generation, no training)
-python -m nanowakeword.trainer -c config.yaml -t
+nanowakeword -c config.yaml -t
+
+# Distill
+nanowakeword -c copy_X_config.yaml --distill
 ```
 
 ### Arguments Explanation
