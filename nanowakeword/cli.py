@@ -129,7 +129,7 @@ def _merge_config_with_cli_args(config_stages: dict, args) -> dict:
     # CLI flags override config file settings
     if args.generate_clips:
         merged['generate_clips'] = True
-    if args.transform:
+    if args.transform_clips:
         merged['transform_clips'] = True
     if args.train:
         merged['train_model'] = True
@@ -357,7 +357,7 @@ def _run_training(args, config_stages=None):
     else:
         stages = {
             'generate_clips': args.generate_clips,
-            'transform_clips': args.transform,
+            'transform_clips': args.transform_clips,
             'train_model': args.train,
             'distill': args.distill,
         }
@@ -478,7 +478,7 @@ def main():
     if args.config:
         # Check if any training flags are explicitly provided
         training_flags = (
-            args.generate_clips or args.transform or
+            args.generate_clips or args.transform_clips or
             args.train or args.distill
         )
         
