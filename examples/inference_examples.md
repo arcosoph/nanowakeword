@@ -152,7 +152,7 @@ interpreter = NanoInterpreter.load_model(
     remote_pipeline="full",
     gate_threshold=0.25,
     # ༼ つ ◕_◕ ༽つ Either one will do👇
-    remote_api_key="my-secret-key-xyz",               # X-API-Key header
+    remote_api_key="my-secret-key-xyz",           # X-API-Key header
     remote_token="my-jwt-token",                  # X-Token header (alternative)
     remote_ssl_ca_certs="ca-bundle.pem",          # Server cert verification
     remote_ssl_certfile="client.crt",             # mTLS client cert

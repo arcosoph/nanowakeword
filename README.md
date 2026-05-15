@@ -202,8 +202,8 @@ For on-the-fly experiments or to temporarily modify your pipeline without editin
 | Argument            | Shorthand                 | Description                                                                                             |
 | ------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `--config`     | `-c`                      | **Required.** Path to the base `.yaml` configuration file.                                              |
-| `--generate-clips`  | `-G`                      | Activates the 'Generation' stage.                                                                       |
-| `--transform` | `-t`                      | Activates the preparatory 'transform' stage (augmentation and feature extraction).                      |
+| `--generate_clips`  | `-G`                      | Activates the 'Generation' stage.                                                                       |
+| `--transform_clips` | `-t`                      | Activates the preparatory 'transform' stage (augmentation and feature extraction).                      |
 | `--train`     | `-T`                      | Activates the final 'Training' stage to build the model.                                                |
 | `--distill`         | `-d`                      | Generate a lightweight lite model via knowledge distillation.                                     |
 | `--resume`          | ✗                  | Resumes training from the latest checkpoint in the specified project directory.                         |

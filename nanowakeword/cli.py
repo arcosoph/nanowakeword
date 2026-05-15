@@ -167,12 +167,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to the training configuration YAML file.",
     )
     train_group.add_argument(
-        "-G", "--generate-clips",
+        "-G", "--generate_clips",
         action="store_true",
         help="Generate synthetic audio clips from text (TTS).",
     )
     train_group.add_argument(
-        "-t", "--transform",
+        "-t", "--transform_clips",
         action="store_true",
         help="Augment clips and extract features into .npy files.",
     )
