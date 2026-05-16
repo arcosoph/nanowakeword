@@ -19,7 +19,7 @@ background_paths: ["SonicWeave-v2/part1",
                    "SonicWeave-v2/part3"
                   ] # ⚠️ Download from here: https://huggingface.co/datasets/arcosoph/SonicWeave-v2
 
-rir_paths: ["rir"] # https://huggingface.co/datasets/davidscripka/MIT_environmental_impulse_responses
+rir_paths: ["rir"] # You can leave it blank if you want (⚠️ It is better not to use it)
 
 # ============================================================
 # Model Architecture

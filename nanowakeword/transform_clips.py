@@ -278,7 +278,7 @@ def _process_generation_job(job_name, overwrite, recipe, config, feature_save_di
 
     if use_augmentation:
         bg_paths_for_job = background_paths if recipe.get("use_background_noise", True) else []
-        rir_paths_for_job = rir_paths if recipe.get("use_rir", True) else []
+        rir_paths_for_job = rir_paths if recipe.get("use_rir", False) else []
         audio_generator = augment_clips(
             clip_paths=clips_to_generate,
             total_length=total_length,

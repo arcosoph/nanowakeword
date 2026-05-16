@@ -149,7 +149,7 @@ The primary method for controlling the NanoWakeWord framework is through a `.yam
     ├── noise/            # Background noises (fan, traffic, crowd)
     │   ├── cafe.wav
     │   └── office_noise.flac
-    └── rir/              # Room Impulse Response files
+    └── rir/              # Room Impulse Response (If you want)
         ├── small_room.wav
         └── hall.wav
     ```
@@ -241,44 +241,42 @@ Here’s a practical example of how to use it:
 ```python
 import pyaudio
 import numpy as np
-import os
-import sys
-# Import the interpreter from the library
-from nanowakeword import NanoInterpreter  
-#                Simple Configuration 
-MODEL_PATH = r"model/path/your.onnx"
-THRESHOLD = 0.9  # A simple threshold for detection | ⚠️ This may need to be changed (eg, 0.999, 0.80)
-# If you want, you can use more advanced methods like VAD or PATIENCE_FRAMES.
+from nanowakeword import NanoInterpreter # Import the interpreter from the library
 
-# Initialization 
-try:
-    print(" Initializing NanoInterpreter (Simple Mode)...")
-    
-    # Load the model with NO advanced features.
-    interpreter = NanoInterpreter.load_model(MODEL_PATH)
-    
-    key = list(interpreter.models.keys())[0]
-    print(f" Interpreter ready. Listening for '{key}'...")
+# Load model
+interpreter = NanoInterpreter.load_model(
+    r"model/path/your.onnx" # Your Model Path
+)
 
-    pa = pyaudio.PyAudio()
-    stream = pa.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=1280)
+# Setup microphone
+pa = pyaudio.PyAudio()
 
-    # Main Loop 
-    while True:
-        audio_chunk = np.frombuffer(stream.read(1280, exception_on_overflow=False), dtype=np.int16)
-        
-        # Call predict with NO advanced parameters.
-        score = interpreter.predict(audio_chunk).get(key, 0.0)
+stream = pa.open(
+    format=pyaudio.paInt16,
+    channels=1,
+    rate=16000,
+    input=True,
+    frames_per_buffer=1280
+)
 
-        # The detection logic is simple and external.
-        if score > THRESHOLD:
-            print(f"Detected '{key}'! (Score: {score:.2f})")
-            interpreter.reset()
-        else:
-            print(f"Score: {score:.3f}", end='\r', flush=True)
+print("Listening...")
 
-except KeyboardInterrupt:
-    print("")
+while True:
+    # Read audio from mic
+    audio_chunk = np.frombuffer(
+        stream.read(1280, exception_on_overflow=False),
+        dtype=np.int16
+    )
+
+    # Run prediction
+    result = interpreter.predict(audio_chunk)
+
+    # Detection
+    if result.score > 0.95:
+        print("Detected!")
+
+        # Optional
+        interpreter.reset()
 ```
 
 ## Deployment modes at a glance
@@ -360,7 +358,7 @@ In a world of complex machine learning tools, Nanowakeword is built on a simple 
 
 ## Community & Support
 
-Assistance for any issue—from data preparation to troubleshooting a stalled training process or an unexpected error—is readily available. The project prioritizes swift and effective solutions to ensure a smooth user experience.
+Assistance for any issue-from data preparation to troubleshooting a stalled training process or an unexpected error-is readily available. The project prioritizes swift and effective solutions to ensure a smooth user experience.
 
 For support, users can get help through the most convenient channel:
 
@@ -369,14 +367,6 @@ For support, users can get help through the most convenient channel:
 *   **[Official Website](https://arcosoph.com):** Provides documentation and includes a [contact](https://arcosoph.com/#contactForm) interface for direct communication.
 
 *All inquiries are reviewed and addressed as promptly as possible.*
-
-## Roadmap
-
-Nanowakeword is an actively developed project. Here are some of the features and improvements we are planning for the future:
-
--   **E2E:** End to End model
--   **Model Quantization:** Tools to automatically quantize the final `.onnx` model for even better performance on edge devices.
--   **Model Zoo Expansion:** Adding more pre-trained models for different languages and phrases.
 
 ## Contributing
 
