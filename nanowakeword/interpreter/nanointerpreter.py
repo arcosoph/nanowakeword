@@ -722,14 +722,18 @@ class NanoInterpreter:
         )
 
     def reset(self):
-        """Resets the interpreter's internal state for a new session."""
-        self.prediction_buffer.clear()
-        self.preprocessor.reset()
-        for mdl_name in self.hidden_states:
-            self.hidden_states[mdl_name] = None
-        for mdl_name in self.raw_scores:
-            self.raw_scores[mdl_name] = 0.0
-            self.post_processed_scores[mdl_name] = 0.0
+            """Resets the interpreter's internal state for a new session."""
+            self.prediction_buffer.clear()
+            
+            # Check if preprocessor exists before resetting
+            if self.preprocessor is not None:
+                self.preprocessor.reset()
+                
+            for mdl_name in self.hidden_states:
+                self.hidden_states[mdl_name] = None
+            for mdl_name in self.raw_scores:
+                self.raw_scores[mdl_name] = 0.0
+                self.post_processed_scores[mdl_name] = 0.0
 
     def predict_clip(self, clip: Union[str, np.ndarray], chunk_size: int = 1280, **kwargs) -> list:
         """Predicts on a full audio clip by simulating a stream."""

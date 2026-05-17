@@ -301,9 +301,17 @@ def serve(
                     windows.append(w)
             if not windows:
                 return np.zeros((1, 96), dtype=np.float32)
+            # batch = np.array(windows)[:, :, :, None].astype(np.float32)
+            # return embedding_session.run(None, {"input_1": batch})[0].squeeze(axis=-1) \
+            #     if batch.ndim == 4 else np.zeros((1, 96), dtype=np.float32)
+
             batch = np.array(windows)[:, :, :, None].astype(np.float32)
-            return embedding_session.run(None, {"input_1": batch})[0].squeeze(axis=-1) \
-                if batch.ndim == 4 else np.zeros((1, 96), dtype=np.float32)
+            if batch.ndim != 4:
+                return np.zeros((1, 96), dtype=np.float32)
+            
+            out = embedding_session.run(None, {"input_1": batch})[0]
+            # Safely reshape to (batch_size, 96) ignoring extra dimensions
+            return out.reshape(out.shape[0], -1)
 
         def process(self, audio: np.ndarray) -> Optional[np.ndarray]:
             """
