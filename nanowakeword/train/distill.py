@@ -112,6 +112,10 @@ def distill_model(
     # Build student
     student = _build_student(teacher, input_shape, dist_cfg)
     student.to(device)
+    student.classifier.to(device) 
+
+    teacher.to(device)             
+    teacher.classifier.to(device)  
 
     teacher_params = _count_params(teacher)
     student_params = _count_params(student)
@@ -272,6 +276,7 @@ def distill_from_onnx(
 
     student = _build_student(dummy_teacher, input_shape, dist_cfg)
     student.to(device)
+    student.classifier.to(device)  
 
     print_info(f"[Distillation] Student params: {_count_params(student):,}")
     print_info(f"[Distillation] Steps: {steps}, Temperature: {temperature}, Alpha: {alpha}")
