@@ -45,3 +45,4 @@ def download_file(url, target_directory):
                         f"({downloaded}/{total_size} bytes)",
                         end=""
                     )
+        print()

@@ -73,7 +73,7 @@ class ModelRegistry:
         model_path = model_dir / filename
 
         if not model_path.exists():
-            print(f"[nanowakeword] Downloading model '{filename}'...")
+            # print(f"[nanowakeword] Downloading model '{filename}'...")
             try:
                 download_file(entry["url"], str(model_dir))
             except Exception as e:
