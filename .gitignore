@@ -211,6 +211,7 @@ nww_model_test_from_mic.py
 nanowakeword/interpreter/models/mel_spectrogram/
 nanowakeword/interpreter/models/embedding/
 
+X/
 NwwResourcesModel/
 SonicWeave-v2/
 trained_models/

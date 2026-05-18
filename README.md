@@ -14,7 +14,7 @@
   
 </p>
 
-**Nanowakeword is a next-generation, adaptive framework designed to build high-performance, custom wake word models. More than just a tool, it’s an intelligent engine that train custom models, deploy them anywhere, and integrate them into any project with minimal code. From a Raspberry Pi Zero to a cloud server, from a single device to a distributed edge/cloud system, it handles the full lifecycle.**
+**NanoWakeword is a next-generation adaptive framework designed to build high-performance custom wake word models, acting as an intelligent engine that trains models, deploys them anywhere, and integrates them into any project with minimal code→from a Raspberry Pi Zero to a cloud server and across distributed edge/cloud systems, covering the full lifecycle seamlessly.**
 
 **Quick Access**
 - [Features](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#state-of-the-art-features-and-architecture)
@@ -22,8 +22,8 @@
 - [Train Model](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#train-model)
 - [Using model & Server](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#using-your-trained-model-inference)
 - [Performance](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#performance-and-evaluation)
+- [Help & Support](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#community--support)
 - [NOTIS](https://github.com/arcosoph/nanowakeword/blob/main/STATUS.md)
-- [Support](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#community--support)
 - [FAQ](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#faq)
 
 ## **Choose Your Architecture, Build Your Pro Model**
@@ -45,58 +45,155 @@ NanoWakeWord is a versatile framework offering a rich library of neural network 
 | **E-Branchformer**| Bleeding-edge research for potentially the highest accuracy. | Accuracy Potential | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=e_branchformer) |
 
 ---
-> NOTE: Nanowakeword is under active development. For important updates, version-specific notes, and the latest stability status of all features, please refer to our official status document.
->
-> **[➡️ View Latest Release Notes & Project Status](https://github.com/arcosoph/nanowakeword/blob/main/STATUS.md)**
+> NOTE: Nanowakeword is under active development. For important updates, version-specific notes, and the latest stability status of all features, please refer to our official status document.**[View Latest Release Notes & Project Status](https://github.com/arcosoph/nanowakeword/blob/main/STATUS.md)**
 
 
 ## State-of-the-Art Features and Architecture
 
-Nanowakeword is not merely a tool; it's a holistic, end-to-end ecosystem engineered to democratize the creation of state-of-the-art, custom wake word models. It moves beyond simple scripting by integrating a series of automated, production-grade systems that orchestrate the entire lifecycle-from data analysis and feature engineering to advanced training and deployment-optimized inference.
+NanoWakeword is a holistic, end-to-end ecosystem designed to make building and running custom wakeword models accessible to everyone. It goes beyond simple scripting by integrating multiple automated, production-grade systems that manage the entire lifecycle-from data analysis and feature engineering to advanced training and deployment-optimized inference.
+
+> ༼ つ ◕_◕ ༽つ Each section below contains detailed technical explanations. Click to expand.
 
 <details>
-<summary><strong>1. Builds a tiny student Model</strong></summary>
+<summary><strong>1. Builds a tiny student Model ↓</strong></summary>
+
 Built-in knowledge distillation - automatically generates a lightweight gate model from any trained model.
+
+Trains a tiny "student" model to mimic the output of a larger "teacher" model.
+The student is a stripped-down DNN - always architecture type "dnn" regardless
+of what the teacher was - because the goal is maximum speed, not accuracy parity.
+
+``` 
+ Loss = alpha * KL(student_soft || teacher_soft)   ← soft label matching
+    + (1 - alpha) * BCE(student_logit, hard_label) ← ground truth anchoring
+```
+Temperature scaling softens the teacher's probability distribution so the
+student learns from the full output distribution, not just the argmax.
+
 </details>
 
+
 <details>
-<summary><strong>2. The Production-Grade Data Pipeline: From Raw Audio to Optimized Features</strong></summary>
+<summary><strong>2. The Production-Grade Data Pipeline: From Raw Audio to Optimized Features ↓</strong></summary>
 
 Recognizing that data is the bedrock of any great model, Nanowakeword automates the entire data engineering lifecycle with a pipeline designed for scale and quality:
 
-*   **Phonetic Adversarial Negative Generation:** This is a key differentiator. The system moves beyond generic noise and random words by performing a phonetic analysis of your wake word. It then synthesizes acoustically confusing counter-examples—phrases that sound similar but are semantically different. This forces the model to learn fine-grained phonetic boundaries, dramatically reducing the false positive rate in real-world use.
+*   **TTS Model:** Supports multiple TTS models & Speakers.
 
-*   **Dynamic On-the-Fly Augmentation:** During training, a powerful augmentation engine injects a rich tapestry of real-world acoustic scenarios in real-time. This includes applying background noise at varying SNR levels, convolving clips with room impulse responses (RIR) for realistic reverberation, and applying a suite of other transformations like pitch shifting and filtering.
+*   **Phonetic Adversarial Negative Generation:** This is a key differentiator. The system moves beyond generic noise and random words by performing a phonetic analysis of your wake word. It then synthesizes acoustically confusing counter-examples-phrases that sound similar but are semantically different. This forces the model to learn fine-grained phonetic boundaries, dramatically reducing the false positive rate in real-world use.
 
-*   **Seamless Large-Scale Data Handling (`mmap`):** The framework shatters the memory ceiling of conventional training scripts. By utilizing memory-mapped files, it streams features directly from disk, enabling seamless training on datasets that can be hundreds of gigabytes or even terabytes in size, all on standard consumer hardware.
+*   **Augmentation:** The powerful & flexible augmentation engine injects a rich tapestry of real-world acoustic scenarios in real-time. This includes applying background noise at different SNR levels, (Optional: convolving clips with room impulse response (RIR) for realistic reverberation), and applying various other transformations such as pitch shifting and filtering.
 
 </details>
 
 <details>
-<summary><strong>3. A Modern Training Paradigm: State-of-the-Art Optimization Techniques</strong></summary>
+<summary><strong>3. ISBL: Importance Sampling based on Loss (Dynamic Hard-Example Mining) ↓</strong></summary>
+
+The `nanowakeword` training pipeline introduces a highly optimized, custom sampling algorithm called **ISBL (Importance Sampling based on Loss)**. 
+
+Instead of traditional random sampling or standard curriculum learning (which feeds easy data first), ISBL adopts a smarter "Active Mining" approach. It operates on a simple principle: **Do not waste CPU/GPU cycles on audio samples the model already understands. Focus on the mistakes.** 
+
+The system tracks the individual loss of every single audio sample across the entire dataset and dynamically increases the sampling probability of "hard" examples. To prevent model collapse (overfitting on unlearnable noisy data), ISBL introduces a non-linear smoothing factor.
+
+### 🧮 The ISBL Master Equation
+The core logic of the sampler is governed by the following dynamic probability distribution:
+
+$$
+\mathcal{P}(x_i \mid x_i \in C_k, t) =
+\frac{
+\left(\mathcal{L}_i^{(t-1)}\right)^\alpha + \epsilon
+}{
+\sum_{x_j \in C_k}
+\left[
+\left(\mathcal{L}_j^{(t-1)}\right)^\alpha + \epsilon
+\right]
+}
+$$
+
+**Where:**
+*   **$\mathcal{P}(x_i \mid x_i \in C_k, t)$**: The conditional probability of selecting a specific data sample $x_i$ from class pool $C_k$ at training step $t$.
+*   **$x_i, x_j$**: Individual data samples (e.g., specific audio clips) within the dataset. Here, $x_i$ represents the target sample being evaluated, while $x_j$ represents all competing samples within the same pool during summation.
+*   **$C_k$ (Class/Category Pool)**: A distinct subset or category of data (e.g., `targets` or `negatives`), isolated via the dataset's index pools.
+*   **$t$ (Training Step / Time)**: The current iteration or time step of the training loop, defining the temporal state of the sampling probabilities.
+*   **$\mathcal{L}_i^{(t-1)}$ (Loss/Hardness Score)**: The individual loss value computed for sample $x_i$ during its most recent forward pass at step $t-1$. Higher loss signifies higher "hardness". *(Note: At $t=0$, before any training occurs, all scores are uniformly initialized to $\mathcal{L}_i^{(0)} = 1.0$)*.
+*   **$\alpha$ (Smoothing Factor)**: A hyperparameter set to `0.75`. It acts as a contrast control that dampens extreme loss values. This prevents unlearnable, corrupted, or heavily noisy audio clips from dominating the batch gradients and causing model collapse.
+*   **$\epsilon$ (Epsilon / Stability Constant)**: A tiny positive constant set to `1e-6` serving a dual purpose:
+    1. **Mathematical Safety**: Prevents division-by-zero errors or absolute zero probabilities when a sample is perfectly learned.
+    2. **Catastrophic Forgetting Prevention**: As the model converges and all individual losses drop near zero ($\mathcal{L} \approx 0$), the equation naturally transitions into a uniform random sampler ($\mathcal{P} \approx \frac{1}{N}$), ensuring balanced baseline revision in later training stages.
+*   **$\sum_{x_j \in C_k}$ (Summation Over Class)**: The summation operator (Sigma) that aggregates the computed scores of **all** individual samples $x_j$ belonging to class $C_k$. Dividing the single sample's score by this total sum normalizes the output into a strict probability distribution bounded between $0$ and $1$.
+
+---
+
+### ⚙️ Architecture & Core Components
+
+To implement the ISBL algorithm efficiently on massive audio datasets, the system relies on two custom PyTorch components:
+
+#### 1. `AdaptiveLossAwareDataset` (Memory & Search Optimized)
+This dataset class manages millions of features without crashing system RAM.
+*   **Zero-Copy Memory:** Uses `numpy`'s `mmap_mode='r'` to read audio features directly from disk on the fly.
+*   **Global Loss Tracking:** Maintains a global PyTorch tensor initialized to `1.0` that tracks the exact $\mathcal{L}$ (loss) for every single sample across all data sources.
+*   **$O(\log N)$ Bisect Search:** Finding the correct source file and local index for a global sample ID is traditionally an $O(N)$ bottleneck. We optimized `__getitem__` to $O(\log N)$ using Python's `bisect` algorithm on pre-computed start indices, ensuring blazing-fast data loading.
+
+#### 2. `DynamicClassAwareSampler` (Composition-Driven)
+Standard samplers blindly shuffle data. Our sampler acts as the executor of the ISBL equation.
+*   **Batch Composition:** It builds exact batches based on user rules (e.g., 32 Targets, 64 Negatives, 32 Noise).
+*   **Weighted Multinomial Sampling:** It extracts the raw loss for the requested category, applies the $\alpha$ smoothing and $\epsilon$, and uses `torch.multinomial` to probabilistically select the batch.
+*   **Dynamic Replacement:** It intelligently toggles `replacement=False` to prevent the exact same hard sample from appearing multiple times in a single batch.
+</details>
+
+<details>
+<summary><strong>4.  A Modern Training Paradigm: State-of-the-Art Optimization Techniques ↓</strong></summary>
 
 The training process itself is infused with cutting-edge techniques to ensure the final model is not just accurate, but exceptionally robust and reliable:
 
-*   **Hybrid Loss Architecture:** The model's learning is guided by a sophisticated, dual-objective loss function. 
+*   **Super Learning:** ISBL: Importance Sampling based on Loss 
+
+*   **Seamless Large-Scale Data Handling (`mmap`):** The framework shatters the memory ceiling of conventional training scripts. By utilizing memory-mapped files, it streams features directly from disk, enabling seamless training on datasets that can be hundreds of gigabytes or even terabytes in size, all on standard consumer hardware.
 
 *   **Checkpoint Ensembling / Stochastic Weight Averaging (SWA):** Instead of relying on a single "best" checkpoint, the framework identifies and averages the weights of the most stable and high-performing models from the training run. This powerful ensembling technique finds a flatter, more robust minimum in the loss landscape, leading to a final model with provably better generalization to unseen data.
 
-*   **Resilient, Fault-Tolerant Workflow:** Long training sessions are protected. The framework automatically saves the entire training state—model weights, optimizer progress, scheduler state, and even the precise position of the data generator. This allows you to resume an interrupted session from the exact point you left off, ensuring zero progress is lost.
-
-*   **Transparent Live Dashboard:** A clean, dynamic terminal table provides a real-time, transparent view of all effective training parameters as they are being used, offering complete insight into the automated process.
+*   **Universal Export:** The final trained model is exported to the industry-standard **ONNX** & **Pytorch** format. This guarantees maximum hardware acceleration and platform-agnostic deployment across a vast range of environments, from powerful servers to resource-constrained edge devices.
 
 </details>
 
+
 <details>
-<summary><strong>4. The Deployment-Optimized Inference Engine: High Performance on the Edge</strong></summary>
+<summary><strong>5. The Deployment-Optimized Inference & Server ↓</strong></summary>
 
 A model's true value is in its deployment. Nanowakeword's inference engine is designed from the ground up for efficiency, low latency, and the challenges of real-world deployment:
 
 *   **Stateful Streaming Architecture:** It processes continuous audio streams incrementally, maintaining temporal context via hidden states for recurrent models (like LSTMs/GRUs). This is essential for delivering instant, low-latency predictions in real-time applications.
 
-*   **Universal Export:** The final trained model is exported to the industry-standard **ONNX** & **Pytorch** format. This guarantees maximum hardware acceleration and platform-agnostic deployment across a vast range of environments, from powerful servers to resource-constrained edge devices.
+*   **Integrated On-Device Post-Processing Stack:** The engine is a complete, production-ready solution. It incorporates an on-device stack that includes optional **Voice Activity Detection (VAD)** to conserve power, **Noise Reduction** to enhance clarity, intelligent **Debouncing/Patience Filters** and **Gatekeeper** Super light model that is always running. This stack transforms the raw model output into a reliable, robust trigger, ready for integration out of the box.
 
-*   **Integrated On-Device Post-Processing Stack:** The engine is a complete, production-ready solution. It incorporates an on-device stack that includes optional **Voice Activity Detection (VAD)** to conserve power, **Noise Reduction** to enhance clarity, and intelligent **Debouncing/Patience Filters**. This stack transforms the raw model output into a reliable, robust trigger, ready for integration out of the box.
+*   **Server:** A built-in server that helps run models in any way. All models can be run on the server, or some models can be run on the server while others run locally.The server has strong security measures like API keys, SSL, etc.
+
+</details>
+
+<details>
+<summary><strong>6. Signature Features ↓</strong></summary>
+
+*  **Training Journal:** Training Journal System
+
+    Nanowakeword will include a built-in Training Journal system that automatically records:
+
+    - All Training configuration
+    - Model parformence
+
+
+    This makes model training reproducible, debuggable, and research-friendly.
+
+    Users will be able to analyze:
+    - which configuration worked best
+    - Which model was the best
+
+    The goal is to make wakeword experimentation easier, transparent, and scalable. Designed for long-term experimentation and reproducible research.
+
+*   **Transparent Live Dashboard:** A clean, dynamic terminal table provides a real-time, transparent view of all effective training parameters as they are being used, offering complete insight into the automated process.
+
+*   **Graph:** An informative graph is available at the end of the training.
+
+*   **Resilient, Fault-Tolerant Workflow:** Long training sessions are protected. The framework automatically saves the entire training state—model weights, optimizer progress, scheduler state, and even the precise position of the data generator. This allows you to resume an interrupted session from the exact point you left off, ensuring zero progress is lost.
 
 </details>
 
@@ -105,7 +202,6 @@ A model's true value is in its deployment. Nanowakeword's inference engine is de
 The framework is architected to eliminate the common dependency conflicts that often disrupt machine learning workflows. All required packages are carefully version-managed to guarantee a stable environment from initial setup through to the final training execution.
 
 This design ensures that users can proceed from installation to model generation without encountering environment-related errors, allowing them to focus entirely on building their wake word model.
-
 
 ## Getting Started
 
@@ -348,8 +444,6 @@ In a world of complex machine learning tools, Nanowakeword is built on a simple 
 **4. Can I train a model for a language other than English?**
 > Yes! Nanowakeword is language-agnostic. As long as you can provide audio samples for your wake words, you can train a model for any language.
 
-<!-- **5. Which version of Nanowakeword should I use?**
-> Always use the latest version of Nanowakeword. Version v1.3.0 is the minimum supported, but using the latest ensures full compatibility and best performance. -->
 **5. What platforms are supported for running the trained model?**
 >  Inference (running the model) is extremely lightweight and can run smoothly on almost any device, including a Raspberry Pi 3/4, Linux systems, Android devices, and Apple platforms.
 

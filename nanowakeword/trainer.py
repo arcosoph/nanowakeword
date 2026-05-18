@@ -47,7 +47,7 @@ from nanowakeword.modules.model import Model
 from nanowakeword.train.train_model import Trainer
 
 from nanowakeword.data.data_sampler import ValidationDataset
-from nanowakeword.data.data_sampler import DynamicClassAwareSampler, HardnessCurriculumDataset
+from nanowakeword.data.data_sampler import DynamicClassAwareSampler, AdaptiveLossAwareDataset
 
 from nanowakeword.utils.DynamicTable import DynamicTable
 # from nanowakeword.utils.audio_analyzer import DatasetAnalyzer
@@ -394,7 +394,7 @@ def train(cli_args=None):
 
 
         # Pass the full manifest dictionary to the dataset
-        dataset = HardnessCurriculumDataset(
+        dataset = AdaptiveLossAwareDataset(
             feature_manifests=manifest
         )
 
@@ -605,7 +605,7 @@ def train(cli_args=None):
             print_error("No feature_manifest entries found in config. Cannot run standalone distillation.")
             sys.exit(1)
 
-        dataset = HardnessCurriculumDataset(feature_manifests=manifest)
+        dataset = AdaptiveLossAwareDataset(feature_manifests=manifest)
         if len(dataset) == 0:
             print_error("Dataset is empty. Check your feature file paths in the manifest.")
             sys.exit(1)

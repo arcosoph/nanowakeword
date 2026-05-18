@@ -23,10 +23,12 @@ import numpy as np
 from torch.utils.data import Dataset, Sampler
 from nanowakeword.utils.logger import print_info, print_warning, print_error
 
-class HardnessCurriculumDataset(Dataset):
+class AdaptiveLossAwareDataset(Dataset):
 
     def __init__(self, feature_manifests: dict):
         """
+        ISBL (Importance Sampling based on Loss) algorithm.
+        It adaptively tracks the hardness (loss) of each sample to prioritize hard examples.
         Initializes the dataset by loading memory-mapped files from a structured manifest.
         It creates separate index pools for each unique key in the manifest and
         initializes a hardness score for each sample.
@@ -43,7 +45,7 @@ class HardnessCurriculumDataset(Dataset):
 
         cumulative_len = 0
 
-        # Process each category (e.g., 'targets', 'negatives', 'backgrounds')
+        # Process each category (e.g., 'targets', 'negatives')
         for category, manifest in feature_manifests.items():
             if not manifest: continue
             
@@ -117,13 +119,13 @@ class HardnessCurriculumDataset(Dataset):
         return torch.from_numpy(feature.astype(np.float32)), label, index
 
 
-class DynamicClassAwareSampler(Sampler):
+class DynamicClassAwareSampler(Sampler): 
     """
     A sampler that builds each batch with a fixed number of samples from different classes
     (positive, speech_negative, noise_negative). The selection within each class is
     weighted by the sample's "hardness" score, which is updated dynamically during training.
     """
-    def __init__(self, dataset: HardnessCurriculumDataset, batch_composition: dict, feature_manifests: dict):
+    def __init__(self, dataset: AdaptiveLossAwareDataset, batch_composition: dict, feature_manifests: dict):
         self.dataset = dataset
         self.batch_composition = batch_composition
         self.feature_manifests = feature_manifests
@@ -341,7 +343,6 @@ def stitch_batch_generator(source_registry, blueprints, batch_size, input_shape)
                 
                 if item == 'targets': source_pool = target_keys
                 elif item == 'negatives': source_pool = negative_keys
-                # elif item == 'backgrounds': source_pool = background_keys
                 elif item in memmaps: key = item
 
                 if source_pool:
