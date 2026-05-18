@@ -98,7 +98,7 @@ The system tracks the individual loss of every single audio sample across the en
 ### 🧮 The ISBL Master Equation
 The core logic of the sampler is governed by the following dynamic probability distribution:
 
-$$
+<!-- $$
 \mathcal{P}(x_i \mid x_i \in C_k, t) =
 \frac{
 \left(\mathcal{L}_i^{(t-1)}\right)^\alpha + \epsilon
@@ -108,7 +108,10 @@ $$
 \left(\mathcal{L}_j^{(t-1)}\right)^\alpha + \epsilon
 \right]
 }
-$$
+$$ -->
+<p align="center">
+  <img src="https://pub-812e108f164d4805821c37cb3d3810f1.r2.dev/images/common/ISBL_Formula.png" alt="Logo" width="400">
+</p>
 
 **Where:**
 *   **$\mathcal{P}(x_i \mid x_i \in C_k, t)$**: The conditional probability of selecting a specific data sample $x_i$ from class pool $C_k$ at training step $t$.
