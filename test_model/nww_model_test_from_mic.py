@@ -1,50 +1,38 @@
-# # simple
-
 import pyaudio
 import numpy as np
-import os
-import sys
-import time
-# Import the interpreter class from the library
-from nanowakeword.interpreter.nanointerpreter import NanoInterpreter 
-#  Simple Configuration 
-MODEL_PATH = r"model/path/your.onnx"
-THRESHOLD = 0.95  # A simple threshold for detection | ⚠️⚠️ This may need to be changed (eg, 0.999, 0.80) 
-COOLDOWN = 1     # A simple cooldown managed outside the interpreter
-# If you want, you can use more advanced methods like VAD or PATIENCE_FRAMES.
+from nanowakeword import NanoInterpreter # Import the interpreter from the library
 
-# Initialization 
-if not os.path.exists(MODEL_PATH):
-    sys.exit(f"Error: Model not found at '{MODEL_PATH}'")
-try:
-    print(" Initializing NanoInterpreter (Simple Mode)...")
-    
-    # Load the model with NO advanced features.
-    interpreter = NanoInterpreter.load_model(MODEL_PATH)
-    
-    key = list(interpreter.models.keys())[0]
-    print(f" Interpreter ready. Listening for '{key}'...")
+# Load model
+interpreter = NanoInterpreter.load_model(
+    r"model/path/your.onnx" # Your Model Path
+)
 
-    pa = pyaudio.PyAudio()
-    stream = pa.open(format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=1280)
+# Setup microphone
+pa = pyaudio.PyAudio()
 
-    last_detection_time = 0
-    
-    # Main Loop 
-    while True:
-        audio_chunk = np.frombuffer(stream.read(1280, exception_on_overflow=False), dtype=np.int16)
-        
-        # Call predict with NO advanced parameters.
-        score = interpreter.predict(audio_chunk).get(key, 0.0)
+stream = pa.open(
+    format=pyaudio.paInt16,
+    channels=1,
+    rate=16000,
+    input=True,
+    frames_per_buffer=1280
+)
 
-        # The detection logic is simple and external.
-        current_time = time.time()
-        if score > THRESHOLD and (current_time - last_detection_time > COOLDOWN):
-            print(f"Detected '{key}'! (Score: {score:.5f})")
-            last_detection_time = current_time
-            interpreter.reset()
-        else:
-            print(f"Score: {score:.5f}", end='\r', flush=True)
+print("Listening...")
 
-except KeyboardInterrupt:
-    print("")
+while True:
+    # Read audio from mic
+    audio_chunk = np.frombuffer(
+        stream.read(1280, exception_on_overflow=False),
+        dtype=np.int16
+    )
+
+    # Run prediction
+    result = interpreter.predict(audio_chunk)
+
+    # Detection
+    if result.score > 0.95:
+        print("Detected!")
+
+        # Optional
+        interpreter.reset()

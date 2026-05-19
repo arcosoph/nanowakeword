@@ -17,7 +17,7 @@ negative_data_path: "./data/negative"
 background_paths: ["SonicWeave-v2/part1",
                    "SonicWeave-v2/part2",
                    "SonicWeave-v2/part3"
-                  ] # ⚠️ Download from here: https://huggingface.co/datasets/arcosoph/SonicWeave-v2
+                  ] #⚠️ Download from here: https://huggingface.co/datasets/arcosoph/datasets_zip/resolve/main/audio/SonicWeave-v2.zip
 
 rir_paths: ["rir"] # You can leave it blank if you want (⚠️ It is better not to use it)
 
@@ -58,18 +58,6 @@ weight_decay: 0.01
 momentum: 0.9
 num_workers: 0
 
-# ============================================================
-# Batch Composition
-# ============================================================
-batch_composition:
-  t: 50
-  b: 90
-  hn: 20      
-  n: 100
-  AE28H_float32: 100
-  # oww: 1000
-  # and others
-
 # ================================
 # Builds a tiny student Model
 # ================================
@@ -83,28 +71,45 @@ distillation:
   student_n_blocks: 1
   student_embedding_dim: 8
 
+# ============================================================
+# Batch Composition
+# ============================================================
+# ⚠️ ༼ つ ◕_◕ ༽つ Every feature key used inside `feature_manifest`
+# must also be added here with a batch value.
+# Otherwise, that dataset will not be included during training.
+batch_composition:
+  t: 50
+  b: 90
+  hn: 20      
+  n: 100
+  AE28H_float32: 100
+  # oww: 1000
+  # and others
 
 # ============================================================
 # Feature Manifest
 # ============================================================
-
-feature_manifest:
+# ⚠️ ༼ つ ◕_◕ ༽つ Please make sure all dataset paths are set correctly.
+# Dataset filenames and locations may differ on your system,
+# so always use the actual path to the corresponding file.
+feature_manifest: # Multiple feature datasets can be added here with any custom name/key.
   targets:
     t: "./trained_models/arcosoph_A_v1/features/positive_features.npy"
 
   negatives:
-    AE28H_float32: "AE29H_float32.npy" # Download from here: https://huggingface.co/datasets/arcosoph/AE29H_float32
+    AE28H_float32: "AE29H_float32.npy"     #⚠️ Download from here: https://huggingface.co/datasets/arcosoph/AE29H_float32/resolve/main/AE29H_float32.npy
     b: "RACON_11h_v1.npy"                  # background/ambient noise
     n: "./trained_models/arcosoph_A_v1/features/negative_features.npy"
     hn: "./trained_models/arcosoph_A_v1/features/hard_negative_features.npy"
-    # oww: ./openwakeword_features_ACAV100M_2000_hrs_16bit.npy # Here: https://huggingface.co/datasets/davidscripka/openwakeword_features
+    # oww: ./openwakeword_features_ACAV100M_2000_hrs_16bit.npy #⚠️ Here: https://huggingface.co/datasets/davidscripka/openwakeword_features/resolve/main/openwakeword_features_ACAV100M_2000_hrs_16bit.npy
     # and others
 
   targets_val:
     t_v: './trained_models/arcosoph_A_v1/features/positive_features_val.npy'
+    # and others
 
   negatives_val:
-    bv: "RACON_11h_v1.npy" # Download from here: https://huggingface.co/datasets/arcosoph/RACON_11h_v1
+    bv: "RACON_11h_v1.npy" #⚠️ Download from here: https://huggingface.co/datasets/arcosoph/RACON_11h_v1/resolve/main/RACON_11h_v1.npy
 
 
 ## Synthetic Data Generation

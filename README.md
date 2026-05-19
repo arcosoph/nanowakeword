@@ -14,7 +14,7 @@
   
 </p>
 
-**NanoWakeword is a next-generation adaptive framework designed to build high-performance custom wake word models, acting as an intelligent engine that trains models, deploys them anywhere, and integrates them into any project with minimal code→from a Raspberry Pi Zero to a cloud server and across distributed edge/cloud systems, covering the full lifecycle seamlessly.**
+**Nanowakeword is a next-generation adaptive framework designed to build high-performance custom wake word models, acting as an intelligent engine that trains models, deploys them anywhere, and integrates them into any project with minimal code→from a Raspberry Pi Zero to a cloud server and across distributed edge/cloud systems, covering the full lifecycle seamlessly.**
 
 **Quick Access**
 - [Features](https://github.com/arcosoph/nanowakeword?tab=readme-ov-file#state-of-the-art-features-and-architecture)
