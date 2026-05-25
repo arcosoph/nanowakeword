@@ -203,14 +203,14 @@ augmentation_batch_size: 16
 feature_gen_cpu_ratio: 1.0
 
 augmentation_settings:
-  gain_prob: 1.0
   max_gain_in_db: 2.0
-  max_pitch_semitones: 1.0
-  max_snr_in_db: 35.0
   min_gain_in_db: -2.0
-  min_pitch_semitones: -1.0
+  max_snr_in_db: 35.0
   min_snr_in_db: 15.0
+  max_pitch_semitones: 1.0
+  min_pitch_semitones: -1.0
   pitch_prob: 0.3
+  gain_prob: 1.0
   rir_prob: 0.0
 
 

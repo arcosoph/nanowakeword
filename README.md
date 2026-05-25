@@ -118,7 +118,7 @@ $$ -->
 *   **$x_i, x_j$**: Individual data samples (e.g., specific audio clips) within the dataset. Here, $x_i$ represents the target sample being evaluated, while $x_j$ represents all competing samples within the same pool during summation.
 *   **$C_k$ (Class/Category Pool)**: A distinct subset or category of data (e.g., `targets` or `negatives`), isolated via the dataset's index pools.
 *   **$t$ (Training Step / Time)**: The current iteration or time step of the training loop, defining the temporal state of the sampling probabilities.
-*   **$\mathcal{L}_i^{(t-1)}$ (Loss/Hardness Score)**: The individual loss value computed for sample $x_i$ during its most recent forward pass at step $t-1$. Higher loss signifies higher "hardness". *(Note: At $t=0$, before any training occurs, all scores are uniformly initialized to $\mathcal{L}_i^{(0)} = 1.0$)*.
+*   **$\mathcal{L}_i^{(t-1)}$ (Loss/Hardness Score)**: The individual loss value computed for sample $x_i$ during its most recent forward pass at step $t-1$. Higher loss signifies higher "hardness". (Note: At $t=0$, before any training occurs, all scores are uniformly initialized to $\mathcal{L}_i^{(0)} = 1.0$).
 *   **$\alpha$ (Smoothing Factor)**: A hyperparameter set to `0.75`. It acts as a contrast control that dampens extreme loss values. This prevents unlearnable, corrupted, or heavily noisy audio clips from dominating the batch gradients and causing model collapse.
 *   **$\epsilon$ (Epsilon / Stability Constant)**: A tiny positive constant set to `1e-6` serving a dual purpose:
     1. **Mathematical Safety**: Prevents division-by-zero errors or absolute zero probabilities when a sample is perfectly learned.
