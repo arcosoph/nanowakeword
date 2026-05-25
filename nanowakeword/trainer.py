@@ -34,6 +34,7 @@ import numpy as np
 import collections
 import collections.abc
 from torch.utils.data import DataLoader
+from nanowakeword._export.custom_export import export_custom_model
 
 from nanowakeword._config.ConfigProxy import ConfigProxy
 from nanowakeword._config.config_generator import ConfigGenerator
@@ -544,6 +545,10 @@ def train(cli_args=None):
                     model_name=model_name + "_lite",
                     output_dir=model_save_dir,
                 )
+                try:
+                    export_custom_model(student, input_shape, config, model_name + "_lite", model_save_dir)
+                except Exception as e:
+                    print_warning(f"Custom export hook for lite model failed: {e}")
                 print_info(f"Lite model saved alongside main model in: {model_save_dir}")
             except Exception as e:
                 print_error(f"Distillation failed and was skipped. Details: {e}")
@@ -553,6 +558,12 @@ def train(cli_args=None):
             model_name=model_name,
             output_dir=model_save_dir
         )
+
+        # Run user-provided export hook (if configured). This runs in addition to built-in exports.
+        try:
+            export_custom_model(best_model, input_shape, config, model_name, model_save_dir)
+        except Exception as e:
+            print_warning(f"Custom export hook encountered an error: {e}")
 
         if config.get("enable_journaling", True):
             final_metrics = {}

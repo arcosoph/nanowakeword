@@ -904,6 +904,84 @@ Fine-tuning parameters for specialized scenarios.
 
 ---
 
+## Custom Export Model
+
+Nanowakeword supports user-provided export hooks so you can run any custom export code (for example, CoreML, TFLite, or a private converter) automatically after training and after distillation.
+
+How it works:
+- Place a Python script anywhere on disk that exposes a callable (default name `export_model`) which accepts the following arguments (either by keyword or positional):
+  - `model` - the in-memory PyTorch model (or a student model during distillation)
+  - `input_shape` - the detected input shape tuple
+  - `config` - the final merged training configuration (a `ConfigProxy`-backed dict)
+  - `model_name` - the name chosen for the model (string)
+  - `output_dir` - directory where built-in exporters have written artifacts
+
+Alternatively, specify a shell `command` which will be executed; the command supports Python-style `str.format()` placeholders: `{model_path}`, `{model_name}`, `{output_dir}`.
+
+Configuration (example YAML):
+
+```yaml
+export_model:
+  # Option A: Python script
+  script: /absolute/path/to/my_coreml_export.py
+  function: export_model   # optional, defaults to export_model
+
+  # Option B: shell command (alternative)
+  # command: "python /scripts/convert_to_coreml.py --onnx {model_path} --out {output_dir}"
+```
+
+Example Python export script (`my_coreml_export.py`):
+
+```python
+def export_model(model, input_shape, config, model_name, output_dir):
+    """Example: export a model to CoreML.
+
+    Notes:
+    - This example assumes you have `coremltools` installed and available.
+    - Many users prefer to export the ONNX produced by the built-in exporter
+      and run a converter on that file instead of converting a live PyTorch model.
+    """
+    import os
+    # Option 1: convert the in-memory PyTorch model directly
+    try:
+        import coremltools as ct
+        # Example: convert a traced TorchScript model
+        # WARNING: conversion requirements depend on your model; this is illustrative.
+        model.eval()
+        example_input = None
+        # Create a dummy input matching the expected shape; adapt dtype/device as needed
+        import torch
+        example_input = torch.randn(1, *input_shape)
+        traced = torch.jit.trace(model, example_input)
+        mlmodel = ct.convert(traced)
+        out_path = os.path.join(output_dir, model_name + ".mlmodel")
+        mlmodel.save(out_path)
+        print(f"Saved CoreML model to {out_path}")
+        return
+    except Exception as e:
+        # Fallback: convert the already-produced ONNX file with an external tool
+        print(f"In-memory CoreML conversion failed: {e}. Trying ONNX fallback.")
+
+    # Option 2: operate on ONNX produced by built-in exporter
+    onnx_path = os.path.join(output_dir, model_name + ".onnx")
+    if os.path.exists(onnx_path):
+        # call your converter here, e.g. coremltools.converters.onnx.convert(...) or a CLI
+        print(f"Found ONNX at {onnx_path}. Run your converter here.")
+    else:
+        raise FileNotFoundError(f"Could not find ONNX at {onnx_path}")
+```
+
+Command example using `command` (shell):
+
+```yaml
+custom_export:
+  command: "python /scripts/onnx_to_coreml.py --onnx {model_path} --out {output_dir}"
+```
+
+This feature is intentionally flexible: your script can use the in-memory `torch` model, the ONNX file written by the trainer, or call any external tooling your workflow requires.
+
+---
+
 ## Pipeline Control
 
 Master switches to enable/disable major processing stages.

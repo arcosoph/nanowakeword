@@ -54,8 +54,14 @@ def export_onnx_model(model, input_shape, config, model_name, output_dir):
     onnx_path = os.path.join(output_dir, model_name + '.onnx')
     
     print_info(f"Saving inference-ready ONNX model to '{onnx_path}'")
+
+    x_export = config.get("custom_export") or config.get("export_model") or {}
+
+    opset_version = x_export.get(
+        "onnx_opset_version",
+        config.get("onnx_opset_version", 17)
+    )
     
-    opset_version = config.get("onnx_opset_version", 17)
     print_info(f"Using ONNX opset version: {opset_version}")
 
     try:
