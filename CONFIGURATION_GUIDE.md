@@ -89,7 +89,7 @@ Parameters controlling the neural network structure and behavior.
 ### `model_type`
 - **Type:** `string`
 - **Default:** `"dnn"`
-- **Valid Options:** `"dnn"`, `"lstm"`, `"gru"`, `"rnn"`, `"cnn"`, `"transformer"`, `"crnn"`, `"tcn"`, `"quartznet"`, `"conformer"`, `"e_branchformer"`
+- **Valid Options:** `"dnn"`, `"lstm"`, `"gru"`, `"rnn"`, `"cnn"`, `"transformer"`, `"crnn"`, `"tcn"`, `"quartznet"`, `"conformer"`, `"e_branchformer"`, `"custom"`
 - **Description:** The neural network architecture to use for wake word detection.
 - **Complexity Levels (from simplest to most complex):**
   - `dnn` - Dense feedforward network (lightweight, fast)
@@ -215,6 +215,84 @@ quartznet_config:                 # Channel, kernel, repeat config
   - [256, 33, 1]
   - [512, 39, 1]
 ```
+
+### Custom Architecture
+- **Type:** `string`
+- **Value:** `"custom"`
+- **Description:** Load a user-defined `torch.nn.Module` class from a Python file or installed module.
+- **Required Settings:**
+  - `custom_model_config.module_path`
+  - `custom_model_config.class_name`
+- **Optional Settings:**
+  - `custom_model_config.params`
+
+- **Custom model requirements:**
+  - The class must inherit from `torch.nn.Module`
+  - It should return an embedding tensor shaped `[batch_size, embedding_dim]`
+  - It may accept the following standard constructor arguments:
+    - `input_shape`
+    - `embedding_dim`
+    - `dropout_prob`
+    - `activation_fn`
+    - `config`
+  - Additional custom parameters may be provided via `params`
+
+- **Example:**
+
+You can create a Python file.
+```python
+import torch
+from torch import nn
+
+
+class MyCustomModel(nn.Module):
+
+    def __init__(self,input_shape, embedding_dim=64, dropout_prob=0.5, activation_fn=None, config=None, hidden_channels=32,):
+        super().__init__()
+        self.input_shape = input_shape
+        self.embedding_dim = embedding_dim
+        self.activation_fn = activation_fn if activation_fn is not None else nn.ReLU()
+        # Build CNN feature extractor (no flatten/linear until we know conv output size)
+        self.feature_extractor = nn.Sequential(
+            nn.Conv2d(1, hidden_channels, kernel_size=3, padding=1),
+            self.activation_fn,
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(hidden_channels, hidden_channels * 2, kernel_size=3, padding=1),
+            self.activation_fn,
+            nn.AdaptiveAvgPool2d((1, 1)),
+        )
+        # Determine flattened feature size by running a dummy tensor through the convs
+        with torch.no_grad():
+            dummy = torch.zeros(1, 1, *input_shape)
+            conv_out = self.feature_extractor(dummy)
+            flattened_size = int(conv_out.numel() // conv_out.shape[0])
+        self.embedding_head = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(flattened_size, 128),
+            self.activation_fn,
+            nn.Dropout(dropout_prob),
+            nn.Linear(128, embedding_dim),
+        )
+    def forward(self, x):
+        # Expect input shaped [batch, time, features] or [batch, 1, time, features]
+        if x.dim() == 3:
+            x = x.unsqueeze(1)
+        x = self.feature_extractor(x)
+        x = self.embedding_head(x)
+        return x
+
+```
+In your config:
+```yaml
+model_type: "custom"
+custom_model_config:
+  module_path: "path/to/your/custom_model_architectures.py"
+  class_name: "MyCustomModel"
+  params:
+    hidden_channels: 32
+```
+
+- **Important:** `module_path` may be either a relative path to a Python file or an importable Python module name.
 
 ---
 

@@ -433,47 +433,63 @@ class Trainer:
         data_iterator = iter(itertools.cycle(X))
 
         if resume_from_dir:
-            resume_checkpoint_dir = os.path.join(resume_from_dir, "training_artifacts", "checkpoints")
-            print_info(f"Attempting to resume training from: {resume_checkpoint_dir}")
-            if os.path.exists(resume_checkpoint_dir):
-                checkpoints = [f for f in os.listdir(resume_checkpoint_dir) if f.startswith("checkpoint_step_") and f.endswith(".pth")]
-                if checkpoints:
-                    latest_step = -1
-                    latest_checkpoint_file = None
-                    for cp_file in checkpoints:
-                        match = re.search(r"checkpoint_step_(\d+).pth", cp_file)
-                        if match:
-                            step = int(match.group(1))
-                            if step > latest_step:
-                                latest_step = step
-                                latest_checkpoint_file = cp_file
-                    
-                    if latest_checkpoint_file:
-                        checkpoint_path = os.path.join(resume_checkpoint_dir, latest_checkpoint_file)
-                        print_info(f"Loading latest checkpoint: {checkpoint_path}")
-                        checkpoint = torch.load(checkpoint_path, map_location=self.model.device)
-                        
-                        self.model.load_state_dict(checkpoint['model_state_dict'])
-                        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                        self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-                        
-                        start_step = checkpoint.get('step', 0)
-                        ema_loss = checkpoint.get('ema_loss', None)
-                        steps_without_improvement = checkpoint.get('steps_without_improvement', 0)
-                        best_ema_loss_for_stopping = checkpoint.get('best_ema_loss_for_stopping', float('inf'))
-                        self.model.history['loss'] = checkpoint.get('loss_history', [])
-                        print_info(f"Successfully restored state. Resuming training from step {start_step + 1}.")
-                        
-                        print_info("Synchronizing data stream to the restored step...")
-                        for _ in tqdm(range(start_step + 1), desc="Fast-forwarding data", unit="steps", leave=False):
-                            next(data_iterator, None)
+                    resume_checkpoint_dir = os.path.join(resume_from_dir, "training_artifacts", "checkpoints")
+                    print_info(f"Attempting to resume training from: {resume_checkpoint_dir}")
+                    if os.path.exists(resume_checkpoint_dir):
+                        checkpoints = [f for f in os.listdir(resume_checkpoint_dir) if f.startswith("checkpoint_step_") and f.endswith(".pth")]
+                        if checkpoints:
+                            latest_step = -1
+                            latest_checkpoint_file = None
+                            for cp_file in checkpoints:
+                                match = re.search(r"checkpoint_step_(\d+).pth", cp_file)
+                                if match:
+                                    step = int(match.group(1))
+                                    if step > latest_step:
+                                        latest_step = step
+                                        latest_checkpoint_file = cp_file
+                            
+                            if latest_checkpoint_file:
+                                checkpoint_path = os.path.join(resume_checkpoint_dir, latest_checkpoint_file)
+                                print_info(f"Loading latest checkpoint: {checkpoint_path}")
+                                checkpoint = torch.load(checkpoint_path, map_location=self.model.device, weights_only=False)
+                                
+                                # Model, Optimizer & Scheduler State
+                                self.model.load_state_dict(checkpoint['model_state_dict'])
+                                self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                                self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+                                
+                                # Training States
+                                start_step = checkpoint.get('step', 0) + 1 # +1 to start from next step
+                                ema_loss = checkpoint.get('ema_loss', None)
+                                steps_without_improvement = checkpoint.get('steps_without_improvement', 0)
+                                best_ema_loss_for_stopping = checkpoint.get('best_ema_loss_for_stopping', float('inf'))
+                                
+                                # Validation & History States (Crucial for auto_train final model)
+                                self.model.history = checkpoint.get('model_history', self.model.history)
+                                self.best_error_score = checkpoint.get('best_error_score', float('inf'))
+                                self.best_model_on_error_score = checkpoint.get('best_model_on_error_score', None)
+                                self.best_training_checkpoints = checkpoint.get('best_training_checkpoints', [])
+                                self.best_training_scores = checkpoint.get('best_training_scores', [])
+                                
+                                # RNG States (for deterministic resume)
+                                if 'torch_rng_state' in checkpoint:
+                                    torch.set_rng_state(checkpoint['torch_rng_state'])
+                                if 'torch_cuda_rng_state' in checkpoint and torch.cuda.is_available():
+                                    torch.cuda.set_rng_state_all(checkpoint['torch_cuda_rng_state'])
+                                if 'np_rng_state' in checkpoint:
+                                    np.random.set_state(checkpoint['np_rng_state'])
+                                if 'random_rng_state' in checkpoint:
+                                    random.setstate(checkpoint['random_rng_state'])
+
+                                print_info(f"Successfully restored state. Resuming training from step {start_step}.")
+                                
+                            else:
+                                print_info("WARNING: Checkpoint files found, but names are invalid. Starting fresh.")
+                        else:
+                            print_info("WARNING: No valid checkpoint files found. Starting fresh.")
                     else:
-                        print_info("WARNING: Checkpoint files found, but their names are not in the expected format. Starting fresh.")
-                else:
-                    print_info("WARNING: No valid checkpoint files found in the directory. Starting fresh.")
-            else:
-                print_info(f"WARNING: Checkpoint directory not found at '{resume_checkpoint_dir}'. Starting fresh.")
-        
+                        print_info(f"WARNING: Checkpoint directory not found at '{resume_checkpoint_dir}'. Starting fresh.")
+
         table_updater.update(force_print=True)
     
         training_loop = tqdm(data_iterator, total=max_steps, desc="Training", initial=start_step)
@@ -672,7 +688,18 @@ class Trainer:
                     'ema_loss': ema_loss,
                     'best_ema_loss_for_stopping': best_ema_loss_for_stopping,
                     'steps_without_improvement': steps_without_improvement,
-                    'loss_history': self.model.history['loss']
+                    
+                    'model_history': self.model.history,
+                    'best_error_score': self.best_error_score,
+                    'best_model_on_error_score': self.best_model_on_error_score,
+                    'best_training_checkpoints': self.best_training_checkpoints,
+                    'best_training_scores': self.best_training_scores,
+                    
+                    # RNG States for perfect resume:
+                    'torch_rng_state': torch.get_rng_state(),
+                    'torch_cuda_rng_state': torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+                    'np_rng_state': np.random.get_state(),
+                    'random_rng_state': random.getstate()
                 }
                 checkpoint_name = f"checkpoint_step_{step_ndx}.pth"
                 torch.save(checkpoint_data, os.path.join(checkpoint_dir, checkpoint_name))

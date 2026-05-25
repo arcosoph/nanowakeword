@@ -19,6 +19,10 @@
 
 # (✿◕‿◕✿)
 import copy
+import importlib
+import importlib.util
+import inspect
+import os
 import torch
 import random
 import logging
@@ -148,6 +152,63 @@ class Model(nn.Module):
                 dropout_prob=dropout_prob,
                 activation_fn=self.activation_fn
             )
+        elif model_type in {"custom", "custom_model"}:
+            custom_cfg = config.get("custom_model_config", {})
+            module_path = custom_cfg.get("module_path")
+            class_name = custom_cfg.get("class_name")
+
+            if not module_path or not class_name:
+                raise ValueError(
+                    "For model_type='custom', custom_model_config must contain "
+                    "'module_path' and 'class_name'."
+                )
+
+            module = None
+            abs_path = os.path.abspath(module_path)
+
+            if os.path.isfile(abs_path):
+                module_name = os.path.splitext(os.path.basename(abs_path))[0]
+                spec = importlib.util.spec_from_file_location(module_name, abs_path)
+                if spec is None or spec.loader is None:
+                    raise ImportError(f"Unable to load custom model module from '{abs_path}'")
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+            else:
+                try:
+                    module = importlib.import_module(module_path)
+                except Exception as exc:
+                    raise ImportError(
+                        f"Custom model module '{module_path}' could not be imported: {exc}"
+                    )
+
+            custom_class = getattr(module, class_name, None)
+            if custom_class is None:
+                raise AttributeError(
+                    f"Custom model class '{class_name}' not found in module '{module_path}'."
+                )
+
+            custom_params = custom_cfg.get("params", {}) or {}
+            base_kwargs = {
+                "input_shape": input_shape,
+                "embedding_dim": embedding_dim,
+                "dropout_prob": dropout_prob,
+                "activation_fn": self.activation_fn,
+                "config": config,
+            }
+
+            # Pass only supported kwargs to the custom class constructor.
+            try:
+                signature = inspect.signature(custom_class)
+                supported_kwargs = {
+                    name: value
+                    for name, value in base_kwargs.items()
+                    if name in signature.parameters
+                }
+            except (ValueError, TypeError):
+                supported_kwargs = base_kwargs
+
+            supported_kwargs.update(custom_params)
+            self.model = custom_class(**supported_kwargs)
 
         else:
             raise ValueError(f"Unsupported model_type: '{model_type}'.")
