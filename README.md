@@ -156,7 +156,7 @@ The training process itself is infused with cutting-edge techniques to ensure th
 
 *   **Checkpoint Ensembling / Stochastic Weight Averaging (SWA):** Instead of relying on a single "best" checkpoint, the framework identifies and averages the weights of the most stable and high-performing models from the training run. This powerful ensembling technique finds a flatter, more robust minimum in the loss landscape, leading to a final model with provably better generalization to unseen data.
 
-*   **Universal Export:** The final trained model is exported to the industry-standard **ONNX** & **Pytorch** format. This guarantees maximum hardware acceleration and platform-agnostic deployment across a vast range of environments, from powerful servers to resource-constrained edge devices.
+*   **Universal Export:** The final trained model is exported to industry-standard formats such as **ONNX** & **PyTorch**, or your own **[Custom](https://github.com/arcosoph/nanowakeword/blob/main/CONFIGURATION_GUIDE.md#custom-export-model)** formats (e.g., TFLite, CoreML). This ensures maximum hardware acceleration and platform-agnostic deployment across a wide range of environments, from powerful servers to resource-constrained edge devices.
 
 </details>
 
