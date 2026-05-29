@@ -97,6 +97,7 @@ Parameters controlling the neural network structure and behavior.
   - `lstm`, `gru`, `rnn` - Recurrent networks (excellent for sequences)
   - `crnn` - Hybrid CNN-RNN (combines both strengths)
   - `transformer`, `conformer`, `e_branchformer` - Advanced attention-based (most powerful, most complex)
+  - [custom architectures](https://github.com/arcosoph/nanowakeword/blob/main/CONFIGURATION_GUIDE.md#custom-architecture)
 
 - **Examples by use case:**
   ```yaml
@@ -602,16 +603,16 @@ Configuration Schema (`data_generation_tasks`):
     The `data_generation_tasks` key in your config file should be a list of
     dictionaries, where each dictionary represents a single task.
 
-    Task Keys:
-        name (str): A descriptive name for the task (e.g., "Positive Wake Words").
-        enabled (bool): If `False`, this task will be skipped. Defaults to `True`.
-        output_dir (str): The path to the directory where audio clips will be saved.
-        num_samples (int): The total number of audio clips to generate for this task.
-        file_prefix (str): A prefix for the generated audio filenames (e.g., "pos_").
-        tts_settings (dict, optional): Task-specific TTS settings that override
-                                        the global `tts_settings`.
-        text_source (dict): A dictionary defining the source of the text to be
-                            synthesized. This is the core of the task's logic.
+## Task Keys:
+
+ - `name` (str): A descriptive name for the task (e.g., "Positive Wake Words").
+ - `enabled` (bool): If `False`, this task will be skipped. Defaults to `True`.
+ - `output_dir` (str): The path to the directory where audio clips will be saved.
+ - `num_samples` (int): The total number of audio clips to generate for this task.
+ - `file_prefix` (str): A prefix for the generated audio filenames (e.g., "pos_").
+ - `tts_settings` (dict, optional): Task-specific TTS settings that override the global `tts_settings`.
+ - `text_source` (dict): A dictionary defining the source of the text to be
+                    synthesized. This is the core of the task's logic.
 
 The `text_source` Dictionary:
     This dictionary must contain a `type` key, which determines how the text

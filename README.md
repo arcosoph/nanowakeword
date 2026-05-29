@@ -51,7 +51,7 @@ NanoWakeWord is a versatile framework offering a rich library of neural network 
 
 ## State-of-the-Art Features and Architecture
 
-NanoWakeword is a holistic, end-to-end ecosystem designed to make building and running custom wakeword models accessible to everyone. It goes beyond simple scripting by integrating multiple automated, production-grade systems that manage the entire lifecycle-from data analysis and feature engineering to advanced training and deployment-optimized inference.
+Nanowakeword is a holistic, end-to-end ecosystem designed to make building and running custom wakeword models accessible to everyone. It goes beyond simple scripting by integrating multiple automated, production-grade systems that manage the entire lifecycle-from data analysis and feature engineering to advanced training and deployment-optimized inference.
 
 > ༼ つ ◕_◕ ༽つ Each section below contains detailed technical explanations. Click to expand.
 
@@ -232,7 +232,7 @@ pip install git+https://github.com/arcosoph/nanowakeword.git
 
 ## Train Model
 
-The primary method for controlling the NanoWakeWord framework is through a `.yaml` file. This file acts as the central hub for your entire project, defining data paths and controlling which pipeline stages are active.
+The primary method for controlling the Nanowakeword framework is through a `.yaml` file. This file acts as the central hub for your entire project, defining data paths and controlling which pipeline stages are active.
 
 ### Simple Example Workflow
 
@@ -495,5 +495,10 @@ This project is licensed under the Apache 2.0 License - see the [LICENSE](https:
     <a href="https://github.com/arcosoph/NanoWakeWord" style="color:#007BFF; font-weight:bold; text-decoration:none;">
       repository
     </a> a ⭐
+  </p>
+</div>
+<div align="center">
+  <p style="font-size:18px; font-weight:600;">
+    Thank you!
   </p>
 </div>
