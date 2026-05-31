@@ -462,7 +462,7 @@ For support, users can get help through the most convenient channel:
 
 *   **[GitHub Issues](https://github.com/arcosoph/nanowakeword/issues):** For reporting bugs, technical issues, and making feature requests.
 *   **[Discord Server](https://discord.gg/rYfShVvacB):** Ideal for general questions, configuration help, and community discussion.
-*   **[Official Website](https://arcosoph.com):** Provides documentation and includes a [contact](https://arcosoph.com/#contactForm) interface for direct communication.
+*   **[Official Website](https://arcosoph.com):** Provides documentation and includes a [contact](https://arcosoph.com/#contact) interface for direct communication.
 
 *All inquiries are reviewed and addressed as promptly as possible.*
 
