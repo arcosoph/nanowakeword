@@ -112,6 +112,7 @@ import struct
 import logging
 import argparse
 import numpy as np
+from collections import deque
 from typing import Optional, Union
 
 from nanowakeword.interpreter.server_security import (
@@ -131,12 +132,14 @@ PIPELINE_VERIFIER_ONLY = "verifier_only"
 PIPELINE_EMBEDDING      = "embedding"
 PIPELINE_FULL           = "full"
 
-_VALID_PIPELINES = {PIPELINE_VERIFIER_ONLY, PIPELINE_EMBEDDING, PIPELINE_FULL}
+PIPELINE_E2E            = "e2e"
+
+_VALID_PIPELINES = {PIPELINE_VERIFIER_ONLY, PIPELINE_EMBEDDING, PIPELINE_FULL, PIPELINE_E2E}
 
 # Wire protocol tags
 _TAG_FEATURES   = 0x01   # pre-computed feature tensor
 _TAG_MEL        = 0x02   # mel-spectrogram frames
-_TAG_AUDIO      = 0x03   # raw PCM audio
+_TAG_AUDIO      = 0x03   # raw PCM audio (full pipeline or e2e)
 
 
 # Encoding helpers (used by _RemoteSession on the client side)
@@ -269,7 +272,6 @@ def serve(
     class _StreamingState:
         """Minimal streaming state for one client connection."""
         def __init__(self):
-            from collections import deque
             self.raw_buffer        = deque(maxlen=16000 * 10)
             self.mel_buffer        = np.ones((76, 32), dtype=np.float32)
             self.mel_max_len       = 10 * 97
@@ -369,8 +371,17 @@ def serve(
         client_ip = client_addr[0] if isinstance(client_addr, tuple) else str(client_addr)
         logger.info(f"Client connected: {client_addr}  pipeline='{pipeline}'")
 
-        # Per-connection streaming state (only needed for full pipeline)
-        state = _StreamingState() if pipeline == PIPELINE_FULL else None
+        # Per-connection state
+        if pipeline == PIPELINE_E2E:
+            e2e_clip_samples = ww_inputs[0].shape[-1]
+            e2e_state = {"buffer": deque(maxlen=e2e_clip_samples), "accumulated": 0}
+            state = None
+        elif pipeline == PIPELINE_FULL:
+            state = _StreamingState()
+            e2e_state = None
+        else:
+            state = None
+            e2e_state = None
         connected = False
 
         try:
@@ -414,7 +425,7 @@ def serve(
                     out   = ww_session.run(None, {ww_input_name: features})
                     score = float(out[0].item())
 
-                # full: receive raw audio, run full pipeline
+                # full: receive raw audio, run mel+embedding+verifier
                 elif tag == _TAG_AUDIO and pipeline == PIPELINE_FULL:
                     n_samples = struct.unpack("<i", message[1:5])[0]
                     audio     = np.frombuffer(
@@ -423,6 +434,22 @@ def serve(
                     features = state.process(audio)
                     if features is not None:
                         out   = ww_session.run(None, {ww_input_name: features})
+                        score = float(out[0].item())
+
+                # e2e: receive raw audio, accumulate and run e2e model directly
+                elif tag == _TAG_AUDIO and pipeline == PIPELINE_E2E:
+                    n_samples = struct.unpack("<i", message[1:5])[0]
+                    audio     = np.frombuffer(
+                        message[5: 5 + n_samples * 2], dtype=np.int16
+                    ).astype(np.float32) / 32768.0
+                    e2e_state["buffer"].extend(audio.tolist())
+                    e2e_state["accumulated"] += n_samples
+                    clip_samples = len(e2e_state["buffer"])
+                    if e2e_state["accumulated"] >= clip_samples:
+                        clip = np.array(list(e2e_state["buffer"])[-clip_samples:], dtype=np.float32)
+                        e2e_state["accumulated"] = 0
+                        feed = {ww_input_name: clip.reshape(1, -1)}
+                        out  = ww_session.run(None, feed)
                         score = float(out[0].item())
 
                 await websocket.send(json.dumps({"score": score}))
@@ -571,25 +598,28 @@ class _RemoteSession:
             def __init__(self, name, shape):
                 self.name  = name
                 self.shape = shape
+        if self.pipeline == PIPELINE_E2E:
+            return [_FakeInput("input", ["batch_size", self.n_frames])]
         return [_FakeInput("input", ["batch_size", self.n_frames, 96])]
 
     def run(self, output_names, input_feed, run_options=None):
         """
         Sends data to the remote server and returns the score.
         What is sent depends on pipeline mode:
-          verifier_only → pre-computed feature tensor (from input_feed["input"])
-          full          → raw audio (from input_feed["audio"])
+          verifier_only: pre-computed feature tensor (from input_feed["input"])
+          full/e2e:      raw audio (from input_feed["audio"])
         """
         import asyncio
 
         # Build the wire message based on pipeline
-        if self.pipeline == PIPELINE_FULL:
-            audio   = input_feed.get("audio")
+        if self.pipeline in (PIPELINE_FULL, PIPELINE_E2E):
+            audio = input_feed.get("audio")
+            if audio is None:
+                audio = input_feed.get("input")
             if audio is None:
                 return [np.array([[[0.0]]], dtype=np.float32)]
             message = encode_audio(audio)
         else:
-            # verifier_only (default) - send pre-computed features
             features = input_feed["input"]
             message  = encode_features(features)
 

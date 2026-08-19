@@ -23,11 +23,11 @@ nanowakeword - unified CLI.
 The command figures out what to do from the flags you provide.
 No subcommands needed.
 
-Training pipeline 
+Training pipeline
 -----------------
 OPTION 1: Using CLI flags (explicit control)
   nanowakeword -c config.yaml -G          # generate clips
-  nanowakeword -c config.yaml -t          # extract features
+  nanowakeword -c config.yaml -t          # extract features (embedding mode)
   nanowakeword -c config.yaml -T          # train model
   nanowakeword -c config.yaml -d          # distill lite model (standalone)
   nanowakeword -c config.yaml -G -t -T -d # full pipeline in one shot
@@ -39,6 +39,13 @@ OPTION 2: Using config file settings (config-driven)
 
 OPTION 3: Combining both (CLI flags override config file)
   nanowakeword -c config.yaml -T          # ignores config's train_model setting, uses only -T
+
+E2E Mode (Raw Waveform)
+-----------------------
+Set mode: "e2e" in config to train end-to-end on raw audio.
+In E2E mode, feature extraction (-t) is skipped.
+The model learns feature extraction directly from raw PCM.
+  nanowakeword -c config.yaml -T          # trains E2E model directly on audio files
 
 Server
 ------

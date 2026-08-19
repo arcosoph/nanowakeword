@@ -43,11 +43,14 @@ Nanowakeword is a versatile framework offering a rich library of neural network 
 | **Transformer**| **Deep Contextual Understanding** via Self-Attention mechanism. | **SOTA Performance & Flexibility** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=transformer) |
 | **Conformer** | State-of-the-art hybrid for ultimate real-world performance. | **SOTA: Global + Local Features** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=conformer) |
 | **E-Branchformer**| Bleeding-edge research for potentially the highest accuracy. | Accuracy Potential | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=e_branchformer) |
-| **Custom**| **Build and integrate your own [custom architectures](https://github.com/arcosoph/nanowakeword/blob/main/CONFIGURATION_GUIDE.md#custom-architecture)**. | ♕**Unlimited Flexibility**♕ | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=Custom) |
+| **E2E DNN** | End-to-end training directly on raw waveforms. Fastest E2E option. | **Fastest E2E** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_E2E_Wake_Word_Model.ipynb?model_type=e2e_dnn) |
+| **E2E CNN** | End-to-end CNN with raw audio frontend. Balanced E2E option. | **Balanced E2E** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_E2E_Wake_Word_Model.ipynb?model_type=e2e_cnn) |
+| **E2E QuartzNet** | End-to-end QuartzNet architecture with configurable blocks. Most expressive E2E. | **Accuracy E2E** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_E2E_Wake_Word_Model.ipynb?model_type=e2e_quartznet) |
+| **Custom**| **Build and integrate your own [custom architectures](https://qutorium.arcosoph.com/post/nanowakeword-configuration-guide-pp1ia5#custom-custom)**. | Unlimited Flexibility | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=Custom) |
 
 ---
-> NOTE: Nanowakeword is under active development. For important updates, version-specific notes, and the latest stability status of all features, please refer to our official status document.**[View Latest Release Notes & Project Status](https://github.com/arcosoph/nanowakeword/blob/main/STATUS.md)**
-
+> [!NOTE]
+> **E2E Training** is fully supported and trains models directly on raw waveforms, eliminating the need for pre-computed features. The E2E notebook is available above. E2E models tend to be larger and slower than embedding-based models but can learn optimal feature representations automatically.
 
 ## State-of-the-Art Features and Architecture
 
@@ -197,7 +200,7 @@ A model's true value is in its deployment. Nanowakeword's inference engine is de
 
 *   **Graph:** An informative graph is available at the end of the training.
 
-*   **Resilient, Fault-Tolerant Workflow:** Long training sessions are protected. The framework automatically saves the entire training state—model weights, optimizer progress, scheduler state, and even the precise position of the data generator. This allows you to resume an interrupted session from the exact point you left off, ensuring zero progress is lost.
+*   **Resilient, Fault-Tolerant Workflow:** Long training sessions are protected. The framework automatically saves the entire training state-model weights, optimizer progress, scheduler state, and even the precise position of the data generator. This allows you to resume an interrupted session from the exact point you left off, ensuring zero progress is lost.
 
 </details>
 
@@ -261,7 +264,8 @@ The primary method for controlling the Nanowakeword framework is through a `.yam
     ```yaml
     # In your config.yaml
     # Essential Paths (Required)
-    model_type: dnn # Or other architectures such as `LSTM`, `GRU`, `RNN`, `Transformer` etc..
+    mode: "embedding"  # "embedding" (pre-computed features) or "e2e" (raw waveforms)
+    model_type: dnn # Or other architectures such as `e2e_dnn`, `e2e_cnn`, `e2e_quartznet`, `LSTM`, `GRU`, `RNN`, `Transformer` etc.
     model_name: "my_wakeword_v1"
     output_dir: "./trained_models"
     positive_data_path: "./training_data/positive"
@@ -447,8 +451,10 @@ In a world of complex machine learning tools, Nanowakeword is built on a simple 
 **3. How much data do I need to train a good model?**
 > For a good starting point, we recommend at least 10000+ clean data of your wake words from a few different voices. The total duration of negative audio should be at least 3 times longer than positive audio. You can also create synthetic data using **Nanowakeword**. The more data you have, the better your model will be. Our intelligent engine is designed to work well even with small datasets.
 
+> **E2E mode** trains directly on raw WAV files (no feature extraction step), which is convenient but requires more compute. **Embedding mode** uses pre-computed features and is faster for iteration on standard hardware.
+
 **4. Can I train a model for a language other than English?**
-> Yes! Nanowakeword is language-agnostic. As long as you can provide audio samples for your wake words, you can train a model for any language.
+> Yes! You should train [E2E](https://qutorium.arcosoph.com/post/nanowakeword-configuration-guide-pp1ia5#mode-selection-embedding-vs-e2e) model. Nanowakeword is language-agnostic. As long as you can provide audio samples for your wake words, you can train a **E2E** model for any language.
 
 **5. What platforms are supported for running the trained model?**
 >  Inference (running the model) is extremely lightweight and can run smoothly on almost any device, including a Raspberry Pi 3/4, Linux systems, Android devices, and Apple platforms.

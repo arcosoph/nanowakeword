@@ -225,8 +225,10 @@ def distill_from_onnx(
     Standalone distillation from an already-exported ONNX teacher.
     Useful for post-training lite model generation without re-training.
 
-    Loads the ONNX teacher, runs distillation using the feature files
-    specified in config's feature_manifest, and exports a _lite.onnx.
+    Loads the ONNX teacher, runs distillation using the data specified
+    in config's feature_manifest, and exports a _lite.onnx.
+
+    Supports both embedding mode (features) and E2E mode (raw audio).
 
     Returns the path to the exported lite ONNX file.
     """
@@ -240,9 +242,11 @@ def distill_from_onnx(
     lr          = float(dist_cfg.get("learning_rate", 5e-4))
     log_interval = dist_cfg.get("log_interval", 500)
 
+    mode = config.get("mode", "embedding")
+    is_e2e = (mode == "e2e")
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    # ONNX teacher wrapper
     sess_opts = ort.SessionOptions()
     sess_opts.inter_op_num_threads = 1
     sess_opts.intra_op_num_threads = 1
@@ -252,36 +256,38 @@ def distill_from_onnx(
         providers=["CPUExecutionProvider"],
     )
 
-    def onnx_teacher_logit(features_np: np.ndarray) -> torch.Tensor:
+    def onnx_teacher_logit(teacher_input_np: np.ndarray) -> torch.Tensor:
         """Run ONNX teacher and return logits (inverse sigmoid of output prob)."""
-        out = teacher_sess.run(None, {"input": features_np})[0]  # [B, 1, 1]
+        out = teacher_sess.run(None, {"input": teacher_input_np})[0]  # [B, 1, 1]
         prob = torch.tensor(out.reshape(-1), dtype=torch.float32)
-        # Convert probability back to logit space for temperature scaling
         prob = prob.clamp(1e-7, 1 - 1e-7)
         return torch.log(prob / (1 - prob))
 
-    # Build student
-    # We need a dummy teacher Model just to reuse _build_student
-    dummy_teacher_cfg = {"activation_function": "relu", "embedding_dim": 8}
-    dummy_teacher = Model(
-        config=dummy_teacher_cfg,
-        model_name=model_name,
-        n_classes=1,
-        input_shape=input_shape,
-        model_type="dnn",
-        layer_dim=8,
-        n_blocks=1,
-    )
-    dummy_teacher.model_name = model_name
+    if is_e2e:
+        student = _build_e2e_student(None, input_shape, dist_cfg)
+        desc = "E2E Distilling (from ONNX)"
+    else:
+        dummy_teacher_cfg = {"activation_function": "relu", "embedding_dim": 8}
+        dummy_teacher = Model(
+            config=dummy_teacher_cfg,
+            model_name=model_name,
+            n_classes=1,
+            input_shape=input_shape,
+            model_type="dnn",
+            layer_dim=8,
+            n_blocks=1,
+        )
+        dummy_teacher.model_name = model_name
+        student = _build_student(dummy_teacher, input_shape, dist_cfg)
+        desc = "Distilling (from ONNX)"
 
-    student = _build_student(dummy_teacher, input_shape, dist_cfg)
     student.to(device)
-    student.classifier.to(device)  
+    student.classifier.to(device)
 
+    print_info(f"[Distillation] Mode: {mode}")
     print_info(f"[Distillation] Student params: {_count_params(student):,}")
     print_info(f"[Distillation] Steps: {steps}, Temperature: {temperature}, Alpha: {alpha}")
 
-    # Optimizer
     import itertools
     all_params = list(student.parameters()) + list(student.classifier.parameters())
     optimizer  = torch.optim.AdamW(all_params, lr=lr, weight_decay=1e-3)
@@ -294,23 +300,21 @@ def distill_from_onnx(
 
     data_iter  = iter(itertools.cycle(X_train))
     ema_loss   = None
-    ema_alpha  = 0.02
+    ema_alpha_val = 0.02
     best_loss  = float("inf")
     best_state = None
 
-    pbar = tqdm(range(steps), desc="Distilling (from ONNX)", unit="step")
+    pbar = tqdm(range(steps), desc=desc, unit="step")
 
     for step in pbar:
         features, labels, _ = next(data_iter)
-        features_np = features.numpy().astype(np.float32)
-        labels      = labels.to(device).float().view(-1)
+        labels = labels.to(device).float().view(-1)
 
-        # Teacher soft targets via ONNX
         with torch.no_grad():
-            teacher_logits = onnx_teacher_logit(features_np).to(device)
+            teacher_input = features.numpy().astype(np.float32)
+            teacher_logits = onnx_teacher_logit(teacher_input).to(device)
             teacher_soft   = torch.sigmoid(teacher_logits / temperature)
 
-        # Student forward
         features_t     = features.to(device)
         student_logits = student(features_t).view(-1)
         student_soft   = torch.sigmoid(student_logits / temperature)
@@ -331,7 +335,7 @@ def distill_from_onnx(
         scheduler.step()
 
         loss_val = loss.item()
-        ema_loss = loss_val if ema_loss is None else ema_alpha * loss_val + (1 - ema_alpha) * ema_loss
+        ema_loss = loss_val if ema_loss is None else ema_alpha_val * loss_val + (1 - ema_alpha_val) * ema_loss
 
         if ema_loss < best_loss:
             best_loss  = ema_loss
@@ -347,7 +351,6 @@ def distill_from_onnx(
 
     student.eval()
 
-    # Export
     lite_name = model_name + "_lite"
     export_onnx_model(
         model=student,
@@ -360,3 +363,131 @@ def distill_from_onnx(
     lite_path = f"{output_dir}/{lite_name}.onnx"
     print_info(f"[Distillation] Lite model exported to: {lite_path}")
     return lite_path
+
+
+def _build_e2e_student(teacher, input_shape, dist_cfg):
+    """Builds a tiny E2E student model (always e2e_dnn for minimal size)."""
+    student_layer_size = dist_cfg.get("student_layer_size", 8)
+    student_n_blocks = dist_cfg.get("student_n_blocks", 1)
+    student_embedding = dist_cfg.get("student_embedding_dim", 8)
+    dropout_prob = dist_cfg.get("student_dropout_prob", 0.1)
+
+    student_config = {
+        "activation_function": "relu",
+        "embedding_dim": student_embedding,
+    }
+
+    name = teacher.model_name + "_lite" if teacher is not None else "e2e_lite"
+
+    student = Model(
+        config=student_config,
+        model_name=name,
+        n_classes=1,
+        input_shape=input_shape,
+        model_type="e2e_dnn",
+        layer_dim=student_layer_size,
+        n_blocks=student_n_blocks,
+        dropout_prob=dropout_prob,
+        mode="e2e",
+    )
+
+    return student
+
+
+def distill_model_e2e(teacher, X_train, config, input_shape):
+    """
+    E2E knowledge distillation: trains a tiny E2E student to mimic the teacher.
+    """
+    import itertools
+
+    dist_cfg = config.get("distillation", {})
+    steps = dist_cfg.get("steps", 8000)
+    temperature = float(dist_cfg.get("temperature", 4.0))
+    alpha = float(dist_cfg.get("alpha", 0.7))
+    lr = float(dist_cfg.get("learning_rate", 5e-4))
+    log_interval = dist_cfg.get("log_interval", 500)
+
+    device = teacher.device
+
+    student = _build_e2e_student(teacher, input_shape, dist_cfg)
+    student.to(device)
+    student.classifier.to(device)
+
+    teacher.to(device)
+    teacher.classifier.to(device)
+
+    teacher_params = _count_params(teacher)
+    student_params = _count_params(student)
+
+    print_info(f"[E2E Distillation] Teacher params : {teacher_params:,}")
+    print_info(f"[E2E Distillation] Student params : {student_params:,}")
+    print_info(f"[E2E Distillation] Steps: {steps}, Temperature: {temperature}, Alpha: {alpha}")
+
+    all_params = list(student.parameters()) + list(student.classifier.parameters())
+    optimizer = torch.optim.AdamW(all_params, lr=lr, weight_decay=1e-3)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer, max_lr=lr, total_steps=steps
+    )
+
+    teacher.eval()
+    for p in teacher.parameters():
+        p.requires_grad_(False)
+
+    student.train()
+    student.classifier.train()
+
+    data_iter = iter(itertools.cycle(X_train))
+    ema_loss = None
+    ema_alpha = 0.02
+    best_loss = float("inf")
+    best_state = None
+
+    pbar = tqdm(range(steps), desc="E2E Distilling", unit="step")
+
+    for step in pbar:
+        features, labels, _ = next(data_iter)
+        features = features.to(device)
+        labels = labels.to(device).float().view(-1)
+
+        with torch.no_grad():
+            teacher_logits = teacher(features).view(-1)
+            teacher_soft = torch.sigmoid(teacher_logits / temperature)
+
+        student_logits = student(features).view(-1)
+        student_soft = torch.sigmoid(student_logits / temperature)
+
+        eps = 1e-7
+        soft_loss = -(
+            teacher_soft * torch.log(student_soft + eps)
+            + (1 - teacher_soft) * torch.log(1 - student_soft + eps)
+        ).mean() * (temperature ** 2)
+
+        hard_loss = torch.nn.functional.binary_cross_entropy_with_logits(student_logits, labels)
+        loss = alpha * soft_loss + (1.0 - alpha) * hard_loss
+
+        optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(all_params, max_norm=1.0)
+        optimizer.step()
+        scheduler.step()
+
+        loss_val = loss.item()
+        ema_loss = loss_val if ema_loss is None else ema_alpha * loss_val + (1 - ema_alpha) * ema_loss
+
+        if ema_loss < best_loss:
+            best_loss = ema_loss
+            best_state = copy.deepcopy(student.state_dict())
+
+        if step % log_interval == 0:
+            pbar.set_postfix({"ema_loss": f"{ema_loss:.4f}", "lr": f"{scheduler.get_last_lr()[0]:.2e}"})
+
+    pbar.close()
+
+    if best_state is not None:
+        student.load_state_dict(best_state)
+        print_info(f"[E2E Distillation] Best EMA loss: {best_loss:.4f}")
+
+    student.eval()
+    print_info("[E2E Distillation] Student model ready.")
+
+    return student

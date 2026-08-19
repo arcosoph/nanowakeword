@@ -19,6 +19,7 @@
 
 
 import sys
+import os
 from io import StringIO
 from nanowakeword.utils.logger import print_table
 
@@ -27,23 +28,36 @@ class DynamicTable:
     def __init__(self, config_proxy, title="Training Configuration", enabled: bool = True):
         self._proxy = config_proxy
         self._title = title
-        self._print_func = print_table 
+        self._print_func = print_table
         self._last_state = {}
         self._last_table_height = 0
 
         self._is_enabled = enabled
 
+        self._ansi_supported = False
+        if hasattr(sys.stdout, "isatty") and sys.stdout.isatty():
+            if os.name == "nt":
+                try:
+                    import ctypes
+                    kernel32 = ctypes.windll.kernel32
+                    kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+                    self._ansi_supported = True
+                except Exception:
+                    self._ansi_supported = False
+            else:
+                self._ansi_supported = True
 
     def _move_cursor_up(self, lines):
         """Moves the terminal cursor up by a specified number of lines."""
-        if lines > 0:
+        if lines > 0 and self._ansi_supported:
             sys.stdout.write(f'\x1b[{lines}A')
             sys.stdout.flush()
 
     def _clear_from_cursor(self):
         """Clears the screen from the current cursor position to the end."""
-        sys.stdout.write('\x1b[J')
-        sys.stdout.flush()
+        if self._ansi_supported:
+            sys.stdout.write('\x1b[J')
+            sys.stdout.flush()
 
     def update(self, force_print=False):
         """
@@ -55,8 +69,9 @@ class DynamicTable:
         current_state = self._proxy.report()
         
         if current_state != self._last_state or force_print:
-            self._move_cursor_up(self._last_table_height)
-            self._clear_from_cursor()
+            if self._ansi_supported:
+                self._move_cursor_up(self._last_table_height)
+                self._clear_from_cursor()
 
             display_config = {}
             keys_to_exclude = {
@@ -72,7 +87,7 @@ class DynamicTable:
             sys.stdout = string_io = StringIO()
             self._print_func(display_config, self._title)
             table_string = string_io.getvalue()
-            sys.stdout = old_stdout 
+            sys.stdout = old_stdout
             
             self._last_table_height = table_string.count('\n') + 1
 

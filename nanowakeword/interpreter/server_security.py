@@ -18,7 +18,7 @@
 # ==============================================================================
 
 """
-server_security.py — Optional security layer for the RemoteVerifier server.
+server_security.py - Optional security layer for the RemoteVerifier server.
 
 All features are opt-in. The server runs with zero security overhead by default.
 
@@ -55,7 +55,7 @@ Usage
     # Or import directly:
     from nanowakeword.interpreter.server_security import SecurityConfig
 
-    # Minimal — no security (default)
+    # Minimal - no security (default)
     cfg = SecurityConfig()
 
     # API key only
@@ -123,7 +123,7 @@ def _verify_key(key: str, stored_hash: str) -> bool:
 def _make_token(secret: str, ttl: int) -> str:
     """
     Create a simple signed token: ``expiry_ts.hmac_hex``.
-    No JWT library required — uses HMAC-SHA256 with a server secret.
+    No JWT library required - uses HMAC-SHA256 with a server secret.
     """
     expiry = int(time.time()) + ttl
     payload = str(expiry).encode()
@@ -156,7 +156,7 @@ class SecurityConfig:
 
     Attributes:
         api_keys:       List of plaintext API keys that clients may use.
-                        Keys are hashed in memory at startup — plaintext is
+                        Keys are hashed in memory at startup - plaintext is
                         never stored after ``SecurityManager`` is built.
                         Empty list → API key auth disabled.
 
@@ -285,10 +285,10 @@ class SecurityManager:
     def __init__(self, config: SecurityConfig):
         self.config = config
 
-        # Hash API keys — plaintext is discarded after this point
+        # Hash API keys - plaintext is discarded after this point
         self._key_hashes: List[str] = [_hash_key(k) for k in config.api_keys]
 
-        # Token secret — auto-generate if not provided
+        # Token secret - auto-generate if not provided
         self._token_secret: str = config.token_secret or secrets.token_hex(32)
         if config.enable_tokens and not config.token_secret:
             logger.info(
@@ -379,7 +379,7 @@ class SecurityManager:
             return False
         if time.time() < expiry:
             return True
-        # Ban expired — clean up
+        # Ban expired - clean up
         del self._bans[ip]
         return False
 
@@ -575,7 +575,7 @@ def build_security(
     """
     Convenience factory. Returns a :class:`SecurityManager` when any security
     feature is requested, or ``None`` when everything is at its default
-    (no-op) value — so the server pays zero overhead.
+    (no-op) value - so the server pays zero overhead.
 
     Args:
         api_keys:        Plaintext API keys clients must present.

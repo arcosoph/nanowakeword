@@ -1,0 +1,374 @@
+# ==========================================================
+#       NanoWakeWord E2E Training Configuration
+# ==========================================================
+# This config trains an end-to-end model directly on raw PCM audio.
+# The model learns feature extraction instead of using pre-computed embeddings.
+#
+# Key differences from embedding mode:
+#   - mode: "e2e" (required)
+#   - model_type: "e2e_dnn", "e2e_cnn", or "e2e_quartznet"
+#   - clip_samples: fixed number of audio samples per clip (required for E2E)
+#   - data_generation_manifest generates augmented .wav files (not .npy features)
+#   - data_manifest (or feature_manifest) points to directories of .wav files
+#   - AudioFeatures (mel spectrogram extractor) is NOT required at inference time
+# ==========================================================
+
+# ==========================================================
+# Project & Data Paths
+# ==========================================================
+model_name: "e2e_arcosoph_A_v1"
+output_dir: "./trained_models"
+
+positive_data_path: "./data/positive"
+negative_data_path: "./data/negative"
+
+# Background noise directories (SonicWeave-v2 extracts to part1/part2/part3)
+background_paths:
+  - "./SonicWeave-v2/part1"
+  - "./SonicWeave-v2/part2"
+  - "./SonicWeave-v2/part3"
+
+# Room Impulse Response directories (optional)
+rir_paths:
+  - "./rir"
+
+# ==========================================================
+# Mode Selection
+# ==========================================================
+mode: "e2e"  # "embedding" (default) or "e2e" (end-to-end raw waveform)
+
+# ==========================================================
+# E2E Model Architecture
+# ==========================================================
+# Choose one of: e2e_dnn, e2e_cnn, e2e_quartznet, or custom
+#   e2e_dnn:        Fastest E2E model. Uses a simple Conv1d frontend + pooling.
+#   e2e_cnn:        Moderate E2E model. Adds a CNN backbone after the frontend.
+#   e2e_quartznet:  Most expressive E2E model. QuartzNet-style blocks.
+#   custom:         User-defined architecture via custom_model_config (see below).
+model_type: "e2e_dnn"
+
+# E2E frontend parameters (only used by e2e_cnn and e2e_quartznet)
+e2e_frontend_channels: 32  # Channels in the raw audio frontend Conv1d
+e2e_frontend_depth: 2      # Number of layers in the frontend Conv1d stack
+
+# QuartzNet configuration (only used when model_type is "e2e_quartznet")
+# Each entry: [out_channels, kernel_size, stride]
+e2e_quartznet_config:
+  - [64, 11, 1]
+  - [64, 13, 1]
+  - [64, 17, 1]
+
+embedding_dim: 128
+dropout_prob: 0.3
+activation_function: "relu"  # "relu" or "silu"
+clip_samples: 16000  # Fixed clip length in samples (1 second at 16 kHz)
+sample_rate: 16000  # Audio sample rate in Hz
+
+# ==========================================================
+# Custom Architecture (only used when model_type is "custom")
+# ==========================================================
+# Custom E2E models must accept raw waveform input (1D tensor of
+# audio samples, shape [batch, clip_samples] or [batch, 1, clip_samples])
+# and return an embedding of shape [batch, embedding_dim].
+#
+# The class constructor receives any of these kwargs it accepts:
+#   input_shape, embedding_dim, dropout_prob, activation_fn, config, frontend_channels
+# Additional parameters can be passed via the "params" dict.
+#
+# To use a custom architecture, set model_type: "custom" and provide:
+#   module_path:  File path or importable module name containing your model class
+#   class_name:   The model class to instantiate
+#
+# Example:
+# model_type: "custom"
+# custom_model_config:
+#   module_path: "./path/to/my_model.py"
+#   class_name: "MyCustomE2EModel"
+#   params:
+#     my_custom_param: 42
+
+# ==========================================================
+# Audio Processing
+# ==========================================================
+# If clip_length_samples is set in audio_processing, it overrides
+# the top-level clip_samples for augmentation crop/pad.
+# If not set, autotune inspects positive clips to determine optimal length.
+audio_processing:
+  clip_length_samples: 16000  # Fixed clip length for augmentation
+  autotune_length:
+    enabled: true
+    num_samples_to_inspect: 50
+    duration_buffer_ms: 750
+    min_allowable_length: 16000
+    snap_to_min_tolerance: 4000
+
+# ==========================================================
+# Data Manifest (directories of .wav files for training)
+# ==========================================================
+# In E2E mode, each key maps to a directory path containing .wav files.
+# The key names must match entries in batch_composition.
+# Categories ending with "_val" are used for validation.
+data_manifest:
+  targets:
+    t: "./data/positive"
+    tx: "./data/positive_extra"
+
+  negatives:
+    n: "./data/negative"
+    hn: "./data/negative_phoneme"
+    np: "./data/negative"
+    no1: "./SonicWeave-v2/part1"
+    no2: "./SonicWeave-v2/part2"
+    no3: "./SonicWeave-v2/part3"
+
+  targets_val:
+    t_v: "./data/positive_val"
+
+  negatives_val:
+    bv: "./data/negative_val"
+
+# ==========================================================
+# Training Settings
+# ==========================================================
+steps: 20000
+stabilization_steps: 5000  # Steps before validation and early stopping activate
+
+optimizer_type: "adamw"
+learning_rate_max: 0.0008
+lr_scheduler_type: "onecycle"
+weight_decay: 0.01
+momentum: 0.9
+num_workers: 2  # Number of DataLoader worker processes
+
+# ==========================================================
+# Loss Function
+# ==========================================================
+margin_pos: 2.0
+margin_neg: -2.0
+LOSS_BIAS: 0.65
+
+logit_reg_weight: 0.0005
+logit_reg_margin: 4.0
+logit_min_margin: 1.5
+
+# ==========================================================
+# Batch Composition
+# ==========================================================
+# Keys must match the keys in data_manifest sub-dictionaries.
+# Values are the number of samples per category in each batch.
+batch_composition:
+  t: 50
+  tx: 20
+  n: 100
+  hn: 40
+  np: 10
+  no1: 20
+  no2: 20
+  no3: 30
+
+# ==========================================================
+# Synthetic Data Generation (TTS)
+# ==========================================================
+target_phrase: "hello arcosoph"  # Your wake word
+
+data_generation_tasks:
+  - name: "positive_samples"
+    enabled: true
+    output_dir: "data/positive"
+    num_samples: 2500
+    file_prefix: "pos"
+    text_source:
+      type: "fixed_phrase"
+      phrase: "hello arcosoph"
+
+  - name: "positive_val_samples"
+    enabled: true
+    output_dir: "data/positive_val"
+    num_samples: 2000
+    file_prefix: "pos"
+    text_source:
+      type: "fixed_phrase"
+      phrase: "hello arcosoph"
+
+  - name: "adversarial_negatives"
+    enabled: true
+    output_dir: "data/negative"
+    num_samples: 5000
+    file_prefix: "neg_auto"
+    text_source:
+      type: "auto_adversarial"
+      base_phrase: "hello arcosoph"
+      include_input_words: true
+      include_partial_phrase: true
+      multi_word_prob: 0.5
+      max_multi_word_len: 3
+
+  - name: "phoneme_hard_negatives"
+    enabled: true
+    output_dir: "data/negative_phoneme"
+    num_samples: 3000
+    file_prefix: "neg_ph"
+    text_source:
+      type: "phoneme_adversarial"
+      base_phrase: "hello arcosoph"
+      min_distance: 0.3
+
+  - name: "custom_negatives"
+    enabled: true
+    output_dir: "data/negative"
+    num_samples: 50
+    file_prefix: "neg_custom"
+    text_source:
+      type: "from_list"
+      phrases:
+        - "arcosoph eloo"
+        - "arcosop"
+        - "hie arcosoph"
+        - "arkhoshap"
+        - "yarkasop"
+      repeat_each: 10
+
+# ==========================================================
+# Audio Generation Manifest (E2E mode)
+# ==========================================================
+# Generates augmented .wav files from input audio directories.
+# These augmented clips are used directly for training in E2E mode.
+data_generation_manifest:
+  pos_feature:
+    input_audio_dirs: ["./data/positive"]
+    output_dir: "./data/positive_aug"
+    file_prefix: "pos_aug"
+    use_background_noise: true
+    use_rir: false
+    augmentation_rounds: 10
+    num_samples: 25000
+
+  pos_val_feature:
+    input_audio_dirs: ["./data/positive_val"]
+    output_dir: "./data/positive_val_aug"
+    file_prefix: "pos_val_aug"
+    use_background_noise: true
+    use_rir: false
+    augmentation_rounds: 10
+    num_samples: 20000
+
+  neg_feature:
+    input_audio_dirs: ["./data/negative"]
+    output_dir: "./data/negative_aug"
+    file_prefix: "neg_aug"
+    use_background_noise: true
+    use_rir: false
+    augmentation_rounds: 10
+    num_samples: 50000
+
+  neg_ph_feature:
+    input_audio_dirs: ["./data/negative_phoneme"]
+    output_dir: "./data/negative_phoneme_aug"
+    file_prefix: "neg_ph_aug"
+    use_background_noise: true
+    use_rir: false
+    augmentation_rounds: 1
+    num_samples: 3000
+
+# ==========================================================
+# Augmentation Settings (used during data generation)
+# ==========================================================
+augmentation_batch_size: 16
+feature_gen_cpu_ratio: 1.0
+
+augmentation_settings:
+  gain_prob: 1.0
+  max_gain_in_db: 3.0
+  min_gain_in_db: -3.0
+  max_pitch_semitones: 1.0
+  min_pitch_semitones: -1.0
+  max_snr_in_db: 35.0
+  min_snr_in_db: 15.0
+  pitch_prob: 0.3
+  rir_prob: 0.0
+
+# ==========================================================
+# Validation
+# ==========================================================
+val_miss_weight: 4.0
+val_fp_weight: 1.0
+validation_batch_size: 256
+validation_smoothing_window: 3
+val_early_stopping_patience: 6000
+
+# ==========================================================
+# Curriculum Learning (ISBL Sampling)
+# ==========================================================
+hardness_ema_alpha: 0.05
+hardness_floor: 0.05
+hardness_reset_interval: 5000
+hardness_reset_decay: 0.5
+checkpoint_averaging_top_k: 5
+checkpoint_pool_interval: 500
+
+# ==========================================================
+# Checkpointing & Debug
+# ==========================================================
+checkpointing:
+  enabled: true
+  interval_steps: 1000
+  limit: 3
+
+early_stopping_patience: 0
+min_delta: 0.0001
+ema_alpha: 0.01
+onnx_opset_version: 17
+show_training_summary: true
+debug_mode: false
+val_subsample_batches: 0
+val_interval: 500
+val_stabilization_steps: 2500
+
+# ==========================================================
+# Data Verification
+# ==========================================================
+convert_audio: false  # Set true to verify and convert data directories
+force_verify: false   # Force re-verification of data directories
+
+# ==========================================================
+# Distillation (builds a lite E2E model)
+# ==========================================================
+distillation:
+  enabled: false
+  steps: 5000
+  temperature: 4.0
+  alpha: 0.7
+  learning_rate: 0.0005
+  student_layer_size: 8
+  student_n_blocks: 1
+  student_embedding_dim: 8
+  student_dropout_prob: 0.1
+  log_interval: 500
+
+# ==========================================================
+# TTS Settings (Piper TTS)
+# ==========================================================
+tts_settings:
+  models: "en_US-less-mamie-medium"
+  length_scales: [1.0]
+  noise_scales: [0.667]
+  noise_w_scales: [0.8]
+
+# ==========================================================
+# Pipeline Control
+# ==========================================================
+# Disable generate_clips and transform_clips after the first run
+# to skip data generation and augmentation if you only want to retrain.
+train_model: true
+transform_clips: true
+generate_clips: true
+overwrite: false
+
+# ==========================================================
+# Advanced E2E Notes
+# ==========================================================
+# - E2E models exported with ONNX metadata tag mode="e2e"
+# - NanoInterpreter auto-detects E2E models and skips mel/feature extraction
+# - E2E inference uses raw PCM audio directly, no AudioFeatures model needed
+# - E2E distillation always produces an e2e_dnn student regardless of teacher type
+# - batch_composition keys must exactly match data_manifest keys

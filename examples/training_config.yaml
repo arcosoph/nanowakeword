@@ -5,7 +5,7 @@
 # Parameters are grouped logically for clarity and ease of use.
 # ==========================================================
 
-# ⚠️ FULL config Explanation: https://arcosoph.com/blog/nanowakeword_config_guide
+# ⚠️ FULL config Explanation: https://qutorium.arcosoph.com/post/nanowakeword-configuration-guide-pp1ia5
 # 😄 Please read our comment & change your required before starting this section.
 
 model_name: "arcosoph_A_v1"  # ⚠️ Change this name when creating a new model (e.g., arcosoph_A_v2)
@@ -310,3 +310,9 @@ transform_clips: true # ⚠️ Don't forget to turn it off after finished.
 generate_clips: true  # ⚠️ Don't forget to turn it off after finished.
 train_model: true
 overwrite: false
+
+# ==========================================================
+# Data Verification
+# ==========================================================
+convert_audio: false  # Set true to verify and convert data directories
+force_verify: false   # Force re-verification of data directories

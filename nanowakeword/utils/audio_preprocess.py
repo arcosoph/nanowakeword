@@ -25,13 +25,8 @@ import warnings
 
 logging.basicConfig(level=logging.INFO)
 
-TARGET_SR = 16000
-TARGET_CHANNELS = 1
-TARGET_BITS_PER_SAMPLE = 16
-TARGET_ENCODING = "PCM_S"
 
-
-def needs_conversion(file_path):
+def needs_conversion(file_path, target_sr=16000, target_channels=1, target_bits_per_sample=16):
     """
     Checks if an audio file needs to be converted to the standard format.
     Returns True if conversion is needed, False otherwise.
@@ -45,11 +40,11 @@ def needs_conversion(file_path):
         if not file_path.lower().endswith('.wav'):
             return True
 
-        if info.sample_rate != TARGET_SR:
+        if info.sample_rate != target_sr:
             return True
-        if info.num_channels != TARGET_CHANNELS:
+        if info.num_channels != target_channels:
             return True
-        if hasattr(info, 'bits_per_sample') and info.bits_per_sample != TARGET_BITS_PER_SAMPLE:
+        if hasattr(info, 'bits_per_sample') and info.bits_per_sample != target_bits_per_sample:
             return True
             
         return False
@@ -57,30 +52,32 @@ def needs_conversion(file_path):
         logging.warning(f"Could not read info for {file_path}, skipping. Error: {e}")
         return False 
 
-def process_and_convert_audio(file_path):
+def process_and_convert_audio(file_path, target_sr=16000, target_channels=1, target_bits_per_sample=16):
     """
     Converts a single audio file to the standard format and overwrites it.
     Returns True if a conversion was made, False otherwise.
     """
-    if not needs_conversion(file_path):
-        return False 
+    if not needs_conversion(file_path, target_sr=target_sr, target_channels=target_channels, target_bits_per_sample=target_bits_per_sample):
+        return False
 
     try:
         waveform, sr = torchaudio.load(file_path)
 
-        if sr != TARGET_SR:
-            resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=TARGET_SR)
+        if sr != target_sr:
+            resampler = torchaudio.transforms.Resample(orig_freq=sr, new_freq=target_sr)
             waveform = resampler(waveform)
        
-        if waveform.shape[0] > TARGET_CHANNELS:
+        if waveform.shape[0] > target_channels:
             waveform = torch.mean(waveform, dim=0, keepdim=True)
         
         temp_fd, temp_path = tempfile.mkstemp(suffix=".wav")
         os.close(temp_fd)
 
+        target_encoding = "PCM_S"
+
         torchaudio.save(
-            temp_path, waveform, sample_rate=TARGET_SR,
-            encoding=TARGET_ENCODING, bits_per_sample=TARGET_BITS_PER_SAMPLE
+            temp_path, waveform, sample_rate=target_sr,
+            encoding=target_encoding, bits_per_sample=target_bits_per_sample
         )
         
         shutil.move(temp_path, file_path)

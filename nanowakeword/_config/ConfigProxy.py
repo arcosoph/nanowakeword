@@ -43,6 +43,9 @@ class ConfigProxy(collections.abc.Mapping):
                 self._internal_root._internal_used_params[full_key] = value
                 self._internal_root._internal_accessed_keys.add(full_key)
     
+    def __contains__(self, key):
+        return key in self._internal_data
+
     def __getitem__(self, key):
         if key not in self._internal_data:
             raise KeyError(f"Key '{self._internal_prefix}{key}' not found in configuration.")

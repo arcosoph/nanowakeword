@@ -4,7 +4,7 @@
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
+#  You may obtain a copy of the License at:
 #
 #      http://www.apache.org/licenses/LICENSE-2.0
 #
@@ -51,39 +51,32 @@ from nanowakeword.data.data_sampler import ValidationDataset
 from nanowakeword.data.data_sampler import DynamicClassAwareSampler, AdaptiveLossAwareDataset
 
 from nanowakeword.utils.DynamicTable import DynamicTable
-# from nanowakeword.utils.audio_analyzer import DatasetAnalyzer
 from nanowakeword.utils.journal import update_training_journal
 from nanowakeword.utils.audio_preprocess import verify_and_process_directory
 from nanowakeword.utils.logger import print_banner, print_step_header, print_info, print_table, print_warning, print_error
 
 matplotlib.use('Agg')
-
-# To make the terminal look clean
 warnings.filterwarnings("ignore")
 logging.getLogger("torchaudio").setLevel(logging.ERROR)
 
-SEED=10
+SEED = 10
+
 def set_seed(seed):
-    """
-    This function sets the seed to make the training results reliable.
-    """
+    """Set the random seed for reproducibility across all random number generators."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed) 
+        torch.cuda.manual_seed_all(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
 set_seed(SEED)
 
 def deep_merge(d1, d2):
-    """
-    Recursively merges d2 into d1. If a key exists in both and the values are
-    dictionaries, it merges them recursively. Otherwise, the value from d2
-    overwrites the value from d1.
-    """
+    """Recursively merge dictionary d2 into d1. Values from d2 override d1,
+    with deep merging for nested dictionaries."""
     for k, v in d2.items():
         if k in d1 and isinstance(d1[k], dict) and isinstance(v, collections.abc.Mapping):
             d1[k] = deep_merge(d1[k], v)
@@ -93,66 +86,99 @@ def deep_merge(d1, d2):
 
 
 def collate_fn_with_indices(batch):
-    """
-    Custom collate function that handles features, labels, and indices.
-    Pads or truncates all features to the most common frame length in the
-    batch, preventing crashes when .npy files have slightly different shapes.
+    """Custom collate function that pads or truncates variable-length feature
+    sequences to a uniform length within each batch, then stacks them along
+    with their labels and original dataset indices.
+
+    For 1D features (E2E mode), all sequences are padded/truncated to the
+    maximum length in the batch. For 2D features (embedding mode), the most
+    common sequence length is used as the target, with padding/truncation
+    applied to match it.
     """
     all_features = [item[0] for item in batch]
 
-    # Find the most common frame length and use it as the target
-    lengths = [f.shape[0] for f in all_features]
-    target_len = max(set(lengths), key=lengths.count)
+    if all_features[0].dim() == 1:
+        target_len = max(f.shape[0] for f in all_features)
+        normalized = []
+        for f in all_features:
+            if f.shape[0] < target_len:
+                pad = torch.zeros(target_len - f.shape[0], dtype=f.dtype)
+                normalized.append(torch.cat([f, pad], dim=0))
+            else:
+                normalized.append(f[:target_len])
+        features = torch.stack(normalized).unsqueeze(1)
+    else:
+        lengths = [f.shape[0] for f in all_features]
+        target_len = max(set(lengths), key=lengths.count)
+        normalized = []
+        for f in all_features:
+            curr_len = f.shape[0]
+            if curr_len > target_len:
+                normalized.append(f[:target_len])
+            elif curr_len < target_len:
+                pad = torch.zeros(target_len - curr_len, f.shape[1], dtype=f.dtype)
+                normalized.append(torch.cat([f, pad], dim=0))
+            else:
+                normalized.append(f)
+        features = torch.stack(normalized)
 
-    normalized = []
-    for f in all_features:
-        curr_len = f.shape[0]
-        if curr_len > target_len:
-            normalized.append(f[:target_len])           # truncate
-        elif curr_len < target_len:
-            pad = torch.zeros(target_len - curr_len, f.shape[1], dtype=f.dtype)
-            normalized.append(torch.cat([f, pad], dim=0))  # pad with zeros
-        else:
-            normalized.append(f)
-
-    features = torch.stack(normalized)
     labels = torch.stack([item[1] for item in batch])
     indices = torch.tensor([item[2] for item in batch], dtype=torch.long)
     return features, labels, indices
 
 
 def train(cli_args=None):
-    
+    """Main entry point for the NanoWakeWord training pipeline.
+
+    Orchestrates the following stages in sequence:
+    1. Parse command-line arguments and load the YAML configuration.
+    2. Optionally verify and preprocess audio directories (convert to 16kHz,
+       mono, 16-bit WAV).
+    3. Generate an intelligent configuration by analyzing dataset statistics
+       and hardware capabilities, merged with user-provided config values.
+    4. Optionally generate synthetic training data via TTS (Piper).
+    5. Optionally extract features (embedding mode) or augment raw audio (E2E mode).
+    6. Train the neural network with ISBL sampling, validation, checkpointing,
+       and early stopping.
+    7. Export the trained model to ONNX and PyTorch formats.
+    8. Optionally perform knowledge distillation to create a lightweight "lite" model.
+    9. Optionally update the training journal with run metrics.
+
+    CLI flags (-G, -t, -T, -d) take precedence over config file values.
+    If no pipeline flags are provided, the enable_* keys in the YAML config
+    determine which stages run.
+    """
     parser = argparse.ArgumentParser(
         description="NanoWakeWord: The Intelligent Wake Word Training Framework.",
-        formatter_class=argparse.RawTextHelpFormatter # For better help message formatting
+        formatter_class=argparse.RawTextHelpFormatter
     )
 
-    # Configuration 
     parser.add_argument(
-            "-c", "--config_path",
-            help="Path to the training configuration YAML file. (Required)",
-            type=str,
-            required=True,
-            metavar="PATH"
-        )
+        "-c", "--config_path",
+        help="Path to the training configuration YAML file.",
+        type=str,
+        required=True,
+        metavar="PATH"
+    )
 
-    # Pipeline Stages (Primary Actions)
     parser.add_argument(
         "-G", "--generate_clips",
-        help="Activates the 'Generation' stage to synthesize audio clips.",
+        help="Activate data generation (TTS synthesis).",
         action="store_true"
     )
+
     parser.add_argument(
         "-t", "--transform_clips",
-        help="Activates the preparatory 'transform' stage (augmentation and feature extraction).",
+        help="Activate augmentation + feature/audio preprocessing.",
         action="store_true"
     )
+
     parser.add_argument(
         "-T", "--train_model",
-        help="Activates the final 'Training' stage to build the model.",
+        help="Activate model training.",
         action="store_true"
     )
+
     parser.add_argument(
         "-d", "--distill",
         help=(
@@ -163,23 +189,21 @@ def train(cli_args=None):
         ),
         action="store_true"
     )
-    
 
-    # Modifiers 
     parser.add_argument(
         "-f", "--force-verify",
-        help="Forces re-verification of all data directories, ignoring the cache.",
-        action="store_true"
-    )
-    parser.add_argument(
-        "--overwrite", # NO SHORTHAND BY DESIGN FOR SAFETY
-        help="Forces regeneration of feature files, overwriting any existing ones. Use with caution.",
+        help="Force re-verification of data directories.",
         action="store_true"
     )
 
     parser.add_argument(
-        "--resume",
-        help="Path to the project directory to resume training from. (e.g., --resume ./trained_models/my_wakeword_v1)",
+        "--overwrite",
+        help="Force regeneration, overwriting existing files.",
+        action="store_true"
+    )
+
+    parser.add_argument(
+        "--resume", help="Path to resume training from.",
         type=str,
         default=None,
         metavar="PATH"
@@ -187,171 +211,107 @@ def train(cli_args=None):
 
     args = parser.parse_args(cli_args)
 
-
-#=====
     print_banner()
-
     user_config = yaml.load(open(args.config_path, 'r', encoding='utf-8').read(), yaml.Loader)
-# #=====
 
-    # Define a stable cache directory based on the user's output_dir
-    #    This ensures the path is known and available from the very beginning.
     output_dir_from_config = user_config.get("output_dir", "./trained_models")
     VERIFICATION_CACHE_DIR = os.path.join(output_dir_from_config, ".cache", "verification_receipts")
     os.makedirs(VERIFICATION_CACHE_DIR, exist_ok=True)
 
-    # Define these file names here to avoid magic strings
-    VERIFICATION_RECEIPT_FILENAME_TEMPLATE = "{hash}.json" # We'll use a hash now
-
     def get_directory_state(path):
-        """Returns the current state of a directory (number of files and total size)."""
+        """Compute a hashable snapshot of a directory's audio file count and total size.
+        Used as a cache key for the verification receipt system."""
         file_count = 0
         total_size = 0
-        # More robustly check for various audio extensions
         audio_extensions = {".wav", ".mp3", ".flac", ".m4a", ".ogg"}
-        
         try:
             for entry in os.scandir(path):
                 if entry.is_file() and os.path.splitext(entry.name)[1].lower() in audio_extensions:
                     file_count += 1
                     total_size += entry.stat().st_size
         except FileNotFoundError:
-            # If the directory doesn't exist, its state is empty
             return {"file_count": 0, "total_size": 0}
-                
         return {"file_count": file_count, "total_size": total_size}
 
     def smart_verify(path, force=False):
+        """Verify an audio directory and cache the result.
+
+        Compares the directory's current state (file count and total size)
+        against a previously saved verification receipt. If the state matches
+        and force is False, skips the expensive preprocessing step.
+        Otherwise, calls verify_and_process_directory to convert audio files
+        to the standard 16kHz/16-bit/mono WAV format, then saves a new receipt.
         """
-        Smartly verifies a directory using a centralized cache in the project's output directory.
-        This version is robust and will work correctly.
-        """
-        if not path: # Handle cases where a path might be None or empty in the config
+        if not path:
             return
-
-        # 1. Create a stable and unique hash for the directory path
         path_hash = hashlib.md5(path.encode('utf-8')).hexdigest()
-        receipt_filename = VERIFICATION_RECEIPT_FILENAME_TEMPLATE.format(hash=path_hash)
+        receipt_filename = f"{path_hash}.json"
         receipt_path = os.path.join(VERIFICATION_CACHE_DIR, receipt_filename)
-
-        # 2. Check the verification receipt
         if not force and os.path.exists(receipt_path):
             try:
                 with open(receipt_path, 'r') as f:
                     saved_state = json.load(f)
-                
                 current_state = get_directory_state(path)
-                
-                # If the state is identical, we can safely skip
                 if saved_state == current_state:
                     print_info(f"'{os.path.basename(path)}' already verified. Skipping.")
-                    return 
+                    return
                 else:
                     print_info(f"Data in '{os.path.basename(path)}' has changed. Re-verifying...")
-
-            except (json.JSONDecodeError, KeyError) as e:
-                print_info(f"Could not read or parse receipt for '{os.path.basename(path)}'. Re-verifying... Error: {e}")
-        
-        # Perform the actual verification and processing
-        # This part runs if verification is forced, receipt doesn't exist, or state has changed.
+            except (json.JSONDecodeError, KeyError):
+                pass
         try:
             verify_and_process_directory(path)
-        
-            # 4. Write the new state to the centralized cache
             current_state = get_directory_state(path)
             with open(receipt_path, 'w') as f:
                 json.dump(current_state, f, indent=4)
-
         except FileNotFoundError:
-            print_warning(f"Directory not found, skipping preprocessing: {path}")
+            print_warning(f"Directory not found: {path}")
         except Exception as e:
-            # Catch other potential errors during verification or writing the receipt
-            print_warning(f"An unexpected error occurred for '{os.path.basename(path)}'. Error: {e}")
+            print_warning(f"Verification error for '{os.path.basename(path)}': {e}")
 
     convert_audio = user_config.get("convert_audio", False)
-
-    if convert_audio is True:
+    if convert_audio:
         print_step_header("Verifying and Preprocessing Data Directories")
-        
-        data_paths_to_process = [
-            user_config.get("positive_data_path"),
-            user_config.get("negative_data_path")
-        ]
+        data_paths = [user_config.get("positive_data_path"), user_config.get("negative_data_path")]
+        data_paths.extend(user_config.get("background_paths", []))
+        data_paths.extend(user_config.get("rir_paths", []))
+        for path in set(p for p in data_paths if p):
+            smart_verify(path, force=args.force_verify or user_config.get("force_verify", False))
+        print_info("Data verification complete.\n")
 
-        data_paths_to_process.extend(user_config.get("background_paths", []))
-        data_paths_to_process.extend(user_config.get("rir_paths", []))
-
-
-        unique_paths = set(p for p in data_paths_to_process if p)
-        
-        ISforce_verify= user_config.get("force_verify", False)
-        if args.force_verify or ISforce_verify:
-            print_info("User has forced re-verification of all data directories.")
-        
-        for path in unique_paths:
-            smart_verify(path, force=args.force_verify or ISforce_verify)
-            
-        print_info("Data verification and preprocessing complete.\n")
-   
-    # Hardware-Only Configuration (Express Pass) 
-    print_info("Determining hardware-specific configurations...")
+    # Generate intelligent configuration from hardware analysis, then merge
+    # with user config (user values take precedence)
     try:
-        generator1 = ConfigGenerator() 
+        generator1 = ConfigGenerator()
         intelligent_config1 = generator1.generate()
-
         final_config1 = intelligent_config1.copy()
         final_config1.update(user_config)
-
         base_config = final_config1
-
     except Exception as e:
-        print_info(f"Could not generate intelligent hardware config due to an error: {e}. Proceeding with user config only.")
-        base_config = user_config.copy() 
+        print_info(f"Could not generate hardware config: {e}")
+        base_config = user_config.copy()
 
-
+    # Stage 1: Synthetic data generation via TTS (Piper)
     ISgenaret_data = base_config.get("generate_clips", False)
     if args.generate_clips or ISgenaret_data:
         from nanowakeword.generate_clips import generate_clips
         generate_clips(base_config)
 
-
-    # print_step_header("Activating Intelligent Configuration Engine")
-    # try:
-    #     analyzer = DatasetAnalyzer(
-    #         positive_path=user_config["positive_data_path"],
-    #         negative_path=user_config["negative_data_path"],
-    #         noise_path=user_config.get("background_paths", []), 
-    #         rir_path=user_config["rir_paths"][0]
-    #     ) 
-    #     dataset_stats = analyzer.analyze()
-    #     print_table(dataset_stats, "Dataset Statistics")
-
-    #     generator = ConfigGenerator(dataset_stats)
-    #     intelligent_config = generator.generate()
-
-    # except KeyError as e:
-    #     print_error(f"Missing essential path in config file for auto-config: {e}")
-    #     exit()
-    # except Exception as e:
-    #     print_info(f"Could not generate intelligent config due to an error: {e}. Proceeding with user config only.")
-    #     intelligent_config = {} 
-
-    # final_config = intelligent_config.copy()
+    # Deep merge: user config overrides intelligent defaults at all levels
     final_config = base_config
-    
-    # Deep merge the user's configuration on top of it.
-    # This will correctly merge nested dictionaries like 'augmentation_settings'.
     final_config = deep_merge(final_config, user_config)
-    
-    # Now, `final_config` contains the correct, merged values.
     config_proxy = ConfigProxy(final_config)
     config = config_proxy
 
     show_table_flag = config.get("show_training_summary", True)
-    dynamic_table = DynamicTable(config_proxy, title="Effective Training Configuration", enabled=show_table_flag)
 
-    # Define and Create Professional Output Directory Structure  
-    # project_dir = os.path.join(os.path.abspath(base_config["output_dir"]), base_config.get("model_name", AGMINTVP))
+    # Live-updating configuration table shown during training
+    dynamic_table = DynamicTable(
+        config_proxy,
+        title="Effective Training Configuration",
+        enabled=show_table_flag)
+
+    # Prepare directory structure for outputs
     project_dir = os.path.join(
         os.path.abspath(base_config["output_dir"]),
         base_config.get(
@@ -366,205 +326,228 @@ def train(cli_args=None):
 
     for path in [project_dir, feature_save_dir, artifacts_dir, model_save_dir]:
         os.makedirs(path, exist_ok=True)
+    print_info(f"Project assets: {project_dir}")
 
-    print_info(f"Project assets will be saved in: {project_dir}")
-
-
-    # ISoverwrite = config.get("overwrite", False)
+    # Stage 2: Feature extraction (embedding mode) or audio augmentation (E2E mode)
     transform_data = config.get("transform_clips", False)
-
-    if args.transform_clips is True or transform_data:
+    if args.transform_clips or transform_data:
         from nanowakeword.transform_clips import transform_clips
+
         transform_clips(
-                    config=config,
-                    args=args,
-                    feature_save_dir=feature_save_dir
+            config=config,
+            args=args,
+            feature_save_dir=feature_save_dir
         )
 
-
+    # Stage 3: Model training
     should_train = config.get("train_model", False)
     if args.train_model is True or should_train:
         training_start_time = time.time()
 
-        user_feature_manifest = config.get("feature_manifest", {})
+        mode = config.get("mode", "embedding")
+        is_e2e = mode == "e2e"
+
+        if is_e2e:
+            print_step_header("E2E Training Mode: Raw Waveform Input")
+
+        # Separate training manifest from validation manifest (suffix: '_val')
+        user_data_manifest = config.get("feature_manifest", {}) or config.get("data_manifest", {})
 
         manifest = {}
-        for category, paths in user_feature_manifest.items():
+        for category, paths in user_data_manifest.items():
             if not category.endswith('_val'):
                 manifest[category] = paths
 
+        # Batch composition defines how many samples per category are in each batch
+        batch_composition = config.get("batch_composition")
+        if not batch_composition:
+            print_info("'batch_composition' not found. Using default.")
+            batch_composition = {'targets': 30, 'negatives': 230}
+            print_info(f"Default composition: {batch_composition}")
 
-        # Pass the full manifest dictionary to the dataset
-        dataset = AdaptiveLossAwareDataset(
-            feature_manifests=manifest
-        )
+        if is_e2e:
+            # E2E mode: dataset loads raw WAV files and crops/pads to clip_samples
+            dataset = AdaptiveLossAwareDataset(
+                data_manifest=manifest,
+                clip_samples=config.get("clip_samples", 16000),
+                sample_rate=config.get("sample_rate", 16000),
+            )
+        else:
+            # Embedding mode: dataset loads pre-computed .npy feature arrays
+            dataset = AdaptiveLossAwareDataset(data_manifest=manifest)
 
         if len(dataset) == 0:
-            raise ValueError("CRITICAL: Dataset is empty. Check your feature file paths in the manifest.")
+            raise ValueError("CRITICAL: Dataset is empty. Check your manifest paths.")
 
-        # Get the batch composition from the config
-        composition_cfg = config.get("batch_composition")
-
-        if not composition_cfg:
-            print_info("'batch_composition' not found in config. Generating a default balanced composition.")
-            composition_cfg['targets'] = 30
-            composition_cfg['negatives'] =  230
-            
-            print_info(f"Using default composition: {composition_cfg}")
-
+        # ISBL sampler ensures class balance and hardness-aware sampling
         sampler = DynamicClassAwareSampler(
             dataset=dataset,
-            batch_composition=composition_cfg,
-            feature_manifests=manifest
+            batch_composition=batch_composition,
+            data_manifest=manifest,
         )
 
         num_workers = config.get("num_workers", 2)
 
-        # Create DataLoader with our custom sampler and collate_fn
         X_train = DataLoader(
             dataset,
-            batch_sampler=sampler, # Use batch_sampler for samplers that yield full batches
+            batch_sampler=sampler,
             num_workers=num_workers,
             pin_memory=True if num_workers > 0 else False,
             persistent_workers=True if num_workers > 0 else False,
-            collate_fn=collate_fn_with_indices # Use our custom collate function
+            collate_fn=collate_fn_with_indices,
         )
-        
-        print_info("Checking for validation data and creating validation loader...")
 
+        # Build validation dataloader from _val suffixed manifest entries
         val_manifest = {}
-        feature_manifest = config.get("feature_manifest", {})
-        for category, manifest_paths in feature_manifest.items():
+        for category, manifest_paths in user_data_manifest.items():
             if category.endswith('_val'):
-                new_category_name = category.replace('_val', '')
-                val_manifest[new_category_name] = manifest_paths
+                val_manifest[category.replace('_val', '')] = manifest_paths
 
         balanced_val_loader = None
         if val_manifest:
             try:
-                
-                val_dataset = ValidationDataset(feature_manifest=val_manifest)
-
+                val_dataset = ValidationDataset(
+                    feature_manifest=val_manifest,
+                    clip_samples=config.get("clip_samples", 16000) if is_e2e else None,
+                    sample_rate=config.get("sample_rate", 16000) if is_e2e else None,
+                )
                 if len(val_dataset) > 0:
-                    val_batch_size = config.get("validation_batch_size", 256)
-                    
                     balanced_val_loader = DataLoader(
                         dataset=val_dataset,
-                        batch_size=val_batch_size,
+                        batch_size=config.get("validation_batch_size", 256),
                         shuffle=False,
-                        num_workers=config.get("num_workers", 2),
+                        num_workers=num_workers,
                         pin_memory=True if num_workers > 0 else False,
                         persistent_workers=True if num_workers > 0 else False,
                     )
-                    print_info(f"Successfully created validation dataloader with {len(val_dataset)} samples.")
+                    print_info(f"Validation dataloader: {len(val_dataset)} samples")
                 else:
-                    print_info("Validation manifest found, but the resulting dataset is empty. Skipping validation.")
-
+                    print_info("Validation empty. Skipping.")
             except Exception as e:
-                print_error(f"Failed to create validation dataloader. Error: {e}")
-        else:
-            print_info("No validation data keys (e.g., 'targets_val') found in feature_manifest. Skipping validation.")
+                print_error(f"Failed to create validation loader: {e}")
 
-
-        # Shape deteced
         try:
-            sample_feature, _, _ = dataset[0] 
+            sample_feature, _, _ = dataset[0]
             input_shape = sample_feature.shape
-            seconds_per_example = (1280 * input_shape[0]) / 16000 
-            print_info(f"Input Shape Detected: {input_shape} ({seconds_per_example:.2f}s context)")
+            if is_e2e:
+                seconds_per_example = input_shape[-1] / config.get("sample_rate", 16000)
+            else:
+                seconds_per_example = (1280 * input_shape[0]) / 16000
+            print_info(f"Input shape: {input_shape} ({seconds_per_example:.2f}s)")
         except Exception as e:
             print_error(f"Data integrity check failed: {e}")
             sys.exit(1)
-        
-        # MODEL INITIALIZATION
-        print_info("Initializing Neural Architecture...")
-        
+
+        # Construct the neural network model based on config (architecture, size, mode)
         nww = Model(
-            n_classes=1, 
+            n_classes=1,
             input_shape=input_shape,
             config=config,
             model_name=config.get("model_name", atoGeNm(config.get("model_type", "dnn"))),
             model_type=config.get("model_type", "dnn"),
-            layer_dim=config["layer_size"],
-            n_blocks=config["n_blocks"],
+            layer_dim=config.get("layer_size", 128),
+            n_blocks=config.get("n_blocks", 1),
             dropout_prob=config.get("dropout_prob", 0.5),
-            seconds_per_example=seconds_per_example
+            seconds_per_example=seconds_per_example,
+            mode="e2e" if is_e2e else "embedding",
         )
 
         trainer_instance = Trainer(model=nww, config=config)
-        
-        # EXECUTE TRAINING
-        print_step_header("Training is progress")
 
+        # Run the full training loop with validation, checkpointing, and early stopping
+        print_step_header("Training in progress")
         best_model = trainer_instance.auto_train(
             X_train=X_train,
-            X_val=balanced_val_loader,  
+            X_val=balanced_val_loader,
             steps=config.get("steps", 15000),
             debug_path=artifacts_dir,
             table_updater=dynamic_table,
-            resume_from_dir=args.resume 
+            resume_from_dir=args.resume,
         )
 
+        # Generate training performance visualization
         nww.plot_history(artifacts_dir)
-        
+
         training_end_time = time.time()
         training_duration_minutes = (training_end_time - training_start_time) / 60
-
         model_name = config.get("model_name", atoGeNm(config.get("model_type", "dnn")))
 
+        # Export the trained model to ONNX format for inference
         export_onnx_model(
-            model=best_model, 
-            input_shape=input_shape, 
-            config=config, 
-            model_name=model_name, 
-            output_dir=model_save_dir
+            model=best_model,
+            input_shape=input_shape,
+            config=config,
+            model_name=model_name,
+            output_dir=model_save_dir,
         )
 
-        # Distillation: build a lightweight gatekeeper model 
-        # Deduplicate: CLI --distill and config distillation.enabled both trigger
-        # distillation, but we only run it once regardless of which is set.
-        dist_cfg         = config.get("distillation", {})
-        distill_via_cfg  = dist_cfg.get("enabled", True)
-        distill_via_cli  = args.distill
-        should_distill   = distill_via_cfg or distill_via_cli
+        # Distillation: build a lightweight student model that mimics the teacher
+        dist_cfg = config.get("distillation", {})
+        should_distill = dist_cfg.get("enabled", True) or args.distill
 
         if should_distill:
             try:
                 print_step_header("Distillation: Building Lite Model")
-                from nanowakeword.train.distill import distill_model
-                student = distill_model(
-                    teacher=best_model,
-                    X_train=X_train,
-                    config=config,
-                    input_shape=input_shape,
-                )
+                if is_e2e:
+                    from nanowakeword.train.distill import distill_model_e2e
+                    student = distill_model_e2e(
+                        teacher=best_model, 
+                        X_train=X_train, 
+                        config=config, 
+                        input_shape=input_shape,
+                    )
+                else:
+                    from nanowakeword.train.distill import distill_model
+                    student = distill_model(
+                        teacher=best_model, 
+                        X_train=X_train, 
+                        config=config, 
+                        input_shape=input_shape,
+                    )
                 export_onnx_model(
-                    model=student,
-                    input_shape=input_shape,
+                    model=student, 
+                    input_shape=input_shape, 
                     config=config,
-                    model_name=model_name + "_lite",
+                    model_name=model_name + "_lite", 
                     output_dir=model_save_dir,
                 )
-                try:
-                    export_custom_model(student, input_shape, config, model_name + "_lite", model_save_dir)
-                except Exception as e:
-                    print_warning(f"Custom export hook for lite model failed: {e}")
-                print_info(f"Lite model saved alongside main model in: {model_save_dir}")
-            except Exception as e:
-                print_error(f"Distillation failed and was skipped. Details: {e}")
 
+                try:
+                    export_custom_model(
+                        student, 
+                        input_shape, 
+                        config, 
+                        model_name + "_lite", 
+                        model_save_dir
+                        )
+                    
+                except Exception as e:
+                    print_warning(f"Custom export hook failed: {e}")
+                print_info(f"Lite model saved in: {model_save_dir}")
+            except Exception as e:
+                print_error(f"Distillation failed: {e}")
+
+        # Save the best model in PyTorch format (state_dict)
         export_pytorch_model(
             model=best_model,
             model_name=model_name,
             output_dir=model_save_dir
         )
 
-        # Run user-provided export hook (if configured). This runs in addition to built-in exports.
+        # Run user-defined custom export hook (e.g. CoreML, TFLite) if configured
         try:
-            export_custom_model(best_model, input_shape, config, model_name, model_save_dir)
-        except Exception as e:
-            print_warning(f"Custom export hook encountered an error: {e}")
+            export_custom_model(
+                best_model,
+                input_shape,
+                config,
+                model_name,
+                model_save_dir
+            )
 
+        except Exception as e:
+            print_warning(f"Custom export hook error: {e}")
+
+        # Update the training journal with run metrics
         if config.get("enable_journaling", True):
             final_metrics = {}
             if nww.history.get("final_report"):
@@ -575,96 +558,83 @@ def train(cli_args=None):
 
             final_metrics["Train Time"] = f"{training_duration_minutes:.1f}"
             base_output_directory = os.path.abspath(base_config["output_dir"])
-
             update_training_journal(
-                base_output_dir=base_output_directory,
+                base_output_dir=base_output_directory, 
                 model_name=model_name,
-                metrics=final_metrics,
-                current_config=config.report()
+                metrics=final_metrics, 
+                current_config=config.report(),
             )
 
-    # Standalone distillation (no retraining) 
-    # Triggered by --distill without -T, or config distillation.enabled=true
-    # without train_model=true. Loads the already-exported ONNX and distills from it.
     elif args.distill and not (args.train_model or config.get("train_model", False)):
+        # Standalone distillation: distill a lite model from an already-exported ONNX
+        # teacher without re-training. Requires a previously trained ONNX model.
         print_step_header("Standalone Distillation: Building Lite Model from Existing ONNX")
-
         model_name = config.get("model_name", atoGeNm(config.get("model_type", "dnn")))
-        project_dir = os.path.join(
-            os.path.abspath(base_config["output_dir"]),
-            model_name,
-        )
+        project_dir = os.path.join(os.path.abspath(base_config["output_dir"]), model_name)
         model_save_dir = os.path.join(project_dir, "model")
-        onnx_path      = os.path.join(model_save_dir, model_name + ".onnx")
-
+        onnx_path = os.path.join(model_save_dir, model_name + ".onnx")
         if not os.path.exists(onnx_path):
-            print_error(
-                f"No trained ONNX model found at '{onnx_path}'.\n"
-                f"Train the model first with -T, then run --distill standalone."
-            )
+            print_error(f"No trained ONNX at '{onnx_path}'. Train first with -T.")
             sys.exit(1)
 
-        # We need a DataLoader to distill from - reuse the feature manifest
-        user_feature_manifest = config.get("feature_manifest", {})
-        manifest = {
-            cat: paths
-            for cat, paths in user_feature_manifest.items()
-            if not cat.endswith("_val")
-        }
-
+        user_data_manifest = config.get("feature_manifest", {}) or config.get("data_manifest", {})
+        manifest = {cat: paths for cat, paths in user_data_manifest.items() if not cat.endswith("_val")}
         if not manifest:
-            print_error("No feature_manifest entries found in config. Cannot run standalone distillation.")
+            print_error("No data_manifest entries found.")
             sys.exit(1)
 
-        dataset = AdaptiveLossAwareDataset(feature_manifests=manifest)
+        mode = config.get("mode", "embedding")
+        is_e2e = (mode == "e2e")
+
+        if is_e2e:
+            dataset = AdaptiveLossAwareDataset(
+                data_manifest=manifest,
+                clip_samples=config.get("clip_samples", 16000),
+                sample_rate=config.get("sample_rate", 16000),
+            )
+        else:
+            dataset = AdaptiveLossAwareDataset(data_manifest=manifest)
         if len(dataset) == 0:
-            print_error("Dataset is empty. Check your feature file paths in the manifest.")
+            print_error("Dataset is empty.")
             sys.exit(1)
-
-        # composition_cfg = config.get("batch_composition", {"targets": 30, "negatives": 230})
-        # Get the batch composition from the config
 
         composition_cfg = config.get("batch_composition")
-
         if not composition_cfg:
-            print_info("Distillation: 'batch_composition' not found in config. Generating a default balanced composition.")
-            composition_cfg['targets'] = 30
-            composition_cfg['negatives'] =  230
-            
-            print_info(f"Using default composition: {composition_cfg}")
+            composition_cfg = {'targets': 30, 'negatives': 230}
 
         sampler = DynamicClassAwareSampler(
-            dataset=dataset,
-            batch_composition=composition_cfg,
-            feature_manifests=manifest,
-        )
+                                        dataset=dataset, 
+                                        batch_composition=composition_cfg, 
+                                        data_manifest=manifest
+                                        )
+        
         num_workers = config.get("num_workers", 2)
         X_train = DataLoader(
             dataset,
-            batch_sampler=sampler,
+            batch_sampler=sampler, 
             num_workers=num_workers,
             pin_memory=True if num_workers > 0 else False,
             persistent_workers=True if num_workers > 0 else False,
-            collate_fn=collate_fn_with_indices,
-        )
+            collate_fn=collate_fn_with_indices
+            )
 
-        # Detect input shape from data
         sample_feature, _, _ = dataset[0]
         input_shape = sample_feature.shape
 
         try:
             from nanowakeword.train.distill import distill_from_onnx
             distill_from_onnx(
-                onnx_path=onnx_path,
-                X_train=X_train,
+                onnx_path=onnx_path, 
+                X_train=X_train, 
                 config=config,
-                input_shape=input_shape,
+                input_shape=input_shape, 
                 output_dir=model_save_dir,
                 model_name=model_name,
             )
         except Exception as e:
-            print_error(f"Standalone distillation failed. Details: {e}")
+            print_error(f"Standalone distillation failed: {e}")
             sys.exit(1)
+
 
 if __name__ == '__main__':
     train()

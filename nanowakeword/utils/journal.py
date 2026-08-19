@@ -19,7 +19,7 @@
 
 import os
 import json
-from .logger import print_info
+from .logger import print_info, print_error
 
 def format_change_value(value):
     """Formats values for display, keeping it concise."""
@@ -147,5 +147,5 @@ def update_training_journal(base_output_dir, model_name, metrics, current_config
 
     except Exception as e:
         import traceback
-        print(f"[Journal Error] Failed to update journal. Details: {e}")
+        print_error(f"[Journal Error] Failed to update journal. Details: {e}")
         traceback.print_exc()

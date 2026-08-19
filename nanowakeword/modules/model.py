@@ -35,8 +35,9 @@ from torch import nn
 from nanowakeword.utils.logger import print_info
 
 from .architectures import (
-    CNNModel, LSTMModel, Net, GRUModel, RNNModel, TransformerModel, 
-    CRNNModel, TCNModel, QuartzNetModel, ConformerModel, EBranchformerModel, BcResNetModel
+    CNNModel, LSTMModel, Net, GRUModel, RNNModel, TransformerModel,
+    CRNNModel, TCNModel, QuartzNetModel, ConformerModel, EBranchformerModel, BcResNetModel,
+    E2ERawDNN, E2ERawCNN, E2ERawQuartzNet, E2E_MelSpectrogram_CNN
 )
 
 matplotlib.use('Agg')
@@ -57,17 +58,17 @@ def set_seed(seed):
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed) 
         torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
+        # torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.benchmark = True
 
 set_seed(SEED)
 
 
 class Model(nn.Module):
     def __init__(self, config, model_name: str, n_classes=1, input_shape=(16, 96), model_type="dnn",
-                layer_dim=128, n_blocks=1, seconds_per_example=None, dropout_prob=0.5):
+                layer_dim=128, n_blocks=1, seconds_per_example=None, dropout_prob=0.5, mode="embedding"):
         super().__init__()
 
-        # Store inputs as attributes
         self.n_classes = n_classes
         self.input_shape = input_shape
         self.seconds_per_example = seconds_per_example
@@ -75,74 +76,201 @@ class Model(nn.Module):
         self.config = config
         self.history = collections.defaultdict(list)
         self.model_name = model_name
+        self.mode = mode
 
         act_fn_type = config.get("activation_function", "relu").lower()
         if act_fn_type == "gelu":
             self.activation_fn = nn.GELU()
         elif act_fn_type == "silu":
             self.activation_fn = nn.SiLU()
-        else: # Default to ReLU
-            self.activation_fn = nn.ReLU()        
+        else:
+            self.activation_fn = nn.ReLU()
 
         embedding_dim = config.get("embedding_dim", 64)
+        self.embedding_dim = embedding_dim
 
         self.debug_save_dir = None
+        self.is_e2e = mode == "e2e"
 
         if model_type.lower() in {"conformer", "e_branchformer", "crnn"}:
             print_info(f"\n[WARNING] The '{model_type.upper()}' architecture is highly sensitive to hyperparameters and may exhibit convergence instability.\n")
 
-        if model_type == "cnn":
-            self.model = CNNModel(input_shape, embedding_dim, dropout_prob=dropout_prob, activation_fn=self.activation_fn)
+        if self.is_e2e:
+            frontend_channels = config.get("e2e_frontend_channels", 32)
+            frontend_depth = config.get("e2e_frontend_depth", None)
+
+            if model_type == "e2e_dnn":
+                self.model = E2E_MelSpectrogram_CNN(
+                    embedding_dim=embedding_dim, 
+                    dropout_prob=dropout_prob,
+                    activation_fn=self.activation_fn
+                )
+
+            elif model_type == "e2e_cnn":
+                cnn_depth = frontend_depth if frontend_depth is not None else 2
+                self.model = E2ERawCNN(
+                    embedding_dim=embedding_dim, 
+                    dropout_prob=dropout_prob,
+                    activation_fn=self.activation_fn, 
+                    frontend_channels=frontend_channels,
+                    frontend_depth=cnn_depth,
+                )
+
+            elif model_type == "e2e_quartznet":
+
+                quartz_depth = frontend_depth if frontend_depth is not None else 3
+                default_qconfig = [[64, 11, 1], [64, 13, 1], [64, 17, 1]]
+                qconfig = config.get("e2e_quartznet_config", default_qconfig)
+
+                self.model = E2ERawQuartzNet(
+                    embedding_dim=embedding_dim, 
+                    dropout_prob=dropout_prob,
+                    activation_fn=self.activation_fn, 
+                    frontend_channels=frontend_channels,
+                    frontend_depth=quartz_depth, 
+                    quartznet_config=qconfig,
+                )
+
+            elif model_type in {"custom", "custom_model"}:
+                self.model = self._load_custom_e2e_model(
+                    input_shape=input_shape,
+                    embedding_dim=embedding_dim,
+                    dropout_prob=dropout_prob,
+                    frontend_channels=frontend_channels,
+                )
+
+            else:
+                raise ValueError(
+                    f"Unsupported E2E model_type: '{model_type}'. "
+                    f"Choose from: e2e_dnn, e2e_cnn, e2e_quartznet, custom."
+                )
+
+        elif model_type in {"custom", "custom_model"}:
+            self.model = self._load_custom_model(
+                input_shape=input_shape,
+            )
+
+        elif model_type == "cnn":
+            self.model = CNNModel(
+                input_shape, 
+                embedding_dim, 
+                dropout_prob=dropout_prob, 
+                activation_fn=self.activation_fn
+                )
+            
         elif model_type == "lstm":
-            self.model = LSTMModel(input_shape[1], layer_dim, n_blocks, embedding_dim, bidirectional=True, dropout_prob=dropout_prob)
+            self.model = LSTMModel(
+                input_shape[1], 
+                layer_dim, 
+                n_blocks, 
+                embedding_dim, 
+                bidirectional=True, 
+                dropout_prob=dropout_prob
+                )
+            
         elif model_type == "dnn":
-            self.model = Net(input_shape, layer_dim, n_blocks, embedding_dim, dropout_prob=dropout_prob, activation_fn=self.activation_fn)
+            self.model = Net(
+                input_shape, 
+                layer_dim, 
+                n_blocks, 
+                embedding_dim, 
+                dropout_prob=dropout_prob, 
+                activation_fn=self.activation_fn
+                )
+            
         elif model_type == "gru":
-            self.model = GRUModel(input_shape[1], layer_dim, n_blocks, embedding_dim, bidirectional=True, dropout_prob=dropout_prob)
+            self.model = GRUModel(
+                input_shape[1], 
+                layer_dim, 
+                n_blocks, 
+                embedding_dim, 
+                bidirectional=True, 
+                dropout_prob=dropout_prob
+                )
+            
         elif model_type == "rnn":
-            self.model = RNNModel(input_shape, embedding_dim, n_blocks, dropout_prob=dropout_prob)
+            self.model = RNNModel(
+                input_shape, 
+                embedding_dim, 
+                n_blocks, 
+                dropout_prob=dropout_prob
+                )
+            
         elif model_type == "transformer":
             d_model = config.get("transformer_d_model", 128)
             n_head = config.get("transformer_n_head", 4)
+
             self.model = TransformerModel(
-                input_dim=input_shape[1], d_model=d_model, n_head=n_head, 
-                n_layers=n_blocks, embedding_dim=embedding_dim, dropout_prob=dropout_prob
+                input_dim=input_shape[1], 
+                d_model=d_model, 
+                n_head=n_head, 
+                n_layers=n_blocks, 
+                embedding_dim=embedding_dim, 
+                dropout_prob=dropout_prob
             )
+
         elif model_type == "crnn":
             cnn_channels = config.get("crnn_cnn_channels", [16, 32, 32])
             rnn_type = config.get("crnn_rnn_type", "lstm")
+
             self.model = CRNNModel(
-                input_shape=input_shape, rnn_type=rnn_type, rnn_hidden_size=layer_dim, 
-                n_rnn_layers=n_blocks, cnn_channels=cnn_channels, embedding_dim=embedding_dim,
-                dropout_prob=dropout_prob, activation_fn=self.activation_fn
+                input_shape=input_shape, 
+                rnn_type=rnn_type, 
+                rnn_hidden_size=layer_dim, 
+                n_rnn_layers=n_blocks, 
+                cnn_channels=cnn_channels, 
+                embedding_dim=embedding_dim,
+                dropout_prob=dropout_prob, 
+                activation_fn=self.activation_fn
             )
+
         elif model_type == "tcn":
             tcn_channels = config.get("tcn_channels", [64, 64, 128])
             tcn_kernel_size = config.get("tcn_kernel_size", 3)
+
             self.model = TCNModel(
-                input_dim=input_shape[1], num_channels=tcn_channels, embedding_dim=embedding_dim,
-                kernel_size=tcn_kernel_size, dropout_prob=dropout_prob
+                input_dim=input_shape[1], 
+                num_channels=tcn_channels, 
+                embedding_dim=embedding_dim,
+                kernel_size=tcn_kernel_size, 
+                dropout_prob=dropout_prob
             )
+
         elif model_type == "quartznet":
             default_quartznet_config = [[256, 33, 1], [256, 33, 1], [512, 39, 1]]
             quartznet_config = config.get("quartznet_config", default_quartznet_config)
+
             self.model = QuartzNetModel(
-                input_dim=input_shape[1], quartznet_config=quartznet_config,
-                embedding_dim=embedding_dim, dropout_prob=dropout_prob
+                input_dim=input_shape[1], 
+                quartznet_config=quartznet_config,
+                embedding_dim=embedding_dim, 
+                dropout_prob=dropout_prob
             )
+
         elif model_type == "conformer":
             conformer_d_model = config.get("conformer_d_model", 144)
             conformer_n_head = config.get("conformer_n_head", 4)
+
             self.model = ConformerModel(
-                input_dim=input_shape[1], d_model=conformer_d_model, n_head=conformer_n_head,
-                n_layers=n_blocks, embedding_dim=embedding_dim, dropout_prob=dropout_prob
+                input_dim=input_shape[1], 
+                d_model=conformer_d_model, 
+                n_head=conformer_n_head,
+                n_layers=n_blocks, 
+                embedding_dim=embedding_dim, 
+                dropout_prob=dropout_prob
             )
+
         elif model_type == "e_branchformer":
             branchformer_d_model = config.get("branchformer_d_model", 144)
             branchformer_n_head = config.get("branchformer_n_head", 4)
+
             self.model = EBranchformerModel(
-                input_dim=input_shape[1], d_model=branchformer_d_model, n_head=branchformer_n_head,
-                n_layers=n_blocks, embedding_dim=embedding_dim, dropout_prob=dropout_prob
+                input_dim=input_shape[1], 
+                d_model=branchformer_d_model, 
+                n_head=branchformer_n_head,
+                n_layers=n_blocks, 
+                embedding_dim=embedding_dim, 
+                dropout_prob=dropout_prob
             )
 
         elif model_type == "bcresnet":
@@ -153,62 +281,9 @@ class Model(nn.Module):
                 activation_fn=self.activation_fn
             )
         elif model_type in {"custom", "custom_model"}:
-            custom_cfg = config.get("custom_model_config", {})
-            module_path = custom_cfg.get("module_path")
-            class_name = custom_cfg.get("class_name")
-
-            if not module_path or not class_name:
-                raise ValueError(
-                    "For model_type='custom', custom_model_config must contain "
-                    "'module_path' and 'class_name'."
-                )
-
-            module = None
-            abs_path = os.path.abspath(module_path)
-
-            if os.path.isfile(abs_path):
-                module_name = os.path.splitext(os.path.basename(abs_path))[0]
-                spec = importlib.util.spec_from_file_location(module_name, abs_path)
-                if spec is None or spec.loader is None:
-                    raise ImportError(f"Unable to load custom model module from '{abs_path}'")
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-            else:
-                try:
-                    module = importlib.import_module(module_path)
-                except Exception as exc:
-                    raise ImportError(
-                        f"Custom model module '{module_path}' could not be imported: {exc}"
-                    )
-
-            custom_class = getattr(module, class_name, None)
-            if custom_class is None:
-                raise AttributeError(
-                    f"Custom model class '{class_name}' not found in module '{module_path}'."
-                )
-
-            custom_params = custom_cfg.get("params", {}) or {}
-            base_kwargs = {
-                "input_shape": input_shape,
-                "embedding_dim": embedding_dim,
-                "dropout_prob": dropout_prob,
-                "activation_fn": self.activation_fn,
-                "config": config,
-            }
-
-            # Pass only supported kwargs to the custom class constructor.
-            try:
-                signature = inspect.signature(custom_class)
-                supported_kwargs = {
-                    name: value
-                    for name, value in base_kwargs.items()
-                    if name in signature.parameters
-                }
-            except (ValueError, TypeError):
-                supported_kwargs = base_kwargs
-
-            supported_kwargs.update(custom_params)
-            self.model = custom_class(**supported_kwargs)
+            self.model = self._load_custom_model(
+                input_shape=input_shape,
+            )
 
         else:
             raise ValueError(f"Unsupported model_type: '{model_type}'.")
@@ -220,8 +295,134 @@ class Model(nn.Module):
             nn.Linear(embedding_dim // 2, n_classes)
         )
 
-        # Define logging dict (in-memory)
         self.history = collections.defaultdict(list)
+
+    def _load_custom_module(self):
+        """Load a custom model module from the config.
+
+        Returns the imported module object.
+        """
+        custom_cfg = self.config.get("custom_model_config", {})
+        module_path = custom_cfg.get("module_path")
+        class_name = custom_cfg.get("class_name")
+
+        if not module_path or not class_name:
+            raise ValueError(
+                "For model_type='custom', custom_model_config must contain "
+                "'module_path' and 'class_name'."
+            )
+
+        abs_path = os.path.abspath(module_path)
+
+        if os.path.isfile(abs_path):
+            module_name = os.path.splitext(os.path.basename(abs_path))[0]
+            spec = importlib.util.spec_from_file_location(module_name, abs_path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"Unable to load custom model module from '{abs_path}'")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        else:
+            try:
+                module = importlib.import_module(module_path)
+            except Exception as exc:
+                raise ImportError(
+                    f"Custom model module '{module_path}' could not be imported: {exc}"
+                )
+
+        return module, custom_cfg
+
+    def _load_custom_model(self, input_shape):
+        """Instantiate a custom architecture for embedding mode.
+
+        Args:
+            input_shape: Shape of the pre-computed feature input.
+
+        Returns:
+            An nn.Module instance for the custom model.
+        """
+        module, custom_cfg = self._load_custom_module()
+
+        class_name = custom_cfg.get("class_name")
+        custom_class = getattr(module, class_name, None)
+        if custom_class is None:
+            raise AttributeError(
+                f"Custom model class '{class_name}' not found in module '{custom_cfg.get('module_path')}'."
+            )
+
+        custom_params = custom_cfg.get("params", {}) or {}
+        embedding_dim = self.config.get("embedding_dim", 64)
+        dropout_prob = self.config.get("dropout_prob", 0.5)
+
+        base_kwargs = {
+            "input_shape": input_shape,
+            "embedding_dim": embedding_dim,
+            "dropout_prob": dropout_prob,
+            "activation_fn": self.activation_fn,
+            "config": self.config,
+        }
+
+        try:
+            signature = inspect.signature(custom_class)
+            supported_kwargs = {
+                name: value
+                for name, value in base_kwargs.items()
+                if name in signature.parameters
+            }
+        except (ValueError, TypeError):
+            supported_kwargs = base_kwargs
+
+        supported_kwargs.update(custom_params)
+        return custom_class(**supported_kwargs)
+
+    def _load_custom_e2e_model(self, input_shape, embedding_dim, dropout_prob, frontend_channels=None):
+        """Instantiate a custom architecture for E2E mode.
+
+        The custom class must accept raw waveform input (1D tensor of audio
+        samples) and return an embedding of shape [batch, embedding_dim].
+
+        Args:
+            input_shape: Shape of the raw audio input (typically [clip_samples] or [1, clip_samples]).
+            embedding_dim: Output embedding dimension.
+            dropout_prob: Dropout probability.
+            frontend_channels: Optional frontend channel count (e2e-specific).
+
+        Returns:
+            An nn.Module instance for the custom E2E model.
+        """
+        module, custom_cfg = self._load_custom_module()
+
+        class_name = custom_cfg.get("class_name")
+        custom_class = getattr(module, class_name, None)
+        if custom_class is None:
+            raise AttributeError(
+                f"Custom model class '{class_name}' not found in module '{custom_cfg.get('module_path')}'."
+            )
+
+        custom_params = custom_cfg.get("params", {}) or {}
+
+        base_kwargs = {
+            "input_shape": input_shape,
+            "embedding_dim": embedding_dim,
+            "dropout_prob": dropout_prob,
+            "activation_fn": self.activation_fn,
+            "config": self.config,
+        }
+
+        if frontend_channels is not None:
+            base_kwargs["frontend_channels"] = frontend_channels
+
+        try:
+            signature = inspect.signature(custom_class)
+            supported_kwargs = {
+                name: value
+                for name, value in base_kwargs.items()
+                if name in signature.parameters
+            }
+        except (ValueError, TypeError):
+            supported_kwargs = base_kwargs
+
+        supported_kwargs.update(custom_params)
+        return custom_class(**supported_kwargs)
 
 
     def plot_history(self, output_dir):
@@ -231,8 +432,6 @@ class Model(nn.Module):
         - Right axis (Rate):  Train Recall EMA, Val Recall, Val FPR
         All lines share the same x-axis and plot box.
         """
-        import os
-        import numpy as np
         import matplotlib.pyplot as plt
 
         print_info("Generating training performance graph...")
@@ -363,14 +562,23 @@ class Model(nn.Module):
     def forward(self, x):
             """
             Takes input features and returns the final classification logits.
+            For embedding mode: input is [B, time_frames, 96] (pre-computed embeddings).
+            For E2E mode: input is [B, n_samples] raw PCM audio.
             Output shape: [B, 1] (batch_size, n_classes)
             """
             embeddings = self.model(x)
-            logits = self.classifier(embeddings)  # Shape: [B, 1]
+            logits = self.classifier(embeddings)
             return logits
 
     def summary(self):
-        return torchinfo.summary(self.model, input_size=(1,) + self.input_shape, device='cpu')
+        if self.is_e2e:
+            if len(self.input_shape) == 1:
+                input_size = (1, 1, self.input_shape[0])
+            else:
+                input_size = (1, *self.input_shape)
+        else:
+            input_size = (1,) + self.input_shape
+        return torchinfo.summary(self.model, input_size=input_size, device='cpu')
 
 
     def average_models(self, state_dicts: list):

@@ -421,7 +421,7 @@ class Trainer:
         val_steps_without_improvement = 0
 
         if patience == 0:
-            print_info("Early stopping is DISABLED. Training will run for the full duration of 'steps'.")
+            print_info(f"Early stopping is DISABLED; the training process will run for the full {max_steps} steps.")
         else:
             print_info(f"Training for {max_steps} steps. Early stopping will activate after {stabilization_steps} stabilization steps.")
 
@@ -519,13 +519,6 @@ class Trainer:
                 total_loss, per_example_loss = BiasWeightedLoss(logits, labels, LOSS_BIAS)
 
             # Logit regularisation: penalise extreme logit magnitudes.
-            # ASYMMETRIC: only penalise negative logits that go too negative.
-            # Positive logits are left free -- the model needs high confidence on
-            # positives to survive real-world noise. Pulling them down causes misses.
-            # Negative logits going to -25 is the problem: it means the model has
-            # zero uncertainty on negatives and will fail on any out-of-distribution
-            # audio (like partial wake words). Keeping them above -logit_reg_margin
-            # forces the model to maintain a calibrated decision boundary.
             logit_reg_weight = float(self.config.get("logit_reg_weight", 2e-4))
             logit_reg_margin = float(self.config.get("logit_reg_margin", 6.0))
             if logit_reg_weight > 0:

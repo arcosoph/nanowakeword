@@ -15,7 +15,7 @@
 #
 #  Project: https://github.com/arcosoph/nanowakeword
 
-
+# (✿◕‿◕✿)
 from __future__ import annotations
 import os
 import time
@@ -122,6 +122,10 @@ class NanoInterpreter:
     and performs real-time, stateful wake word detection with optional
     noise reduction and voice activity detection.
 
+    Supports two modes:
+    - embedding mode: uses pre-computed mel+embedding features
+    - e2e mode: model processes raw PCM audio directly
+
     This class should not be instantiated directly. Use the class method:
     `NanoInterpreter.load_model()` to create an instance.
     """
@@ -132,21 +136,23 @@ class NanoInterpreter:
         """
         self._ort = self._import_onnx_runtime()
 
-        # Setup core attributes 
         self.models: Dict[str, "onnxruntime.InferenceSession"] = {}
         self.model_input_names: Dict[str, List[str]] = {}
         self.model_feature_length: Dict[str, int] = {}
         self.class_mapping: Dict[str, Dict[str, str]] = {}
 
-        # State Management (for RNN/LSTM/GRU) -
         self.is_stateful: Dict[str, bool] = {}
         self.hidden_states: Dict[str, HiddenState] = {}
 
-        #  Transparent Scoring Attributes 
         self.raw_scores: Dict[str, float] = {}
         self.post_processed_scores: Dict[str, float] = {}
-        
-        # Model Loading Loop 
+
+        self.is_e2e: Dict[str, bool] = {}
+        self.e2e_clip_samples: Dict[str, int] = {}
+        self.e2e_input_ndim: Dict[str, int] = {}
+        self.e2e_buffer: Dict[str, deque] = {}
+        self.e2e_buffer_samples: Dict[str, int] = {}
+
         for mdl_path in wakeword_models:
             mdl_name = os.path.splitext(os.path.basename(mdl_path))[0]
             if mdl_name in self.models:
@@ -155,19 +161,27 @@ class NanoInterpreter:
 
             session = self._create_onnx_session(mdl_path)
             self.models[mdl_name] = session
-            
+
             inputs = session.get_inputs()
             self.model_input_names[mdl_name] = [inp.name for inp in inputs]
             self.model_feature_length[mdl_name] = inputs[0].shape[1]
-            
+
             self._initialize_state_management(mdl_name)
             self.class_mapping[mdl_name] = {"0": mdl_name}
 
-            # Initialize scores for each model
             self.raw_scores[mdl_name] = 0.0
             self.post_processed_scores[mdl_name] = 0.0
 
-        # Buffer, Preprocessor, and Optional Components Setup
+            self.is_e2e[mdl_name] = self._detect_e2e_model(session, mdl_name)
+            if self.is_e2e[mdl_name]:
+                inp_shape = inputs[0].shape
+                clip_samples = inp_shape[-1]
+                self.e2e_clip_samples[mdl_name] = clip_samples
+                self.e2e_input_ndim[mdl_name] = len(inp_shape)
+                self.e2e_buffer[mdl_name] = deque(maxlen=clip_samples)
+                self.e2e_buffer_samples[mdl_name] = 0
+                logging.info(f"[NanoInterpreter] E2E model '{mdl_name}' detected, clip_samples={clip_samples}")
+
         self._setup_components(**kwargs)
 
         # Cascade (2-stage) configuration
@@ -315,7 +329,7 @@ class NanoInterpreter:
         Args:
             model:             Path (or list of paths) to the main .onnx model file(s).
                                Can be None when remote_pipeline="full" and no local
-                               gate model is needed — the server handles everything.
+                               gate model is needed - the server handles everything.
             cascade:           Enable 2-stage cascade mode. When True, the interpreter
                                automatically discovers ``<model_name>_lite.onnx`` in the
                                same directory and uses it as a lightweight gatekeeper
@@ -330,10 +344,10 @@ class NanoInterpreter:
                                runs on the remote machine.
             remote_pipeline:   What the remote server handles. Must match the server's
                                ``--pipeline`` argument:
-                                 "verifier_only" (default) — edge sends pre-computed
+                                 "verifier_only" (default) - edge sends pre-computed
                                    features; server runs only the wake word model.
                                    mel + embedding run locally on the edge device.
-                                 "full" — edge sends raw audio; server runs the
+                                 "full" - edge sends raw audio; server runs the
                                    complete pipeline (mel + embedding + verifier).
                                    Use this for very low-power edge devices.
             remote_timeout:    Seconds to wait for a server response. Default 2.0.
@@ -349,13 +363,13 @@ class NanoInterpreter:
 
         Examples::
 
-            # Fully local — single model
+            # Fully local - single model
             NanoInterpreter.load_model("my_model.onnx")
 
-            # Local cascade — auto-discover lite model
+            # Local cascade - auto-discover lite model
             NanoInterpreter.load_model("my_model.onnx", cascade=True)
 
-            # Gate local, verifier remote (default — edge runs mel+embedding+gate)
+            # Gate local, verifier remote (default - edge runs mel+embedding+gate)
             NanoInterpreter.load_model(
                 model="my_model_lite.onnx",
                 remote_verifier="ws://192.168.1.100:8765",
@@ -370,7 +384,7 @@ class NanoInterpreter:
                 gate_threshold=0.25,
             )
 
-            # No local model — server handles everything
+            # No local model - server handles everything
             NanoInterpreter.load_model(
                 remote_verifier="ws://192.168.1.100:8765",
                 remote_pipeline="full",
@@ -416,7 +430,7 @@ class NanoInterpreter:
                     else gate_stem + "_remote"
                 )
             else:
-                # No local model — server handles everything including gate
+                # No local model - server handles everything including gate
                 gate_stem     = None
                 verifier_stem = "remote_model"
 
@@ -488,7 +502,7 @@ class NanoInterpreter:
 
         # Build instance
         # When remote_pipeline="full" and no local model, we need an interpreter
-        # with no local ONNX models — skip AudioFeatures download too.
+        # with no local ONNX models - skip AudioFeatures download too.
         no_local_models = (remote_cfg is not None and not paths)
 
         if no_local_models:
@@ -586,7 +600,7 @@ class NanoInterpreter:
         if self.vad_threshold > 0:
             self.vad = nanowakeword.VAD()
 
-        # No preprocessor — raw audio is sent directly to the remote server
+        # No preprocessor - raw audio is sent directly to the remote server
         self.preprocessor = None
 
     def predict(self, x: np.ndarray, patience: dict = {}, threshold: dict = {}, debounce_time: float = 0.0) -> DetectionResult:
@@ -618,30 +632,11 @@ class NanoInterpreter:
         if self.noise_reducer_enabled:
             x = self._reduce_noise(x)
 
-        #  Full-remote mode: no local preprocessor 
-        # When remote_pipeline="full" and no local model, send raw audio directly
-        # to the remote session and return its score.
+        # E2E mode: no preprocessor, accumulate raw audio in per-model buffers
         if self.preprocessor is None:
-            current_raw_preds = {}
-            for mdl_name, session in self.models.items():
-                output_raw = session.run(None, {"audio": x})
-                score      = output_raw[0].item()
-                self.raw_scores[mdl_name] = score
-                if len(self.prediction_buffer.get(mdl_name, [])) < 5:
-                    score = 0.0
-                current_raw_preds[mdl_name] = score
+            return self._predict_e2e(x, patience, threshold, debounce_time)
 
-            for mdl_name, score in current_raw_preds.items():
-                self.prediction_buffer[mdl_name].append(score)
-                self.post_processed_scores[mdl_name] = score
-
-            return DetectionResult(
-                scores=dict(current_raw_preds),
-                model_name=self.model_name,
-                gate_name=self.gate_name,
-            )
-
-        # Pre-process Audio & Get Features
+        # Pre-process Audio & Get Features (embedding mode)
         n_prepared_samples = self.preprocessor(x)
 
         # If not enough new audio, return the last known state.
@@ -724,16 +719,99 @@ class NanoInterpreter:
     def reset(self):
             """Resets the interpreter's internal state for a new session."""
             self.prediction_buffer.clear()
-            
-            # Check if preprocessor exists before resetting
+
             if self.preprocessor is not None:
                 self.preprocessor.reset()
-                
+
             for mdl_name in self.hidden_states:
                 self.hidden_states[mdl_name] = None
             for mdl_name in self.raw_scores:
                 self.raw_scores[mdl_name] = 0.0
                 self.post_processed_scores[mdl_name] = 0.0
+            for mdl_name in self.e2e_buffer:
+                self.e2e_buffer[mdl_name].clear()
+                self.e2e_buffer_samples[mdl_name] = 0
+
+    def _predict_e2e(self, x: np.ndarray, patience: dict = {}, threshold: dict = {}, debounce_time: float = 0.0) -> DetectionResult:
+        """
+        E2E prediction path. Accumulates raw audio in per-model buffers.
+        When enough samples are collected for a model, runs inference on
+        the raw PCM clip directly.
+
+        Supports cascade gating, VAD filtering, patience, and debounce
+        (same post-processing as the embedding-mode path).
+        """
+        current_raw_preds = {}
+        for mdl_name, session in self.models.items():
+            clip_samples = self.e2e_clip_samples[mdl_name]
+            buf = self.e2e_buffer[mdl_name]
+            buf_samples = self.e2e_buffer_samples[mdl_name]
+
+            x_float = x.astype(np.float32) / 32768.0
+            buf.extend(x_float.tolist())
+            buf_samples += len(x)
+            self.e2e_buffer_samples[mdl_name] = buf_samples
+
+            if buf_samples >= clip_samples:
+                clip = np.array(list(buf)[-clip_samples:], dtype=np.float32)
+
+                if self.cascade_config:
+                    gate_name_ = self.cascade_config["gate"]
+                    verifier_name = self.cascade_config["verifier"]
+                    gate_threshold = self.cascade_config["gate_threshold"]
+                    if mdl_name == verifier_name:
+                        gate_score_ = current_raw_preds.get(gate_name_, 0.0)
+                        if gate_score_ < gate_threshold:
+                            current_raw_preds[mdl_name] = 0.0
+                            self.raw_scores[mdl_name] = 0.0
+                            if len(self.prediction_buffer.get(mdl_name, [])) < 5:
+                                current_raw_preds[mdl_name] = 0.0
+                            continue
+
+                ndim = self.e2e_input_ndim.get(mdl_name, 2)
+                if ndim == 3:
+                    clip_input = clip.reshape(1, 1, -1)
+                else:
+                    clip_input = clip.reshape(1, -1)
+
+                from nanowakeword.interpreter.remote_verifier import _RemoteSession
+                if isinstance(session, _RemoteSession):
+                    input_feed = {"audio": clip_input}
+                else:
+                    input_feed = {"input": clip_input}
+
+                output_raw = session.run(None, input_feed)
+                score = float(output_raw[0].item())
+            else:
+                score = 0.0
+
+            self.raw_scores[mdl_name] = score
+            if len(self.prediction_buffer.get(mdl_name, [])) < 5:
+                score = 0.0
+            current_raw_preds[mdl_name] = score
+
+        final_predictions = current_raw_preds.copy()
+
+        if self.vad_threshold > 0:
+            self.vad(x)
+            vad_frames = list(self.vad.prediction_buffer)[-7:-4]
+            vad_max_score = np.max(vad_frames) if len(vad_frames) > 0 else 0
+            if vad_max_score < self.vad_threshold:
+                for mdl_name in final_predictions:
+                    final_predictions[mdl_name] = 0.0
+
+        e2e_samples = len(x)
+        self._apply_post_processing(final_predictions, patience, threshold, debounce_time, e2e_samples)
+
+        for mdl_name, score in final_predictions.items():
+            self.prediction_buffer[mdl_name].append(score)
+            self.post_processed_scores[mdl_name] = score
+
+        return DetectionResult(
+            scores=dict(final_predictions),
+            model_name=self.model_name,
+            gate_name=self.gate_name,
+        )
 
     def predict_clip(self, clip: Union[str, np.ndarray], chunk_size: int = 1280, **kwargs) -> list:
         """Predicts on a full audio clip by simulating a stream."""
@@ -747,8 +825,12 @@ class NanoInterpreter:
         else:
             raise TypeError("`clip` must be a file path (string) or a numpy array.")
 
-        predictions = [self.predict(data[i:i+chunk_size], **kwargs) for i in range(0, len(data), chunk_size)]
-        return predictions
+        is_e2e = self.preprocessor is None
+        if is_e2e:
+            return [self.predict(data, **kwargs)]
+        else:
+            predictions = [self.predict(data[i:i+chunk_size], **kwargs) for i in range(0, len(data), chunk_size)]
+            return predictions
 
     def listen(
         self,
@@ -883,6 +965,32 @@ class NanoInterpreter:
         else:
             self.is_stateful[mdl_name] = False
 
+    def _detect_e2e_model(self, session, mdl_name: str) -> bool:
+        """Detect if a model is E2E by checking for the custom metadata tag.
+
+        The ONNX export writes a ``mode`` metadata value of ``"e2e"`` for E2E
+        models. This is more reliable than shape-based heuristics.
+        """
+        try:
+            import onnx
+            model_path = session._model_filename
+            proto = onnx.load(model_path)
+            for md in proto.metadata_props:
+                if md.key == "mode" and md.value == "e2e":
+                    return True
+        except Exception:
+            pass
+
+        # Fallback to shape heuristic for models exported before metadata was added
+        inputs = session.get_inputs()
+        input_shape = inputs[0].shape
+        ndim = len(input_shape)
+        if ndim <= 2:
+            return True
+        if ndim == 3 and input_shape[-1] not in (32, 64, 96):
+            return True
+        return False
+
     def _get_initial_state(self, session: "onnxruntime.InferenceSession") -> HiddenState:
         h_input = next(inp for inp in session.get_inputs() if inp.name == 'hidden_in')
         c_input = next(inp for inp in session.get_inputs() if inp.name == 'cell_in')
@@ -891,10 +999,8 @@ class NanoInterpreter:
         return (h0, c0)
 
     def _setup_components(self, **kwargs):
-        from nanowakeword.data.AudioFeatures import AudioFeatures
         self.prediction_buffer = defaultdict(partial(deque, maxlen=30))
 
-        # Pop and handle known interpreter-specific arguments
         enable_nr = kwargs.pop("enable_noise_reduction", False)
         self.noise_reducer_enabled = enable_nr
         if enable_nr and not NOISEREDUCE_AVAILABLE:
@@ -908,15 +1014,19 @@ class NanoInterpreter:
         if self.vad_threshold > 0:
             self.vad = nanowakeword.VAD()
 
-        # Initialize the preprocessor with any remaining kwargs
-        self.preprocessor = AudioFeatures(**kwargs)
+        all_e2e = all(self.is_e2e.values()) if self.is_e2e else False
+        if all_e2e:
+            self.preprocessor = None
+        else:
+            from nanowakeword.data.AudioFeatures import AudioFeatures
+            self.preprocessor = AudioFeatures(**kwargs)
 
     def _reduce_noise(self, x: np.ndarray) -> np.ndarray:
         """Applies stationary noise reduction to an audio chunk."""
         try:
-            audio_float = x.astype(np.float32) / 32767.0
+            audio_float = x.astype(np.float32) / 32768.0
             reduced_noise_audio = nr.reduce_noise(y=audio_float, sr=16000, stationary=True)
-            return (reduced_noise_audio * 32767.0).astype(np.int16)
+            return (reduced_noise_audio * 32768.0).astype(np.int16)
         except Exception as e:
             logging.warning(f"Noise reduction failed: {e}. Returning original audio.")
             return x

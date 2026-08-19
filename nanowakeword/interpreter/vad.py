@@ -86,7 +86,7 @@ class VAD():
         # Lazy-load numpy for array operations.
         import numpy as np
 
-        chunks = [(x[i:i + frame_size] / 32767.0).astype(np.float32)
+        chunks = [(x[i:i + frame_size] / 32768.0).astype(np.float32)
                   for i in range(0, x.shape[0], frame_size)]
 
         frame_predictions = []

@@ -21,6 +21,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import math
+import torchaudio.transforms as T
 
 class PositionalEncoding(nn.Module):
     """
@@ -683,4 +684,206 @@ class BcResNetModel(nn.Module):
         x = x.view(x.size(0), -1)       # (batch, 256)
         x = self.dropout(x)
         x = self.fc(x)                  # (batch, embedding_dim)
+        return x
+
+
+# E2E architectures for NanoWakeWord
+
+class RawAudioFrontend(nn.Module):
+    def __init__(self, out_channels=16, depth=2):
+        super().__init__()
+        layers = []
+        in_ch = 1
+        for i in range(depth):
+            out_ch = out_channels * (2 ** i)
+            k = 41 if i == 0 else 13
+            s = 16 if i == 0 else 4
+            p = k // 2
+            layers.append(nn.Conv1d(in_ch, out_ch, kernel_size=k, stride=s, padding=p, bias=False))
+            layers.append(nn.BatchNorm1d(out_ch))
+            layers.append(nn.ReLU(inplace=True))
+            in_ch = out_ch
+        self.conv_blocks = nn.Sequential(*layers)
+        self.out_channels = out_channels * (2 ** (depth - 1))
+
+    def forward(self, x):
+        return self.conv_blocks(x)
+
+
+
+class E2ERawDNN(nn.Module):
+    def __init__(self, embedding_dim, dropout_prob, activation_fn, frontend_channels=32, frontend_depth=2):
+        super().__init__()
+        self.frontend = RawAudioFrontend(out_channels=frontend_channels, depth=frontend_depth)
+        self.gap = nn.AdaptiveAvgPool1d(1)
+        self.flatten = nn.Flatten()
+        self.fc1 = nn.Linear(self.frontend.out_channels, 128)
+        self.bn1 = nn.BatchNorm1d(128)
+        self.act1 = activation_fn
+        self.dropout1 = nn.Dropout(dropout_prob)
+        self.out = nn.Linear(128, embedding_dim)
+
+    def forward(self, x):
+        if x.dim() == 2:
+            x = x.unsqueeze(1)
+        x = self.frontend(x)
+        x = self.gap(x)
+        x = self.flatten(x)
+        x = self.act1(self.bn1(self.fc1(x)))
+        x = self.dropout1(x)
+        x = self.out(x)
+        return x
+    
+
+
+class RawAudioBackbone(nn.Module):
+    def __init__(self, embedding_dim, dropout_prob, activation_fn):
+        super().__init__()
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(1, 24, kernel_size=(3, 3), stride=(1, 2), padding=1, bias=False),
+            nn.BatchNorm2d(24),
+            activation_fn,
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(24, 48, kernel_size=(3, 3), stride=(2, 2), padding=1, bias=False),
+            nn.BatchNorm2d(48),
+            activation_fn,
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(48, 64, kernel_size=(3, 3), stride=(2, 2), padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            activation_fn,
+        )
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(64, 96, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(96),
+            activation_fn,
+            nn.AdaptiveAvgPool2d((1, 1)),
+        )
+        self.dropout = nn.Dropout(dropout_prob)
+        self.fc = nn.Linear(96, embedding_dim)
+
+    def forward(self, x):
+        if x.dim() == 3:
+            x = x.unsqueeze(1)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = x.view(x.size(0), -1)
+        x = self.dropout(x)
+        x = self.fc(x)
+        return x
+
+
+class E2ERawCNN(nn.Module):
+    def __init__(self, embedding_dim, dropout_prob, activation_fn, frontend_channels=32, frontend_depth=2):
+        super().__init__()
+        self.frontend = RawAudioFrontend(out_channels=frontend_channels, depth=frontend_depth)
+        self.backbone = RawAudioBackbone(
+            embedding_dim=embedding_dim,
+            dropout_prob=dropout_prob,
+            activation_fn=activation_fn,
+        )
+
+    def forward(self, x):
+        if x.dim() == 2:
+            x = x.unsqueeze(1)
+        x = self.frontend(x)
+        x = x.unsqueeze(1)
+        x = self.backbone(x)
+        return x
+
+
+class E2ERawQuartzNet(nn.Module):
+    def __init__(self, embedding_dim, dropout_prob, activation_fn, frontend_channels=32, frontend_depth=3, quartznet_config=None):
+        super().__init__()
+        if quartznet_config is None:
+            quartznet_config = [[64, 11, 1], [64, 13, 1], [64, 17, 1]]
+        self.frontend = RawAudioFrontend(out_channels=frontend_channels, depth=frontend_depth)
+        self.backbone = QuartzNetModel(
+            input_dim=self.frontend.out_channels,
+            quartznet_config=quartznet_config,
+            embedding_dim=embedding_dim,
+            dropout_prob=dropout_prob,
+        )
+
+    def forward(self, x):
+        if x.dim() == 2:
+            x = x.unsqueeze(1)
+        x = self.frontend(x)
+        x = x.permute(0, 2, 1)
+        x = self.backbone(x)
+        return x
+
+
+class E2E_MelSpectrogram_CNN(nn.Module):
+    """
+    This is a modern E2E architecture. It takes raw waveform as input,
+    converts it to Mel-Spectrogram on the GPU dynamically, and uses 
+    2D Convolutions to learn sequence and frequency patterns properly.
+    """
+    def __init__(self, embedding_dim, dropout_prob, activation_fn, sample_rate=16000):
+        super().__init__()
+        
+        # 1. On-the-fly Mel Spectrogram (Runs on GPU, extremely fast)
+        self.mel_spec = T.MelSpectrogram(
+            sample_rate=sample_rate,
+            n_fft=400,
+            win_length=400,
+            hop_length=160,
+            n_mels=64 # 64 frequency bins
+        )
+        self.amplitude_to_db = T.AmplitudeToDB()
+
+        # 2. 2D CNN block to learn Time + Frequency features
+        self.conv_block = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(16),
+            activation_fn,
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(32),
+            activation_fn,
+            nn.MaxPool2d(kernel_size=2, stride=2),
+
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(64),
+            activation_fn,
+            # We pool frequency heavily, but keep some time steps!
+            nn.AdaptiveAvgPool2d((1, 4)) # Output will be 1 freq bin, 4 time steps
+        )
+
+        self.flatten = nn.Flatten()
+        
+        # Flattened size = 64 channels * 1 freq * 4 time steps = 256
+        self.fc1 = nn.Linear(256, 128)
+        self.bn1 = nn.BatchNorm1d(128)
+        self.act1 = activation_fn
+        self.dropout1 = nn.Dropout(dropout_prob)
+        self.out = nn.Linear(128, embedding_dim)
+
+    def forward(self, x):
+        # x shape can be [Batch, Time] or [Batch, 1, Time]
+        if x.dim() == 3:
+            x = x.squeeze(1)
+            
+        # Convert Raw Waveform to Mel-Spectrogram
+        with torch.no_grad(): # No need to calculate gradients for spectrogram transform
+            x = self.mel_spec(x)
+            x = self.amplitude_to_db(x)
+        
+        # Add channel dimension for 2D CNN: [Batch, 1, n_mels, Time]
+        x = x.unsqueeze(1) 
+
+        # Pass through CNN
+        x = self.conv_block(x)
+        
+        # Pass through DNN
+        x = self.flatten(x)
+        x = self.act1(self.bn1(self.fc1(x)))
+        x = self.dropout1(x)
+        x = self.out(x)
+        
         return x

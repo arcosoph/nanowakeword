@@ -135,12 +135,8 @@ class AudioFeatures():
             np.ndarray: The computed melspectrogram of the input audio data
         """
         # Get input data and adjust type/shape as needed
-        x = np.array(x).astype(np.int16) if isinstance(x, list) else x
-        if x.dtype != np.int16:
-            raise ValueError("Input data must be 16-bit integers (i.e., 16-bit PCM audio)."
-                             f"You provided {x.dtype} data.")
+        x = np.array(x).astype(np.float32) if isinstance(x, list) else x.astype(np.float32) if x.dtype != np.float32 else x
         x = x[None, ] if len(x.shape) < 2 else x
-        x = x.astype(np.float32) if x.dtype != np.float32 else x
 
         # Get melspectrogram
         outputs = self.melspec_model_predict(x)

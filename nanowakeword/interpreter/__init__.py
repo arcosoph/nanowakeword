@@ -12,6 +12,11 @@ from nanowakeword.interpreter.server_security import (
 
 __all__ = [
     'NanoInterpreter', 'VAD',
-    'SecurityConfig', 'SecurityManager', 'build_security',
-    'is_token_request', 'decode_token_request', 'encode_token_response', 'encode_error_response',
+    'SecurityConfig', 
+    'SecurityManager', 
+    'build_security',
+    'is_token_request', 
+    'decode_token_request', 
+    'encode_token_response', 
+    'encode_error_response',
 ]

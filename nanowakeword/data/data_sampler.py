@@ -4,7 +4,7 @@
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
+#  You may obtain a copy of the License at:
 #
 #      http://www.apache.org/licenses/LICENSE-2.0
 #
@@ -17,381 +17,379 @@
 #  Project: https://github.com/arcosoph/nanowakeword
 # ==============================================================================
 
+
 import sys
+import os
+import bisect
+import hashlib
 import torch
+import torchaudio
 import numpy as np
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, List, Tuple, Optional, Any
 from torch.utils.data import Dataset, Sampler
+
 from nanowakeword.utils.logger import print_info, print_warning, print_error
 
+
 class AdaptiveLossAwareDataset(Dataset):
+    """
+    ISBL (Importance Sampling based on Loss) Algorithm.
+    Supports high-performance reading of Memmap (.npy) and E2E (.wav) files.
+    Employs lazy-loading and chunked audio reading to ensure zero Out-Of-Memory (OOM) crashes.
+    """
 
-    def __init__(self, feature_manifests: dict):
-        """
-        ISBL (Importance Sampling based on Loss) algorithm.
-        It adaptively tracks the hardness (loss) of each sample to prioritize hard examples.
-        Initializes the dataset by loading memory-mapped files from a structured manifest.
-        It creates separate index pools for each unique key in the manifest and
-        initializes a hardness score for each sample.
-        """
+    def __init__(self, data_manifest: Dict[str, Dict[str, str]], clip_samples: Optional[int] = None, sample_rate: int = 16000):
         super().__init__()
-
-        # Initialize all instance attributes inside the constructor
-        self.memmaps = []
-        self.source_info = []
-
-        # This dictionary will store the global indices for each unique source key.
-        # e.g., {'t': tensor([0, 1, ...]), 'n': tensor([1000, 1001, ...])}
-        self.index_pools = {}
+        
+        self.memmaps: List[np.ndarray] = []
+        self.source_info: List[Dict[str, Any]] = []
+        self.index_pools: Dict[str, torch.Tensor] = {}
+        
+        self.clip_samples = clip_samples
+        self.sample_rate = sample_rate
+        self.is_e2e = clip_samples is not None
+        
+        self._file_lists: Dict[str, List[str]] = {}
 
         cumulative_len = 0
+        
+        print_info("Scanning dataset and building index pools...")
 
-        # Process each category (e.g., 'targets', 'negatives')
-        for category, manifest in feature_manifests.items():
-            if not manifest: continue
+        for category, manifest in data_manifest.items():
+            if not manifest:
+                continue
             
-            # Process each source file (key-path pair) within the category
             for key, path in manifest.items():
-                if not path: continue
+                if not path:
+                    continue
                 
                 try:
-                    memmap = np.load(path, mmap_mode='r')
-                    length = len(memmap)
-                    
-                    self.memmaps.append(memmap)
-                    
-                    # Determine the numeric label based on the category
+                    length = 0
+                    if self.is_e2e:
+                        length = self._initialize_e2e_source(key, path)
+                    else:
+                        length = self._initialize_memmap_source(key, path)
+
+                    if length == 0:
+                        continue
+
                     label = 1.0 if category == 'targets' else 0.0
                     
-                    # Store information about this data source for __getitem__
                     self.source_info.append({
                         'label': label,
                         'length': length,
                         'start_index': cumulative_len,
+                        'key': key,
                     })
 
-                    # Create and populate the index pool for this specific key
+                    # Assign a global index range for this specific data source
                     indices_for_this_key = list(range(cumulative_len, cumulative_len + length))
                     self.index_pools[key] = torch.tensor(indices_for_this_key, dtype=torch.long)
-                    
                     cumulative_len += length
 
                 except FileNotFoundError:
-                    print_error(f"File not found for key '{key}', skipping: {path}")
-                    sys.exit(1)
+                    print_error(f"[Dataset] File not found for key '{key}', skipping: {path}")
                 except Exception as e:
-                    print_error(f"Could not load file for key '{key}'. Error: {e}")
+                    print_error(f"[Dataset] Could not load file for key '{key}'. Error: {e}")
+
+        if cumulative_len == 0:
+            print_error("Critical Error: No valid data found in manifest. Exiting.")
+            sys.exit(1)
 
         self.total_samples = cumulative_len
-
-        # Build a sorted list of start indices for O(log n) lookup in __getitem__
         self._start_indices = [info['start_index'] for info in self.source_info]
-
-        # This tensor tracks the "hardness" of each individual sample across the entire dataset.
-        # It is initialized to 1.0 for all samples.
+        
+        # Hardness tensor for Importance Sampling, dynamically updated by the loss function
         self.sample_hardness = torch.ones(self.total_samples, dtype=torch.float32)
 
-        print_info(f"Dataset initialized with {len(self.index_pools)} sources | Total samples: {self.total_samples}")
+        mode_str = "E2E (On-the-fly Chunked Load)" if self.is_e2e else "Embedding (Memmap)"
+        print_info(f"Dataset Successfully Initialized [{mode_str}] | Sources: {len(self.index_pools)} | Total Samples: {self.total_samples}")
 
-    def __len__(self):
+    def _initialize_e2e_source(self, key: str, path: str) -> int:
+        """Rapidly scans directories using ThreadPoolExecutor to prevent startup bottlenecks."""
+        target_path = Path(path)
+        
+        if target_path.is_dir():
+            # Parallel file scanning for extreme speed on large directories
+            wav_files = []
+            with ThreadPoolExecutor() as executor:
+                # Iterate through dir and grab all wav files quickly
+                entries = list(os.scandir(target_path))
+                wav_files = [e.path for e in entries if e.is_file() and e.name.lower().endswith('.wav')]
+            
+            # Fallback to rglob if subdirectories exist and main dir is empty
+            if not wav_files:
+                wav_files = [str(p) for p in target_path.rglob("*.wav")]
+                
+            self._file_lists[key] = sorted(wav_files)
+            return len(wav_files)
+        
+        elif target_path.is_file() and target_path.suffix.lower() == '.wav':
+            self._file_lists[key] = [str(target_path)]
+            return 1
+        else:
+            print_error(f"E2E mode: expected WAV directory/file for '{key}', got: {path}")
+            return 0
+
+    def _initialize_memmap_source(self, key: str, path: str) -> int:
+        """Safely loads memory-mapped numpy arrays."""
+        memmap = np.load(path, mmap_mode='r')
+        self.memmaps.append(memmap)
+        return len(memmap)
+
+    def _read_audio_chunked(self, filepath: str) -> torch.Tensor:
+            """
+            ULTRA-FAST Audio Loader: Bypasses expensive torchaudio.info() overhead.
+            """
+            try:
+                # Directly load the whole file. (Faster than partial reading for short clips)
+                waveform, sr = torchaudio.load(filepath)
+
+                if sr != self.sample_rate:
+                    waveform = torchaudio.functional.resample(
+                        waveform, 
+                        orig_freq=sr, 
+                        new_freq=self.sample_rate
+                        )
+
+                if waveform.size(0) > 1:
+                    waveform = waveform.mean(dim=0, keepdim=True)
+                
+                waveform = waveform.squeeze(0)
+                current_len = waveform.size(0)
+
+                # Fast memory-level pad/crop
+                if current_len == self.clip_samples:
+                    return waveform
+                elif current_len > self.clip_samples:
+                    max_offset = current_len - self.clip_samples
+                    offset = torch.randint(0, max_offset + 1, (1,)).item()
+                    return waveform[offset : offset + self.clip_samples]
+                else:
+                    clip = torch.zeros(self.clip_samples, dtype=torch.float32)
+                    clip[:current_len] = waveform
+                    return clip
+
+            except Exception as e:
+                return torch.zeros(self.clip_samples, dtype=torch.float32)
+
+
+
+    def __len__(self) -> int:
         return self.total_samples
 
-    def __getitem__(self, index):
-        """
-        Fetches a single data sample and its label using a global index.
-        Uses binary search (bisect) for O(log n) source file lookup instead of
-        the previous O(n) linear scan.
-        """
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor, int]:
         if index < 0 or index >= self.total_samples:
-            raise IndexError(f"Index {index} out of bounds for dataset with size {self.total_samples}")
+            raise IndexError(f"Index {index} out of bounds.")
 
-        import bisect
-        # bisect_right gives the insertion point AFTER any existing entry equal to index,
-        # so subtracting 1 gives the last source whose start_index <= index.
+        # O(log N) lookup using bisect
         file_idx = bisect.bisect_right(self._start_indices, index) - 1
-
-        if file_idx < 0:
-            raise RuntimeError(f"Could not find a data source for index {index}")
-
         local_index = index - self.source_info[file_idx]['start_index']
-        feature = self.memmaps[file_idx][local_index]
         label = torch.tensor(self.source_info[file_idx]['label'], dtype=torch.float32)
 
-        return torch.from_numpy(feature.astype(np.float32)), label, index
+        if self.is_e2e:
+            key = self.source_info[file_idx]['key']
+            filepath = self._file_lists[key][local_index]
+            feature = self._read_audio_chunked(filepath)
+        else:
+            # Memmap reads directly from disk blocks, super fast
+            feature = torch.from_numpy(self.memmaps[file_idx][local_index].astype(np.float32))
+
+        return feature, label, index
 
 
-class DynamicClassAwareSampler(Sampler): 
+class DynamicClassAwareSampler(Sampler):
     """
-    A sampler that builds each batch with a fixed number of samples from different classes
-    (positive, speech_negative, noise_negative). The selection within each class is
-    weighted by the sample's "hardness" score, which is updated dynamically during training.
+    A Sampler that guarantees specific class proportions per batch.
+    It heavily relies on the Importance Sampling framework (ISBL) by utilizing
+    the `sample_hardness` tensor to pick harder examples more frequently.
     """
-    def __init__(self, dataset: AdaptiveLossAwareDataset, batch_composition: dict, feature_manifests: dict):
+    def __init__(self, dataset: AdaptiveLossAwareDataset, batch_composition: Dict[str, int], data_manifest: Dict[str, Any]):
         self.dataset = dataset
         self.batch_composition = batch_composition
-        self.feature_manifests = feature_manifests
-        
+        self.data_manifest = data_manifest
         self.num_samples_per_batch = sum(self.batch_composition.values())
         self.num_batches = self._calculate_num_batches()
-
+        
+        # Hyperparameter for controlling how aggressively hard samples are prioritized
         self.hardness_smoothing_factor = 0.75
 
-    def _calculate_num_batches(self):
-        """
-        Calculates the maximum number of batches that can be created.
-        This is limited by the smallest data pool relative to its batch quota.
-        """
+    def _calculate_num_batches(self) -> int:
+        """Determines epoch length based on the limiting factor (smallest pool)."""
         min_possible_batches = float('inf')
-
-        # Iterate through each rule (e.g., 'targets': 32) in the composition
+        
         for key_or_category, quota in self.batch_composition.items():
-            if quota == 0:
-                continue  # Skip rules that don't request any samples
-
-            # Determine the total number of available samples for this rule
+            if quota == 0: 
+                continue
+            
             total_available_samples = 0
             if key_or_category in self.dataset.index_pools:
-                # Rule is a specific key (e.g., 'n')
                 total_available_samples = len(self.dataset.index_pools[key_or_category])
             else:
-                # Rule is a category (e.g., 'targets'), so sum up all keys under it
                 keys_in_category = self._get_keys_for_category(key_or_category)
                 for k in keys_in_category:
                     total_available_samples += len(self.dataset.index_pools.get(k, []))
+                    
+            if total_available_samples == 0: 
+                continue
+            
+            possible_batches = total_available_samples // quota
+            if possible_batches < min_possible_batches:
+                min_possible_batches = possible_batches
+                
+        return 0 if min_possible_batches == float('inf') else min_possible_batches
 
-            if total_available_samples == 0:
-                # If any required pool is empty, we can't form any batches
-                return 0
-
-            # Calculate how many batches this specific pool can support
-            possible_batches_for_this_pool = total_available_samples // quota
-
-            # The true number of batches is limited by the smallest pool
-            if possible_batches_for_this_pool < min_possible_batches:
-                min_possible_batches = possible_batches_for_this_pool
-        
-        # If the composition was empty or no limiting factor was found, return 0
-        if min_possible_batches == float('inf'):
-            return 0
-
-        return min_possible_batches
-
-
-    # HELPER method inside the class to get all keys for a category 
-    def _get_keys_for_category(self, category_name: str) -> list[str]:
-        return list(self.feature_manifests.get(category_name, {}).keys())
+    def _get_keys_for_category(self, category_name: str) -> List[str]:
+        return list(self.data_manifest.get(category_name, {}).keys())
 
     def __iter__(self):
+        hardness_tensor = self.dataset.sample_hardness
+        
         for _ in range(self.num_batches):
             final_batch_indices = []
-            hardness = self.dataset.sample_hardness
-
-            # Iterate through the user-defined batch composition
+            
             for key_or_category, num_samples in self.batch_composition.items():
                 if num_samples == 0: continue
-
-                # Check if it's a specific key (e.g., 'n') or a category (e.g., 'targets')
+                
+                # Resolve mapping
                 if key_or_category in self.dataset.index_pools:
-                    # It's a specific key
-                    keys_to_sample_from = [key_or_category]
+                    keys = [key_or_category]
                 else:
-                    # It's a category, get all keys under it
-                    keys_to_sample_from = self._get_keys_for_category(key_or_category)
+                    keys = self._get_keys_for_category(key_or_category)
+                    
+                valid_pools = [self.dataset.index_pools[k] for k in keys if k in self.dataset.index_pools]
+                if not valid_pools: continue
                 
-                if not keys_to_sample_from: continue
-
-                # Combine all indices from the relevant pools
-                combined_indices = torch.cat([self.dataset.index_pools[k] for k in keys_to_sample_from])
+                # Combine available indices for this rule
+                combined_indices = torch.cat(valid_pools)
                 
-                # Get the hardness scores for these combined indices
-                # weights = hardness[combined_indices]
-
-                raw_weights = hardness[combined_indices]
+                # Fetch hardness weights, apply smoothing and small epsilon to prevent starvation
+                raw_weights = hardness_tensor[combined_indices]
+                weights = (raw_weights ** self.hardness_smoothing_factor) + 1e-6
                 
-                smoothed_weights = raw_weights ** self.hardness_smoothing_factor
-                
-                weights = smoothed_weights + 1e-6 
-                
-                
-                # Perform weighted sampling.
-                # Use replacement=False when we have enough samples to avoid
-                # the same hard example appearing multiple times in one batch,
-                # which would cause overfitting on hard samples.
+                # Selection logic: Replacement allows hard samples to be repeated if pool is tiny
                 use_replacement = len(combined_indices) < num_samples
-                selected_local_indices = torch.multinomial(weights, num_samples, replacement=use_replacement)
-                selected_global_indices = combined_indices[selected_local_indices]
+                selected_local_indices = torch.multinomial(
+                    weights, 
+                    num_samples, 
+                    replacement=use_replacement
+                    )
                 
-                final_batch_indices.append(selected_global_indices)
+                final_batch_indices.append(combined_indices[selected_local_indices])
+                
+            if not final_batch_indices: 
+                continue
             
-            # Combine indices from all composition rules and shuffle
-            if not final_batch_indices:
-                continue # Skip if batch is empty
-
             batch = torch.cat(final_batch_indices)
-            batch = batch[torch.randperm(len(batch))]
-            
+            batch = batch[torch.randperm(len(batch))] # Shuffle within the batch
             yield batch.tolist()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self.num_batches
 
 
 class ValidationDataset(Dataset):
     """
-    A safe, standalone Dataset for validation. It loads data on-the-fly from file paths.
-    Memmaps are cached per unique file path so we don't re-open files on every
-    __getitem__ call (the original code called np.load every single access).
+    Highly consistent Validation Dataset.
+    Uses Hash-based deterministic cropping so validation scores never fluctuate randomly.
     """
-    def __init__(self, feature_manifest: dict):
+    def __init__(self, feature_manifest: Dict[str, Dict[str, str]], clip_samples: Optional[int] = None, sample_rate: int = 16000):
         super().__init__()
-        self.file_paths = []
-        self.local_indices = []
-        self.labels = []
-        self._mmap_cache = {}
         
+        self.file_paths: List[str] = []
+        self.local_indices: List[int] = []
+        self.labels_list: List[float] = []
+        
+        self.clip_samples = clip_samples
+        self.sample_rate = sample_rate
+        self.is_e2e = clip_samples is not None
+        
+        self._mmap_cache: Dict[str, np.ndarray] = {}
+        self._file_lists: Dict[str, List[str]] = {}
+
         for category, manifest_paths in feature_manifest.items():
             label = 1.0 if category == 'targets' else 0.0
-            
             for key, path in manifest_paths.items():
                 try:
-                    data = np.load(path, mmap_mode='r')
-                    # Cache the memmap immediately
-                    self._mmap_cache[path] = data
-                    length = len(data)
-                    
-                    for i in range(length):
-                        self.file_paths.append(path)
-                        self.local_indices.append(i)
-                        self.labels.append(label)
+                    length = 0
+                    if self.is_e2e:
+                        target_path = Path(path)
+                        if target_path.is_dir():
+                            wav_files = sorted([str(p) for p in target_path.rglob("*.wav")])
+                            self._file_lists[path] = wav_files
+                            length = len(wav_files)
+                        elif target_path.is_file() and target_path.suffix.lower() == '.wav':
+                            self._file_lists[path] = [path]
+                            length = 1
+                    else:
+                        data = np.load(path, mmap_mode='r')
+                        self._mmap_cache[path] = data
+                        length = len(data)
+
+                    # Pre-build index structures for instant access
+                    self.file_paths.extend([path] * length)
+                    self.local_indices.extend(range(length))
+                    self.labels_list.extend([label] * length)
                         
                 except FileNotFoundError:
-                    print_error(f"Validation file not found, skipping: {path}")
+                    print_error(f"[Validation] File not found: {path}")
                     sys.exit(1)
                 except Exception as e:
-                    print_error(f"Could not probe validation file '{path}'. Error: {e}")
-    
-    def __len__(self):
+                    print_error(f"[Validation] Loader Error '{path}': {e}")
+
+    def __len__(self) -> int:
         return len(self.file_paths)
 
-    def __getitem__(self, index):
+    def _get_deterministic_offset(self, filepath: str, max_offset: int) -> int:
+        """Generates a perfectly reproducible pseudo-random crop based on the file name."""
+        hash_val = int(hashlib.md5(filepath.encode('utf-8')).hexdigest()[:8], 16)
+        return hash_val % (max_offset + 1)
+
+    def _read_audio_deterministic(self, filepath: str) -> torch.Tensor:
+        """Ultra-Fast Validation Loader"""
+        try:
+            waveform, sr = torchaudio.load(filepath)
+
+            if sr != self.sample_rate:
+                waveform = torchaudio.functional.resample(
+                    waveform, 
+                    orig_freq=sr, 
+                    new_freq=self.sample_rate
+                    )
+
+            if waveform.size(0) > 1:
+                waveform = waveform.mean(dim=0, keepdim=True)
+            
+            waveform = waveform.squeeze(0)
+            current_len = waveform.size(0)
+
+            if current_len == self.clip_samples:
+                return waveform
+            elif current_len > self.clip_samples:
+                max_offset = current_len - self.clip_samples
+                offset = self._get_deterministic_offset(filepath, max_offset)
+                return waveform[offset : offset + self.clip_samples]
+            else:
+                clip = torch.zeros(self.clip_samples, dtype=torch.float32)
+                clip[:current_len] = waveform
+                return clip
+            
+        except Exception as e:
+            return torch.zeros(self.clip_samples, dtype=torch.float32)
+
+
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor, int]:
         path = self.file_paths[index]
         local_index = self.local_indices[index]
-        label = self.labels[index]
-        
-        # Use cached memmap instead of re-opening the file
-        data = self._mmap_cache[path]
-        feature = data[local_index]
+        label = torch.tensor(self.labels_list[index], dtype=torch.float32)
 
-        feature_tensor = torch.from_numpy(feature.astype(np.float32))
-        label_tensor = torch.tensor(label, dtype=torch.float32)
-        
-        return feature_tensor, label_tensor, index
+        if self.is_e2e:
+            filepath = self._file_lists[path][local_index]
+            feature = self._read_audio_deterministic(filepath)
+        else:
+            data = self._mmap_cache[path]
+            feature = torch.from_numpy(data[local_index].astype(np.float32))
 
-
-# It is not used👇
-def stitch_batch_generator(source_registry, blueprints, batch_size, input_shape):
-    """
-    Standard Classification Batch Generator.
-    - Creates balanced batches of (features, labels).
-    - Uses blueprints to create complex acoustic scenes for both positive and negative samples.
-    """
-
-    memmaps = {}
-    indices = {}
-    # target_keys, negative_keys, background_keys = [], [], []
-    target_keys, negative_keys = [], []
-
-    for alias, meta in source_registry.items():
-        try:
-            path = meta['path']
-            memmaps[alias] = np.load(path, mmap_mode='r')
-            indices[alias] = len(memmaps[alias])
-            t = meta['type']
-            if t == 'target': target_keys.append(alias)
-            elif t == 'negative': negative_keys.append(alias)
-            # elif t == 'background': background_keys.append(alias)
-        except Exception as e:
-            import logging
-            logging.warning(f"[Data Warning] Could not load source '{alias}': {e}")
-
-    if not target_keys:
-        raise ValueError("[CRITICAL] No Target sources found! Cannot train.")
-    # if not (negative_keys or background_keys):
-    if not (negative_keys):
-        raise ValueError("[CRITICAL] No Negative sources found! Cannot train.")
-
-    bp_list = [b['composition'] for b in blueprints]
-    bp_weights = np.array([b.get('weight', 1.0) for b in blueprints], dtype=np.float32)
-    bp_probs = bp_weights / np.sum(bp_weights)
-    
-    required_samples, feature_dim = input_shape
-
-    while True:
-        batch_x = np.zeros((batch_size, required_samples, feature_dim), dtype=np.float32)
-        batch_y = np.zeros(batch_size, dtype=np.float32)
-
-        for i in range(batch_size):
-            template_idx = np.random.choice(len(bp_list), p=bp_probs)
-            template = bp_list[template_idx]
-            
-            stitched_clips = []
-            is_target_present = False
-            target_clip_len = 0 
-            
-            for item in template:
-                key = None
-                source_pool = []
-                
-                if item == 'targets': source_pool = target_keys
-                elif item == 'negatives': source_pool = negative_keys
-                elif item in memmaps: key = item
-
-                if source_pool:
-                    key = np.random.choice(source_pool)
-
-                if key:
-                    idx = np.random.randint(0, indices[key])
-                    clip = memmaps[key][idx]
-                    stitched_clips.append(clip)
-                    if key in target_keys:
-                        is_target_present = True
-                        target_clip_len = clip.shape[0] 
-            
-            if not stitched_clips:
-                continue
-
-            full_audio = np.vstack(stitched_clips)
-            curr_len = full_audio.shape[0]
-
-            final_clip = np.zeros((required_samples, feature_dim), dtype=np.float32)
-
-            if is_target_present:
-                target_start_in_full = curr_len - target_clip_len
-                
-                if required_samples >= target_clip_len:
-                    max_start_pos_in_final = required_samples - target_clip_len
-                    start_pos_in_final = np.random.randint(0, max_start_pos_in_final + 1)                    
-                    start_copy_from_full = max(0, target_start_in_full - start_pos_in_final)                    
-                    start_paste_in_final = max(0, start_pos_in_final - target_start_in_full)
-                    len_to_copy = min(required_samples - start_paste_in_final, curr_len - start_copy_from_full)
-                    final_clip[start_paste_in_final : start_paste_in_final + len_to_copy] = \
-                        full_audio[start_copy_from_full : start_copy_from_full + len_to_copy]
-
-                else: 
-                    start = np.random.randint(0, target_clip_len - required_samples + 1)
-                    final_clip = full_audio[target_start_in_full + start : target_start_in_full + start + required_samples]
-            else: 
-                if curr_len > required_samples:
-                    start = np.random.randint(0, curr_len - required_samples + 1)
-                    final_clip = full_audio[start : start + required_samples]
-                else: 
-                    start = np.random.randint(0, required_samples - curr_len + 1)
-                    final_clip[start : start + curr_len, :] = full_audio
-
-            batch_x[i] = final_clip
-            if is_target_present:
-                batch_y[i] = 1.0
-        
-        yield (
-            torch.from_numpy(batch_x),
-            torch.from_numpy(batch_y)
-        )
+        return feature, label, index
