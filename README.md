@@ -50,7 +50,7 @@ Nanowakeword is a versatile framework offering a rich library of neural network 
 
 ---
 > [!NOTE]
-> **E2E Training** is fully supported and trains models directly on raw waveforms, eliminating the need for pre-computed features. The E2E notebook is available above. E2E models tend to be larger and slower than embedding-based models but can learn optimal feature representations automatically.
+> **E2E Training** is functional and can produce usable wake-word models. The training pipeline is still being refined, so minor changes may be introduced in future updates.
 
 ## State-of-the-Art Features and Architecture
 
