@@ -50,7 +50,7 @@ Nanowakeword is a versatile framework offering a rich library of neural network 
 
 ---
 > [!NOTE]
-> **E2E Training** is functional and can produce usable wake-word models. The training pipeline is still being refined, so minor changes may be introduced in future updates.
+> **E2E Model Training** is functional and can produce usable wake-word models. The training pipeline is still being refined, so minor changes may be introduced in future updates.
 
 ## State-of-the-Art Features and Architecture
 
