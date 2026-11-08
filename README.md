@@ -46,7 +46,7 @@ Nanowakeword is a versatile framework offering a rich library of neural network 
 | **E2E DNN** | End-to-end training directly on raw waveforms. Fastest E2E option. | **Fastest E2E** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_E2E_Wake_Word_Model.ipynb?model_type=e2e_dnn) |
 | **E2E CNN** | End-to-end CNN with raw audio frontend. Balanced E2E option. | **Balanced E2E** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_E2E_Wake_Word_Model.ipynb?model_type=e2e_cnn) |
 | **E2E QuartzNet** | End-to-end QuartzNet architecture with configurable blocks. Most expressive E2E. | **Accuracy E2E** | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_E2E_Wake_Word_Model.ipynb?model_type=e2e_quartznet) |
-| **Custom**| **Build and integrate your own [custom architectures](https://arcosoph.com/qutorium/post/nanowakeword-configuration-guide-pp1ia5#custom-custom)**. | Unlimited Flexibility | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=Custom) |
+| **Custom**| **Build and integrate your own [custom architectures](https://arcosoph.com/index/nanowakeword-configuration-guide-pp1ia5#custom-custom)**. | Unlimited Flexibility | [▶️ **Launch**](https://colab.research.google.com/github/arcosoph/nanowakeword/blob/main/notebooks/Train_Your_First_Wake_Word_Model.ipynb?model_type=Custom) |
 
 ---
 > [!NOTE]
@@ -292,7 +292,7 @@ The primary method for controlling the Nanowakeword framework is through a `.yam
       limit: 3
     # Other...
     ```
-    **༼ つ ◕_◕ ༽つ For a full explanation & all parameters, please see the [`CONFIGURATION_GUIDE`](https://arcosoph.com/qutorium/post/nanowakeword-configuration-guide-pp1ia5).**
+    **༼ つ ◕_◕ ༽つ For a full explanation & all parameters, please see the [`CONFIGURATION_GUIDE`](https://arcosoph.com/index/nanowakeword-configuration-guide-pp1ia5).**
 
 
 3.  **Execute the Pipeline:**
@@ -454,7 +454,7 @@ In a world of complex machine learning tools, Nanowakeword is built on a simple 
 > **E2E mode** trains directly on raw WAV files (no feature extraction step), which is convenient but requires more compute. **Embedding mode** uses pre-computed features and is faster for iteration on standard hardware.
 
 **4. Can I train a model for a language other than English?**
-> Yes! You should train [E2E](https://arcosoph.com/qutorium/post/nanowakeword-configuration-guide-pp1ia5#mode-selection-embedding-vs-e2e) model. Nanowakeword is language-agnostic. As long as you can provide audio samples for your wake words, you can train a **E2E** model for any language.
+> Yes! You should train [E2E](https://arcosoph.com/index/nanowakeword-configuration-guide-pp1ia5#mode-selection-embedding-vs-e2e) model. Nanowakeword is language-agnostic. As long as you can provide audio samples for your wake words, you can train a **E2E** model for any language.
 
 **5. What platforms are supported for running the trained model?**
 >  Inference (running the model) is extremely lightweight and can run smoothly on almost any device, including a Raspberry Pi 3/4, Linux systems, Android devices, and Apple platforms.
